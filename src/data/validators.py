@@ -39,9 +39,12 @@ class ValidationStats:
 
 # src/data/validators.py
 
-from typing import List, Tuple
+# from typing import List, Tuple
 
-def clip_bbox(bbox: List[float], w: int, h: int, eps: float = 1e-6) -> Tuple[List[float], bool]:
+
+def clip_bbox(
+    bbox: List[float], w: int, h: int, eps: float = 1e-6
+) -> Tuple[List[float], bool]:
     x, y, bw, bh = bbox
 
     # Некорректные размеры бокса
@@ -66,7 +69,6 @@ def clip_bbox(bbox: List[float], w: int, h: int, eps: float = 1e-6) -> Tuple[Lis
     return [x1, y1, nw, nh], changed
 
 
-
 def bbox_area(bbox: List[float]) -> float:
     return max(0.0, bbox[2]) * max(0.0, bbox[3])
 
@@ -87,9 +89,9 @@ def validate_and_fix_bboxes(
     }
     stats = ValidationStats(total_anns=len(anns))
 
-    clipped_ratio_sum = 0.0        # сумма (after_area / before_area)
-    clipped_ratio_n = 0            # сколько clipped вообще
-    clipped_hard = 0               # сколько “жёстких” клиппов (например, < 0.7 площади осталось)
+    clipped_ratio_sum = 0.0  # сумма (after_area / before_area)
+    clipped_ratio_n = 0  # сколько clipped вообще
+    clipped_hard = 0  # сколько “жёстких” клиппов (например, < 0.7 площади осталось)
 
     for a in anns:
         im = img_map.get(a.image_id)
@@ -106,7 +108,12 @@ def validate_and_fix_bboxes(
             bbox2, changed = clip_bbox(before_bbox, im.width, im.height)
             if changed:
                 issues["clipped"].append(
-                    {"ann_id": a.id, "image_id": a.image_id, "before": before_bbox, "after": bbox2}
+                    {
+                        "ann_id": a.id,
+                        "image_id": a.image_id,
+                        "before": before_bbox,
+                        "after": bbox2,
+                    }
                 )
                 stats.clipped += 1
 
@@ -120,14 +127,27 @@ def validate_and_fix_bboxes(
             bbox = bbox2
 
             if bbox[2] <= 0 or bbox[3] <= 0:
-                issues["dropped"].append({"ann_id": a.id, "image_id": a.image_id, "reason": "non_positive_wh", "bbox": bbox})
+                issues["dropped"].append(
+                    {
+                        "ann_id": a.id,
+                        "image_id": a.image_id,
+                        "reason": "non_positive_wh",
+                        "bbox": bbox,
+                    }
+                )
                 stats.dropped += 1
                 continue
 
         area = bbox_area(bbox)
         if area < min_area:
             issues["dropped"].append(
-                {"ann_id": a.id, "image_id": a.image_id, "reason": "min_area", "bbox": bbox, "area": area}
+                {
+                    "ann_id": a.id,
+                    "image_id": a.image_id,
+                    "reason": "min_area",
+                    "bbox": bbox,
+                    "area": area,
+                }
             )
             stats.invalid_area += 1
             stats.dropped += 1
@@ -139,14 +159,13 @@ def validate_and_fix_bboxes(
 
     issues["clipped_summary"] = {
         "count": clipped_ratio_n,
-        "avg_after_to_before_area": (clipped_ratio_sum / clipped_ratio_n) if clipped_ratio_n else 1.0,
+        "avg_after_to_before_area": (clipped_ratio_sum / clipped_ratio_n)
+        if clipped_ratio_n
+        else 1.0,
         "hard_clip_count_ratio_lt_0.7": clipped_hard,
     }
 
     return fixed, issues, stats
-
-
-
 
 
 ####################################################################################################

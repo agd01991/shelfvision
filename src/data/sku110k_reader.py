@@ -43,7 +43,9 @@ def load_sku110k_as_coco(
         reader = csv.DictReader(f)
         required = {"image", "x1", "y1", "x2", "y2"}
         if not required.issubset(set(reader.fieldnames or [])):
-            raise ValueError(f"SKU-110K CSV: expected columns {sorted(required)}; got {reader.fieldnames}")
+            raise ValueError(
+                f"SKU-110K CSV: expected columns {sorted(required)}; got {reader.fieldnames}"
+            )
 
         for row in reader:
             rel = row["image"].strip()
@@ -59,7 +61,9 @@ def load_sku110k_as_coco(
                     w, h = w2, h2
 
                 img_map[rel] = next_img_id
-                images.append(CocoImage(id=next_img_id, file_name=rel, width=w, height=h))
+                images.append(
+                    CocoImage(id=next_img_id, file_name=rel, width=w, height=h)
+                )
                 next_img_id += 1
 
             image_id = img_map[rel]
@@ -85,5 +89,7 @@ def load_sku110k_as_coco(
             next_ann_id += 1
 
     if logger:
-        logger.info(f"[sku110k] images={len(images)} anns={len(anns)} from {csv_path.name}")
+        logger.info(
+            f"[sku110k] images={len(images)} anns={len(anns)} from {csv_path.name}"
+        )
     return images, anns, cats

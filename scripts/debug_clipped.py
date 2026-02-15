@@ -3,6 +3,7 @@ from pathlib import Path
 import cv2
 import json
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--issues", required=True)
@@ -19,7 +20,7 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    clipped = issues["issues"]["clipped"][:args.n]
+    clipped = issues["issues"]["clipped"][: args.n]
     for i, item in enumerate(clipped):
         image_id = item["image_id"]
         im = img_map.get(image_id)
@@ -42,12 +43,20 @@ def main():
             cv2.rectangle(img, p1, p2, color, 2)
 
         draw(before, (0, 0, 255))  # red
-        draw(after, (0, 255, 0))   # green
+        draw(after, (0, 255, 0))  # green
 
-        cv2.putText(img, f"id={image_id}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255,255,255), 2)
+        cv2.putText(
+            img,
+            f"id={image_id}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (255, 255, 255),
+            2,
+        )
 
         cv2.imwrite(str(out_dir / f"{i:02d}_img{image_id}.jpg"), img)
+
 
 if __name__ == "__main__":
     main()

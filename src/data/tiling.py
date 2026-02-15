@@ -1,55 +1,10 @@
-# src/data/tiling.py
-from dataclasses import dataclass
-from typing import List, Tuple
-from src.data.validators import BBox, clip_bbox_to_image, is_valid_bbox
-
-@dataclass(frozen=True)
-class Tile:
-    tile_id: str
-    x0: int
-    y0: int
-    w: int
-    h: int
-
-def build_tiles(img_w: int, img_h: int, tile_w: int, tile_h: int, overlap: int) -> List[Tile]:
-    tiles: List[Tile] = []
-    step_x = max(1, tile_w - overlap)
-    step_y = max(1, tile_h - overlap)
-    tid = 0
-    for y0 in range(0, img_h, step_y):
-        for x0 in range(0, img_w, step_x):
-            x1 = min(img_w, x0 + tile_w)
-            y1 = min(img_h, y0 + tile_h)
-            # корректировка тайла у границ
-            x0c = max(0, x1 - tile_w)
-            y0c = max(0, y1 - tile_h)
-            tiles.append(Tile(tile_id=f"t{tid:05d}", x0=x0c, y0=y0c, w=min(tile_w, img_w), h=min(tile_h, img_h)))
-            tid += 1
-    return tiles
-
-def bbox_to_tile_coords(b: BBox, tile: Tile) -> BBox:
-    return BBox(x=b.x - tile.x0, y=b.y - tile.y0, w=b.w, h=b.h)
-
-def filter_tile_bbox(b: BBox, tile_w: int, tile_h: int, min_visible: float = 0.4) -> Tuple[bool, BBox]:
-    clipped, _ = clip_bbox_to_image(b, tile_w, tile_h)
-    if not is_valid_bbox(clipped):
-        return False, clipped
-    # доля видимой площади: clipped_area / orig_area
-    orig_area = max(1e-6, b.w * b.h)
-    vis_area = clipped.w * clipped.h
-    if (vis_area / orig_area) < min_visible:
-        return False, clipped
-    return True, clipped
-
-# src/data/tiling.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple, Iterable, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional
 
 import cv2
-import numpy as np
 
 from src.data.coco_schema import CocoImage, CocoAnnotation
 
@@ -58,8 +13,8 @@ from src.data.coco_schema import CocoImage, CocoAnnotation
 class TileConfig:
     enabled: bool = False
     tile_size: int = 1024
-    overlap: float = 0.2  # 0..0.9
-    min_visible: float = 0.25  # доля площади bbox, которая должна попасть в тайл
+    overlap: float = 0.2
+    min_visible: float = 0.25
     save_format: str = "jpg"
     jpeg_quality: int = 92
 
@@ -74,10 +29,12 @@ def _compute_steps(full: int, tile: int, overlap: float) -> List[int]:
     return xs
 
 
-def generate_tiles(w: int, h: int, tile_size: int, overlap: float) -> List[Tuple[int, int, int, int]]:
+def generate_tiles(
+    w: int, h: int, tile_size: int, overlap: float
+) -> List[Tuple[int, int, int, int]]:
     xs = _compute_steps(w, tile_size, overlap)
     ys = _compute_steps(h, tile_size, overlap)
-    tiles = []
+    tiles: List[Tuple[int, int, int, int]] = []
     for y in ys:
         for x in xs:
             tw = min(tile_size, w - x)
@@ -87,7 +44,6 @@ def generate_tiles(w: int, h: int, tile_size: int, overlap: float) -> List[Tuple
 
 
 def _bbox_intersection_area(b1: List[float], b2: List[float]) -> float:
-    # b = [x,y,w,h]
     x1, y1, w1, h1 = b1
     x2, y2, w2, h2 = b2
     ax1, ay1, ax2, ay2 = x1, y1, x1 + w1, y1 + h1
@@ -98,8 +54,9 @@ def _bbox_intersection_area(b1: List[float], b2: List[float]) -> float:
     return iw * ih
 
 
-def _clip_bbox_to_tile(b: List[float], tx: int, ty: int, tw: int, th: int) -> Optional[List[float]]:
-    # переводим в координаты тайла и клипаем
+def _clip_bbox_to_tile(
+    b: List[float], tx: int, ty: int, tw: int, th: int
+) -> Optional[List[float]]:
     x, y, w, h = b
     x1, y1 = x - tx, y - ty
     x2, y2 = x1 + w, y1 + h
@@ -120,12 +77,9 @@ def tile_coco(
     split_map: Dict[int, str],
     cfg: TileConfig,
     logger,
-) -> Tuple[List[CocoImage], List[CocoAnnotation], Dict[str, Any], Dict[int, str]]:
-    """
-    Делает новый COCO на тайлах.
-    split тайла = split исходного изображения (чтобы не было утечки).
-    Возвращает: (tile_images, tile_anns, tile_map, tile_split_map)
-    """
+) -> Tuple[
+    List[CocoImage], List[CocoAnnotation], Dict[int, Dict[str, Any]], Dict[int, str]
+]:
     out_images_dir.mkdir(parents=True, exist_ok=True)
 
     anns_by_img: Dict[int, List[CocoAnnotation]] = {}
@@ -150,40 +104,52 @@ def tile_coco(
         H, W = img.shape[:2]
         tiles = generate_tiles(W, H, cfg.tile_size, cfg.overlap)
         src_split = split_map.get(im.id, "train")
-
         im_anns = anns_by_img.get(im.id, [])
 
-        for (tx, ty, tw, th) in tiles:
-            # выбираем аннотации, которые достаточно попали в тайл
+        for tx, ty, tw, th in tiles:
             kept: List[Tuple[CocoAnnotation, List[float]]] = []
             tile_box = [float(tx), float(ty), float(tw), float(th)]
 
             for a in im_anns:
-                inter = _bbox_intersection_area(a.bbox, tile_box)
-                if a.area <= 0:
+                a_area = (
+                    float(a.area)
+                    if (a.area is not None and a.area > 0)
+                    else float(a.bbox[2] * a.bbox[3])
+                )
+                if a_area <= 0:
                     continue
-                if (inter / a.area) < cfg.min_visible:
+
+                inter = _bbox_intersection_area(a.bbox, tile_box)
+                if (inter / a_area) < cfg.min_visible:
                     continue
 
                 clipped = _clip_bbox_to_tile(a.bbox, tx, ty, tw, th)
                 if clipped is None:
                     continue
+
                 kept.append((a, clipped))
 
-            # если в тайле нет объектов — можно пропускать (или сохранять как negative, но это отдельная логика)
             if not kept:
                 continue
 
             crop = img[ty : ty + th, tx : tx + tw]
-            tile_name = f"{Path(im.file_name).stem}__x{tx}_y{ty}_w{tw}_h{th}.{cfg.save_format}"
+            tile_name = (
+                f"{Path(im.file_name).stem}__x{tx}_y{ty}_w{tw}_h{th}.{cfg.save_format}"
+            )
             out_path = out_images_dir / tile_name
 
             if cfg.save_format.lower() in ("jpg", "jpeg"):
-                cv2.imwrite(str(out_path), crop, [int(cv2.IMWRITE_JPEG_QUALITY), int(cfg.jpeg_quality)])
+                cv2.imwrite(
+                    str(out_path),
+                    crop,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), int(cfg.jpeg_quality)],
+                )
             else:
                 cv2.imwrite(str(out_path), crop)
 
-            tile_im = CocoImage(id=next_img_id, file_name=tile_name, width=tw, height=th)
+            tile_im = CocoImage(
+                id=next_img_id, file_name=tile_name, width=tw, height=th
+            )
             tile_images.append(tile_im)
             tile_split_map[next_img_id] = src_split
 
@@ -196,14 +162,14 @@ def tile_coco(
                 "h": th,
             }
 
-            for (a, clipped_bbox) in kept:
+            for a, clipped_bbox in kept:
                 na = CocoAnnotation(
                     id=next_ann_id,
                     image_id=next_img_id,
                     category_id=a.category_id,
                     bbox=clipped_bbox,
                     area=float(clipped_bbox[2] * clipped_bbox[3]),
-                    iscrowd=getattr(a, "iscrowd", 0),
+                    iscrowd=int(getattr(a, "iscrowd", 0)),
                     segmentation=getattr(a, "segmentation", None),
                 )
                 tile_anns.append(na)
@@ -211,11 +177,4 @@ def tile_coco(
 
             next_img_id += 1
 
-    meta = {
-        "tile_size": cfg.tile_size,
-        "overlap": cfg.overlap,
-        "min_visible": cfg.min_visible,
-        "tiles_total": len(tile_images),
-        "annotations_total": len(tile_anns),
-    }
     return tile_images, tile_anns, tile_map, tile_split_map

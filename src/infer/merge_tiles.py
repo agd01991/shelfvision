@@ -2,6 +2,7 @@
 from typing import List
 from src.infer.engine import DetObject
 
+
 def iou_xywh(a, b) -> float:
     ax1, ay1, aw, ah = a
     bx1, by1, bw, bh = b
@@ -13,6 +14,7 @@ def iou_xywh(a, b) -> float:
     inter = iw * ih
     union = aw * ah + bw * bh - inter
     return 0.0 if union <= 0 else inter / union
+
 
 def merge_detections(dets: List[DetObject], cfg: dict) -> List[DetObject]:
     thr = float(cfg.get("iou_thr", 0.5))

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS sku_images (
 );
 """
 
+
 class SkuDB:
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)

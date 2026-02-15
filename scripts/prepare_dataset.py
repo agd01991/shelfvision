@@ -3,14 +3,18 @@ import argparse
 from pathlib import Path
 import sys
 
+from src.core.config import load_yaml
+from src.core.logging import setup_logging
+from src.data.prepare import (
+    prepare_from_coco_bbox,
+    prepare_from_sku110k_bbox,
+    prepare_from_d2s_instances,
+)
+
 # чтобы `from src...` работало при запуске из корня проекта
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from src.core.config import load_yaml
-from src.core.logging import setup_logging
-from src.data.prepare import prepare_from_coco_bbox
 
 
 def main():
@@ -31,6 +35,12 @@ def main():
 
     if source_type == "coco_bbox":
         _, timings = prepare_from_coco_bbox(ds_cfg, args.version, logger)
+        logger.info(f"Timings (ms): { {k: round(v, 2) for k, v in timings.items()} }")
+    elif source_type == "sku110k_bbox":
+        _, timings = prepare_from_sku110k_bbox(ds_cfg, args.version, logger)
+        logger.info(f"Timings (ms): { {k: round(v, 2) for k, v in timings.items()} }")
+    elif source_type == "d2s_instances":
+        _, timings = prepare_from_d2s_instances(ds_cfg, args.version, logger)
         logger.info(f"Timings (ms): { {k: round(v, 2) for k, v in timings.items()} }")
     else:
         raise NotImplementedError(f"Source type '{source_type}' is not implemented yet")

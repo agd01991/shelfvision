@@ -5,9 +5,14 @@ import random
 import shutil
 from pathlib import Path
 
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", required=True, help="Папка data/raw/demo_coco (с images/ и annotations.json)")
+    ap.add_argument(
+        "--src",
+        required=True,
+        help="Папка data/raw/demo_coco (с images/ и annotations.json)",
+    )
     ap.add_argument("--dst", required=True, help="Куда сохранить мини-датасет")
     ap.add_argument("--n", type=int, default=200, help="Сколько изображений выбрать")
     ap.add_argument("--seed", type=int, default=42)
@@ -56,9 +61,12 @@ def main():
         "annotations": pick_anns,
         "categories": cats,
     }
-    (dst / "annotations.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    (dst / "annotations.json").write_text(
+        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     print(f"Saved mini COCO to: {dst}")
     print(f"Images: {len(fixed_images)}, Anns: {len(pick_anns)}")
+
 
 if __name__ == "__main__":
     main()

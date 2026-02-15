@@ -93,7 +93,9 @@ def make_split(images: List[CocoImage], spec: SplitSpec) -> Dict[str, List[int]]
     raise ValueError(f"Unknown split mode: {spec.mode}")
 
 
-def _make_random_split(images: List[CocoImage], spec: SplitSpec) -> Dict[str, List[int]]:
+def _make_random_split(
+    images: List[CocoImage], spec: SplitSpec
+) -> Dict[str, List[int]]:
     ids = [im.id for im in images]
     rnd = random.Random(spec.seed)
     rnd.shuffle(ids)
@@ -102,8 +104,8 @@ def _make_random_split(images: List[CocoImage], spec: SplitSpec) -> Dict[str, Li
     n_train = int(round(n * spec.train))
     n_val = int(round(n * spec.val))
     train_ids = ids[:n_train]
-    val_ids = ids[n_train:n_train + n_val]
-    test_ids = ids[n_train + n_val:]
+    val_ids = ids[n_train : n_train + n_val]
+    test_ids = ids[n_train + n_val :]
 
     return {
         "train": train_ids,
@@ -161,8 +163,8 @@ def _make_group_split(images: List[CocoImage], spec: SplitSpec) -> Dict[str, Lis
     n_train = int(round(n * spec.train))
     n_val = int(round(n * spec.val))
     train_keys = keys[:n_train]
-    val_keys = keys[n_train:n_train + n_val]
-    test_keys = keys[n_train + n_val:]
+    val_keys = keys[n_train : n_train + n_val]
+    test_keys = keys[n_train + n_val :]
 
     def collect(ks: List[str]) -> List[int]:
         out: List[int] = []
@@ -183,4 +185,3 @@ def _make_group_split(images: List[CocoImage], spec: SplitSpec) -> Dict[str, Lis
             "seed": spec.seed,
         },
     }
-

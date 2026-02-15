@@ -49,6 +49,7 @@ from src.core.config import load_yaml
 
 AnnoType = Literal["bbox", "mask", "bbox+sku", "mask+sku"]
 
+
 @dataclass(frozen=True)
 class DatasetSpec:
     name: str
@@ -58,6 +59,7 @@ class DatasetSpec:
     image_glob: str
     split_mode: str
     tile: dict
+
 
 class DatasetRegistry:
     def __init__(self, yaml_path: str | Path):

@@ -19,6 +19,7 @@ class CocoAnnotation:
     bbox: List[float]  # [x, y, w, h]
     area: Optional[float] = None
     iscrowd: int = 0
+    segmentation: Optional[Any] = None
 
 
 @dataclass
@@ -27,7 +28,9 @@ class CocoCategory:
     name: str
 
 
-def load_coco(obj: Dict[str, Any]) -> Tuple[List[CocoImage], List[CocoAnnotation], List[CocoCategory]]:
+def load_coco(
+    obj: Dict[str, Any],
+) -> Tuple[List[CocoImage], List[CocoAnnotation], List[CocoCategory]]:
     images: List[CocoImage] = []
     for im in obj.get("images", []):
         images.append(
@@ -48,9 +51,13 @@ def load_coco(obj: Dict[str, Any]) -> Tuple[List[CocoImage], List[CocoAnnotation
                 image_id=int(a["image_id"]),
                 category_id=int(a["category_id"]),
                 bbox=[float(x) for x in bbox],
-                area=float(a["area"]) if "area" in a and a["area"] is not None else None,
+                area=float(a["area"])
+                if "area" in a and a["area"] is not None
+                else None,
                 iscrowd=int(a.get("iscrowd", 0)),
+                segmentation=a.get("segmentation", None),
             )
+            for a in obj.get("annotations", [])
         )
 
     cats: List[CocoCategory] = []
@@ -60,7 +67,9 @@ def load_coco(obj: Dict[str, Any]) -> Tuple[List[CocoImage], List[CocoAnnotation
     return images, anns, cats
 
 
-def dump_coco(images: List[CocoImage], anns: List[CocoAnnotation], cats: List[CocoCategory]) -> Dict[str, Any]:
+def dump_coco(
+    images: List[CocoImage], anns: List[CocoAnnotation], cats: List[CocoCategory]
+) -> Dict[str, Any]:
     return {
         "images": [im.__dict__ for im in images],
         "annotations": [a.__dict__ for a in anns],

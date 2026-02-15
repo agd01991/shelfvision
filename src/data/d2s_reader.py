@@ -54,7 +54,13 @@ def load_d2s_as_coco_from_instance_id_png(
       - "class_times_1000_plus_instance": label = class_id*1000 + inst_id, background=0
       - "class_only": label = class_id (без instance), тогда это не instance-сегментация (редко нужно)
     """
-    img_paths = sorted([p for p in images_dir.rglob("*") if p.suffix.lower() in (".jpg", ".jpeg", ".png")])
+    img_paths = sorted(
+        [
+            p
+            for p in images_dir.rglob("*")
+            if p.suffix.lower() in (".jpg", ".jpeg", ".png")
+        ]
+    )
 
     cat_ids = {c.id for c in categories}
     images: List[CocoImage] = []
@@ -84,7 +90,9 @@ def load_d2s_as_coco_from_instance_id_png(
         if m is None:
             continue
 
-        images.append(CocoImage(id=next_img_id, file_name=rel, width=int(W), height=int(H)))
+        images.append(
+            CocoImage(id=next_img_id, file_name=rel, width=int(W), height=int(H))
+        )
 
         uniq = np.unique(m)
         uniq = uniq[uniq != 0]
@@ -99,10 +107,12 @@ def load_d2s_as_coco_from_instance_id_png(
                 if class_id not in cat_ids:
                     # неизвестный класс — можно пропустить или залогировать
                     if logger:
-                        logger.warning(f"[d2s] unknown class_id={class_id} value={v} file={mp.name}")
+                        logger.warning(
+                            f"[d2s] unknown class_id={class_id} value={v} file={mp.name}"
+                        )
                     continue
 
-                bin_mask = (m == v)
+                bin_mask = m == v
                 bbox = _bbox_from_mask(bin_mask)
                 if bbox is None:
                     continue
@@ -115,7 +125,7 @@ def load_d2s_as_coco_from_instance_id_png(
                         category_id=class_id,
                         bbox=bbox,
                         area=area,
-                        iscrowd=1,               # RLE в COCO обычно с iscrowd=1
+                        iscrowd=1,  # RLE в COCO обычно с iscrowd=1
                         segmentation=_mask_to_rle(bin_mask),
                     )
                 )
@@ -126,7 +136,7 @@ def load_d2s_as_coco_from_instance_id_png(
                 class_id = int(class_id)
                 if class_id not in cat_ids:
                     continue
-                bin_mask = (m == class_id)
+                bin_mask = m == class_id
                 bbox = _bbox_from_mask(bin_mask)
                 if bbox is None:
                     continue

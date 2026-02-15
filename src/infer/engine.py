@@ -12,13 +12,15 @@ from src.infer.report_builder import build_report
 
 TaskMode = Literal["single", "tile"]
 
+
 @dataclass
 class DetObject:
-    bbox: list[float]              # [x, y, w, h]
+    bbox: list[float]  # [x, y, w, h]
     score: float
     mask_rle: Optional[dict] = None
     sku_id: Optional[str] = None
     topk: Optional[list[dict]] = None
+
 
 @dataclass
 class InferenceResult:
@@ -26,6 +28,7 @@ class InferenceResult:
     timings_ms: dict
     vis_path: Optional[str] = None
     report_path: Optional[str] = None
+
 
 class InferenceEngine:
     def __init__(self, detector, sku_identifier, cfg: dict):
@@ -57,7 +60,9 @@ class InferenceEngine:
             crops, crop_meta = build_crops(img, dets, self.cfg["crops"])
 
         with timed("sku_id", timings):
-            topk = self.sku_identifier.predict_topk(crops, k=int(self.cfg["sku"]["topk"]))
+            topk = self.sku_identifier.predict_topk(
+                crops, k=int(self.cfg["sku"]["topk"])
+            )
             for obj, tk in zip(dets, topk):
                 obj.topk = tk
                 # выбранный sku_id и unknown-логика

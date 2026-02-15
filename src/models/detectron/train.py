@@ -3,6 +3,7 @@ from pathlib import Path
 from src.core.config import load_yaml, ensure_dir
 from src.core.seed import seed_all
 
+
 def train_detectron(cfg_path: str | Path) -> Path:
     cfg = load_yaml(cfg_path)
     seed_all(int(cfg.get("seed", 42)))
