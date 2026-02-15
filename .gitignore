@@ -1,0 +1,109 @@
+# =========================
+# Python / bytecode
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
+venv/
+ENV/
+env/
+
+# =========================
+# Packaging / build
+# =========================
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# =========================
+# Jupyter / notebooks
+# =========================
+.ipynb_checkpoints/
+*.ipynb
+
+# =========================
+# Test / coverage
+# =========================
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# =========================
+# Linters / type checkers
+# =========================
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# =========================
+# Logs / temp
+# =========================
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.swp
+
+# =========================
+# OS / IDE
+# =========================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
+# =========================
+# Secrets
+# =========================
+.env
+.env.*
+*.env
+secrets/
+**/secrets/
+
+# =========================
+# ML artifacts (training/inference outputs)
+# =========================
+runs/
+wandb/
+mlruns/
+lightning_logs/
+tensorboard/
+tb_logs/
+output/
+outputs/
+checkpoints/
+weights/
+
+# Common model/binary artifacts (лучше через Git LFS или Releases)
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.tflite
+
+# =========================
+# Project-specific: data
+# =========================
+# Всё подготовленное — генерируется скриптами, в Git не нужно
+data/prepared/**
+
+# В raw оставляем только demo_coco (как в README), остальное — мимо Git
+data/raw/**
+!data/raw/demo_coco/
+!data/raw/demo_coco/**
+
+# Если захочешь хранить ещё мини-датасет в репо — добавишь исключение аналогично demo_coco
