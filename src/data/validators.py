@@ -24,18 +24,47 @@ class ValidationStats:
 #     changed = (x1 != x) or (y1 != y) or (nw != bw) or (nh != bh)
 #     return [x1, y1, nw, nh], changed
 
-def clip_bbox(bbox: List[float], w: int, h: int) -> Tuple[List[float], bool]:
+# def clip_bbox(bbox: List[float], w: int, h: int) -> Tuple[List[float], bool]:
+#     x, y, bw, bh = bbox
+#     x1 = max(0.0, x)
+#     y1 = max(0.0, y)
+#     x2 = min(float(w), x + max(0.0, bw))
+#     y2 = min(float(h), y + max(0.0, bh))
+#     nw = max(0.0, x2 - x1)
+#     nh = max(0.0, y2 - y1)
+
+#     eps = 1e-6
+#     changed = (abs(x1 - x) > eps) or (abs(y1 - y) > eps) or (abs(nw - bw) > eps) or (abs(nh - bh) > eps)
+#     return [x1, y1, nw, nh], changed
+
+# src/data/validators.py
+
+from typing import List, Tuple
+
+def clip_bbox(bbox: List[float], w: int, h: int, eps: float = 1e-6) -> Tuple[List[float], bool]:
     x, y, bw, bh = bbox
+
+    # Некорректные размеры бокса
+    if bw is None or bh is None:
+        return [0.0, 0.0, 0.0, 0.0], True
+    if bw < 0 or bh < 0:
+        return [0.0, 0.0, 0.0, 0.0], True
+
+    # "Реальные" правки — только если вылезли за границы заметно (eps)
+    x2_raw = x + bw
+    y2_raw = y + bh
+    changed = (x < -eps) or (y < -eps) or (x2_raw > w + eps) or (y2_raw > h + eps)
+
     x1 = max(0.0, x)
     y1 = max(0.0, y)
-    x2 = min(float(w), x + max(0.0, bw))
-    y2 = min(float(h), y + max(0.0, bh))
+    x2 = min(float(w), x2_raw)
+    y2 = min(float(h), y2_raw)
+
     nw = max(0.0, x2 - x1)
     nh = max(0.0, y2 - y1)
 
-    eps = 1e-6
-    changed = (abs(x1 - x) > eps) or (abs(y1 - y) > eps) or (abs(nw - bw) > eps) or (abs(nh - bh) > eps)
     return [x1, y1, nw, nh], changed
+
 
 
 def bbox_area(bbox: List[float]) -> float:
@@ -89,6 +118,11 @@ def validate_and_fix_bboxes(
                     clipped_hard += 1
 
             bbox = bbox2
+
+            if bbox[2] <= 0 or bbox[3] <= 0:
+                issues["dropped"].append({"ann_id": a.id, "image_id": a.image_id, "reason": "non_positive_wh", "bbox": bbox})
+                stats.dropped += 1
+                continue
 
         area = bbox_area(bbox)
         if area < min_area:

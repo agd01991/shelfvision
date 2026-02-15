@@ -4,7 +4,7 @@ from typing import Any, Dict, Tuple
 
 from src.core.config import ensure_dir, read_json, write_json, RunPaths
 from src.core.timer import timed
-from src.data.coco_schema import load_coco, dump_coco
+from src.data.coco_schema import CocoCategory, load_coco, dump_coco
 from src.data.validators import validate_and_fix_bboxes
 # from src.data.splits import SplitSpec, make_group_split
 from src.data.splits import SplitSpec, make_split
@@ -167,5 +167,75 @@ def prepare_from_coco_bbox(cfg: Dict[str, Any], version: str, logger) -> Tuple[R
                 seed=seed,
             )
 
-    logger.info(f"Prepared dataset saved to: {paths.version_dir}")
-    return paths, timings
+        # внутри _prepare_common после split_map
+
+        tiling_cfg = cfg.get("tiling", {})
+        if tiling_cfg.get("enabled", False):
+            tc = TileConfig(
+                enabled=True,
+                tile_size=int(tiling_cfg.get("tile_size", 1024)),
+                overlap=float(tiling_cfg.get("overlap", 0.2)),
+                min_visible=float(tiling_cfg.get("min_visible", 0.25)),
+                save_format=str(tiling_cfg.get("save_format", "jpg")),
+                jpeg_quality=int(tiling_cfg.get("jpeg_quality", 92)),
+            )
+
+            tile_images_dir = paths.images_dir / "tiles"  # или paths.tiles_images_dir если заведёшь отдельно
+            tile_images, tile_anns, tile_map, tile_split_map = tile_coco(
+                images=images,
+                anns=fixed_anns,
+                image_root=image_root,
+                out_images_dir=tile_images_dir,
+                split_map=split_map,
+                cfg=tc,
+                logger=logger,
+            )
+
+            # подмена датасета на тайловый
+            images = tile_images
+            fixed_anns = tile_anns
+            split_map = tile_split_map
+
+            # сохранить tile_map.json рядом с passport
+            write_json(paths.root / "tile_map.json", tile_map)
+
+            logger.info(f"Prepared dataset saved to: {paths.version_dir}")
+            return paths, timings
+
+# src/data/prepare.py (добавить)
+from pathlib import Path
+from typing import Dict, Any, Tuple
+
+from src.data.sku110k_reader import load_sku110k_as_coco
+from src.data.d2s_reader import load_d2s_as_coco_from_instance_id_png
+from src.data.tiling import TileConfig, tile_coco
+
+def prepare_from_sku110k_bbox(cfg: Dict[str, Any], version: str, logger):
+    src = cfg["source"]
+    images_dir = Path(src["images_dir"])
+    csv_path = Path(src["csv_path"])
+
+    images, anns, cats = load_sku110k_as_coco(images_dir, csv_path, logger=logger)
+    # дальше — общий код: validate -> split -> tiling -> save -> passport
+    return prepare_from_coco_bbox(images, anns, cats, image_root=images_dir, cfg=cfg, version=version, logger=logger)
+
+def prepare_from_d2s_instances(cfg: Dict[str, Any], version: str, logger):
+    src = cfg["source"]
+    images_dir = Path(src["images_dir"])
+    masks_dir = Path(src["masks_dir"])
+    encoding = src.get("encoding", "class_times_1000_plus_instance")
+
+    # категории проще хранить в yaml (id->name), а тут собрать список
+    categories = []
+    for c in src["categories"]:
+        categories.append(CocoCategory(id=int(c["id"]), name=str(c["name"])))
+
+    images, anns, cats = load_d2s_as_coco_from_instance_id_png(
+        images_dir=images_dir,
+        masks_dir=masks_dir,
+        encoding=encoding,
+        categories=categories,
+        mask_suffix=src.get("mask_suffix", ".png"),
+        logger=logger,
+    )
+    return prepare_from_coco_bbox(images, anns, cats, image_root=images_dir, cfg=cfg, version=version, logger=logger)
