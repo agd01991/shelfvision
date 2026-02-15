@@ -3,18 +3,18 @@ import argparse
 from pathlib import Path
 import sys
 
-from src.core.config import load_yaml
-from src.core.logging import setup_logging
-from src.data.prepare import (
-    prepare_from_coco_bbox,
-    prepare_from_sku110k_bbox,
-    prepare_from_d2s_instances,
-)
-
 # чтобы `from src...` работало при запуске из корня проекта
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from src.core.config import load_yaml  # noqa: E402
+from src.core.logging import setup_logging  # noqa: E402
+from src.data.prepare import (  # noqa: E402
+    prepare_from_coco_bbox,
+    prepare_from_sku110k_bbox,
+    prepare_from_d2s_instances,
+)
 
 
 def main():
