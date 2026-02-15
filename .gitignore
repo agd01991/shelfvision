@@ -106,4 +106,5 @@ data/raw/**
 !data/raw/demo_coco/
 !data/raw/demo_coco/**
 
+
 # Если захочешь хранить ещё мини-датасет в репо — добавишь исключение аналогично demo_coco
