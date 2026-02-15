@@ -57,7 +57,6 @@ def load_coco(
                 iscrowd=int(a.get("iscrowd", 0)),
                 segmentation=a.get("segmentation", None),
             )
-            for a in obj.get("annotations", [])
         )
 
     cats: List[CocoCategory] = []
