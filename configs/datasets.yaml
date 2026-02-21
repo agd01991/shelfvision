@@ -56,3 +56,32 @@ datasets:
       min_visible: 0.25
       save_format: jpg
       jpeg_quality: 92
+
+  sku110k_small:
+    raw_dir: data/raw/sku110k_small
+    prepared_dir: data/prepared/sku110k_small
+    source:
+      type: sku110k_bbox
+      images_dir: data/raw/sku110k_small/images
+      csv_path: data/raw/sku110k_small/annotations.csv
+      category_name: product
+      category_id: 1
+    split:
+      mode: random_by_image
+      train: 0.8
+      val: 0.1
+      test: 0.1
+      seed: 42
+    validation:
+      min_bbox_area: 16.0
+      clip_to_image: true
+    report:
+      sample_per_split: 25
+      draw_max_boxes: 80
+    tiling:
+      enabled: true
+      tile_size: 1024
+      overlap: 0.2
+      min_visible: 0.25
+      save_format: jpg
+      jpeg_quality: 92
