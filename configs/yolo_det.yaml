@@ -1,0 +1,49 @@
+# # configs/yolo_det.yaml
+# seed: 42
+
+# # Откуда брать prepared COCO (annotations.json + splits.json + passport.json)
+# prepared_dir: data/prepared/sku110k_small/v1
+
+# # Куда собрать временный YOLO-датасет (images/ + labels/ + dataset.yaml)
+# yolo_dataset_dir: data/yolo_cache/sku110k_small_v1
+
+# # Пересобрать yolo_dataset_dir заново (удалить и создать)
+# rebuild_yolo_dataset: true
+
+# # Модель Ultralytics
+# model: yolov8n.pt
+
+# # Параметры обучения
+# imgsz: 640
+# epochs: 1
+# batch: 2
+# lr0: 0.01
+# weight_decay: 0.0005
+# device: "cpu"   # "cpu" или "0" / "0,1"
+
+# # Куда складывать результаты обучения (Ultralytics создаст подпапку)
+# run_dir: runs/yolo_det
+# name: sku110k_small_v1_yolov8n
+
+# prepared_dir: data/prepared/sku110k_small/v1_tiled
+# yolo_dataset_dir: data/yolo_cache/sku110k_small_v1_tiled
+# rebuild_yolo_dataset: true
+# model: yolov8n.pt
+# imgsz: 1024
+# epochs: 2
+# batch: 8
+# device: "cpu"
+# run_dir: runs/yolo_det
+# name: sku110k_small_v1_tiled_yolov8n
+# seed: 42
+
+prepared_dir: data/prepared/sku110k_small/v1
+yolo_dataset_dir: data/yolo_cache/sku110k_small_v1
+rebuild_yolo_dataset: true
+imgsz: 1024          # на v1 лучше 640 (быстрее и логично)
+epochs: 30
+batch: 16           # если GPU позволит, иначе 8
+device: "cpu"
+run_dir: runs/yolo_det
+name: sku110k_small_v1_yolov8n
+seed: 42

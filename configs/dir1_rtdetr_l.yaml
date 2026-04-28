@@ -1,0 +1,11 @@
+model: rtdetr-l.pt
+data: data/yolo_cache/sku110k_small_v1_tiled/dataset.yaml
+imgsz: 640
+epochs: 30
+batch: 4
+device: "0"
+workers: 2
+seed: 42
+save_period: 1
+project: runs/dir1
+name: dir1_rtdetr_l_img640

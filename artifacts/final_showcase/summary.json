@@ -1,0 +1,47 @@
+{
+  "best_system": "rtdetr",
+  "best_meta": {
+    "source": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/metrics.json",
+    "AP50-95": 0.5388879545880566
+  },
+  "picked_variant": "rtdetr",
+  "paths_json": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/reports/path_scan/paths.json",
+  "resolved": {
+    "repo_root": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision",
+    "images_dir": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/prepared/sku110k_small/v1_tiled/images/tiles",
+    "yolo_pt": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+    "rtdetr_pt": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_rtdetr_l_img640/weights/best.pt",
+    "frcnn_pt": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/dir1_detectron_frcnn/model_final.pth"
+  },
+  "timing_seconds": {
+    "images_count": 30,
+    "yolo_total": 4.303,
+    "rtdetr_total": 8.769,
+    "yolo_sec_per_image": 0.1434,
+    "rtdetr_sec_per_image": 0.2923
+  },
+  "detectron2": {
+    "available": true,
+    "used": true,
+    "error": null
+  },
+  "params": {
+    "device": "0",
+    "imgsz": 640,
+    "conf": 0.25,
+    "iou": 0.7,
+    "limit": 30,
+    "seed": 42,
+    "wbf": {
+      "iou": 0.55,
+      "skip": 0.001,
+      "w1": 1.0,
+      "w2": 1.0
+    }
+  },
+  "outputs": {
+    "out_dir": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/final_showcase",
+    "all_models": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/final_showcase/all_models",
+    "best_demo": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/final_showcase/best_demo"
+  }
+}

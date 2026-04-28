@@ -1,0 +1,13 @@
+{
+  "mode": "dark",
+  "param": 0.6,
+  "weights": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+  "imgsz": 640,
+  "metrics": {
+    "AP": 0.5363117300140472,
+    "AP50": 0.8876362695212983,
+    "AP75": 0.5895863474853693,
+    "AR100": 0.6325940637757916
+  },
+  "pred_json": "artifacts/dir5_robustness/pred_dark_0p6.json"
+}

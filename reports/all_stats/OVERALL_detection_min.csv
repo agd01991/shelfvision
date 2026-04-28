@@ -1,0 +1,5 @@
+system,name,AP50-95,AP50,P,R,source,AR100
+YOLO_best_from_11,E03_imgsz_640,0.56312,0.88784,0.86935,0.81526,/mnt/d/1Diplom/runs_night_backup/summary.csv,
+DIR3_yolo,,0.5384424906812151,0.8880174043598603,,,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/metrics.json,0.6347125675824782
+DIR3_rtdetr,,0.5388879545880566,0.8909725741123059,,,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/metrics.json,0.6306410680790024
+DIR3_wbf,,0.5186543406380095,0.8751064207191712,,,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/metrics.json,0.6358711243517599

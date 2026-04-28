@@ -1,0 +1,2 @@
+path,status,raw_keys
+/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/d2s_maskrcnn/metrics.json,ok,"data_time, eta_seconds, fast_rcnn/cls_accuracy, fast_rcnn/false_negative, fast_rcnn/fg_cls_accuracy, iteration, loss_box_reg, loss_cls, loss_mask, loss_rpn_cls, loss_rpn_loc, lr, mask_rcnn/accuracy, mask_rcnn/false_negative, mask_rcnn/false_positive, rank_data_time, roi_head/num_bg_samples, roi_head/num_fg_samples, rpn/num_neg_anchors, rpn/num_pos_anchors, time, total_loss"

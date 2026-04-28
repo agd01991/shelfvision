@@ -8,6 +8,7 @@ __pycache__/
 
 # venv
 .venv/
+.venv_wsl/
 venv/
 env/
 
@@ -33,3 +34,5 @@ weights/
 # DATA: ничего из data не версионируем
 data/**
 !data/README.md
+sku110k_small_v1_yolo.zip
+sku110k_small_v1_tiled_yolo.zip

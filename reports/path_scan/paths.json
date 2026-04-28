@@ -1,0 +1,102 @@
+{
+  "ROOT_repo": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision",
+    "note": "Корень репозитория shelfvision"
+  },
+  "ROOT_diplom": {
+    "status": "FOUND",
+    "path": "/mnt/d/1Diplom",
+    "note": "Папка D:\\1Diplom"
+  },
+  "SKU_prepared_small_v1": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/prepared/sku110k_small/v1",
+    "note": "Prepared COCO bbox (small)"
+  },
+  "SKU_prepared_small_v1_tiled": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/prepared/sku110k_small/v1_tiled",
+    "note": "Prepared tiled"
+  },
+  "SKU_yolo_cache_small_tiled": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/yolo_cache/sku110k_small_v1_tiled",
+    "note": "Ultralytics dataset cache"
+  },
+  "D2S_raw_small": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/raw/d2s_small",
+    "note": "D2S small subset (images + annotations.json)"
+  },
+  "D2S_splits": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/coco_splits/d2s_small",
+    "note": "train/val/test json (fix versions)"
+  },
+  "D2S_yolo_seg_cache": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/yolo_cache/d2s_small_seg",
+    "note": "Ultralytics seg dataset cache"
+  },
+  "YOLO_11_summary_csv": {
+    "status": "FOUND",
+    "path": "/mnt/d/1Diplom/runs_night_backup/summary.csv",
+    "note": "Сводка 11 экспериментов YOLO (summary.csv)"
+  },
+  "DIR1_metrics_csv": {
+    "status": "FOUND",
+    "path": "/mnt/d/1Diplom/reports/dir1_compare/metrics.csv",
+    "note": "Таблица сравнения моделей (dir1_report_and_wbf)"
+  },
+  "DIR3_metrics_json": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/metrics.json",
+    "note": "WBF ensemble metrics.json"
+  },
+  "DIR5_robustness_dir": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir5_robustness",
+    "note": "Папка с metrics_*.json по устойчивости"
+  },
+  "D2S_maskrcnn_model_final": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/d2s_maskrcnn/model_final.pth",
+    "note": "Detectron2 Mask R-CNN weights"
+  },
+  "D2S_maskrcnn_test_metrics": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/d2s_maskrcnn/metrics.json",
+    "note": "Mask R-CNN evaluation on test_fix.json"
+  },
+  "D2S_yolo_seg_run_dir": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/d2s_seg/d2s_small_yolov8s_seg_img6402",
+    "note": "Последний запуск YOLO-seg на D2S (папка run)"
+  },
+  "D2S_yolo_seg_best_pt": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/d2s_seg/d2s_small_yolov8s_seg_img6402/weights/best.pt",
+    "note": "YOLO-seg best.pt"
+  },
+  "D2S_yolo_seg_results_csv": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/d2s_seg/d2s_small_yolov8s_seg_img6402/results.csv",
+    "note": "YOLO-seg results.csv"
+  },
+  "DIR1_yolo_best_pt": {
+    "status": "FOUND",
+    "path": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+    "note": "YOLO детектор best.pt (dir1)"
+  },
+  "DIR1_rtdetr_best_pt": {
+    "status": "FOUND",
+    "path": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_rtdetr_l_img640/weights/best.pt",
+    "note": "RT-DETR best.pt (dir1)"
+  },
+  "DIR1_detectron_frcnn_model_final": {
+    "status": "FOUND",
+    "path": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/dir1_detectron_frcnn/model_final.pth",
+    "note": "Detectron2 Faster R-CNN weights (dir1)"
+  }
+}

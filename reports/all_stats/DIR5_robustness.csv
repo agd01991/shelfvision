@@ -1,0 +1,7 @@
+mode,param,AP,AP50,AP75,AR100,file
+blur,2.0,0.5257565995729312,0.8726947446493168,0.5728831619659326,0.6254110118062451,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir5_robustness/metrics_blur_2p0.json
+clean,0.0,0.5381463160851063,0.8882057714999174,0.5949399977477148,0.6343815513626834,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir5_robustness/metrics_clean_0p0.json
+dark,0.6,0.5363117300140472,0.8876362695212983,0.5895863474853693,0.6325940637757916,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir5_robustness/metrics_dark_0p6.json
+downscale,0.5,0.5371206546205155,0.8878443382367937,0.5936701125207746,0.6338960609069845,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir5_robustness/metrics_downscale_0p5.json
+jpeg,50.0,0.5383389534224743,0.8874091446700306,0.5949083848135922,0.6344367207326492,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir5_robustness/metrics_jpeg_50p0.json
+noise,10.0,0.5317902094550413,0.8752549703475908,0.587868706798256,0.6265695685755268,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir5_robustness/metrics_noise_10p0.json

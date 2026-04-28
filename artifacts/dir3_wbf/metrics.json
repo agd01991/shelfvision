@@ -1,0 +1,60 @@
+{
+  "name": "dir3_wbf",
+  "test_json": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/coco_splits/sku110k_small_v1_tiled/test.json",
+  "images_dir": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/prepared/sku110k_small/v1_tiled/images/tiles",
+  "imgsz": 640,
+  "device": "0",
+  "conf": 0.001,
+  "iou": 0.7,
+  "batches": {
+    "yolo_batch": 8,
+    "detr_batch": 1
+  },
+  "half": true,
+  "wbf": {
+    "iou_thr": 0.55,
+    "skip_thr": 0.001,
+    "weights": [
+      1.0,
+      1.0
+    ]
+  },
+  "timing_seconds": {
+    "yolo_predict_total": 14.6,
+    "detr_predict_total": 29.31,
+    "images_count": 384,
+    "yolo_sec_per_image": 0.038,
+    "detr_sec_per_image": 0.0763
+  },
+  "metrics_test": {
+    "yolo": {
+      "AP": 0.5384424906812151,
+      "AP50": 0.8880174043598603,
+      "AP75": 0.5964217726779787,
+      "AR1": 0.03103828754275626,
+      "AR10": 0.27693920335429767,
+      "AR100": 0.6347125675824782
+    },
+    "rtdetr": {
+      "AP": 0.5388879545880566,
+      "AP50": 0.8909725741123059,
+      "AP75": 0.5888942342245654,
+      "AR1": 0.030961050424804147,
+      "AR10": 0.2771819485821472,
+      "AR100": 0.6306410680790024
+    },
+    "wbf": {
+      "AP": 0.5186543406380095,
+      "AP50": 0.8751064207191712,
+      "AP75": 0.5538129062591699,
+      "AR1": 0.030883813306852033,
+      "AR10": 0.26732869910625623,
+      "AR100": 0.6358711243517599
+    }
+  },
+  "predictions": {
+    "yolo": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/pred_yolo.json",
+    "rtdetr": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/pred_rtdetr.json",
+    "wbf": "/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/artifacts/dir3_wbf/pred_wbf.json"
+  }
+}

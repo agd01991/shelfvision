@@ -1,0 +1,10 @@
+model: yolov8s-seg.pt
+data: data/yolo_cache/d2s_small_seg/dataset.yaml
+imgsz: 640
+epochs: 30
+batch: 4
+device: "0"
+workers: 2
+seed: 42
+project: runs/d2s_seg
+name: d2s_small_yolov8s_seg_img640

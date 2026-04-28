@@ -1,0 +1,12 @@
+P,R,epoch_last,exp,mAP50,mAP50-95,model,override,save_dir_full,seconds_total,status,minutes_total,is_best
+0.86111,0.8174,30.0,BASE_yolov8s_img1024_e30_b4,0.88157,0.55613,yolov8s.pt,{},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\BASE_yolov8s_img1024_e30_b4__full,3727.4,ok,62.12,False
+0.86707,0.77808,30.0,E01_model_yolov8n,0.86633,0.54935,yolov8n.pt,{},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E01_model_yolov8n__full,2894.3,ok,48.24,False
+0.85868,0.81123,30.0,E02_model_yolov8m,0.87686,0.55417,yolov8m.pt,{},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E02_model_yolov8m__full,7176.4,ok,119.61,False
+0.86935,0.81526,30.0,E03_imgsz_640,0.88784,0.56312,yolov8s.pt,{'imgsz': 640},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E03_imgsz_640__full,2648.8,ok,44.15,True
+0.86798,0.79273,30.0,E04_imgsz_1280,0.87025,0.54837,yolov8s.pt,{'imgsz': 1280},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E04_imgsz_1280__full,5168.2,ok,86.14,False
+0.86111,0.8174,30.0,E05_lr0_0p005,0.88157,0.55613,yolov8s.pt,{'lr0': 0.005},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E05_lr0_0p005__full,3837.3,ok,63.96,False
+0.86285,0.80089,30.0,E06_wd_0p001,0.87196,0.54956,yolov8s.pt,{'weight_decay': 0.001},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E06_wd_0p001__full,3902.9,ok,65.05,False
+0.85134,0.77552,30.0,E07_optimizer_AdamW,0.86052,0.54336,yolov8s.pt,{'optimizer': 'AdamW'},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E07_optimizer_AdamW__full,3827.6,ok,63.79,False
+0.86898,0.79835,30.0,E08_mosaic_0,0.87794,0.55376,yolov8s.pt,{'mosaic': 0.0},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E08_mosaic_0__full,3669.7,ok,61.16,False
+0.86461,0.78341,30.0,E09_mixup_0p2,0.86623,0.54412,yolov8s.pt,{'mixup': 0.2},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E09_mixup_0p2__full,3873.1,ok,64.55,False
+0.86111,0.8174,30.0,E10_close_mosaic_10,0.88157,0.55613,yolov8s.pt,{'close_mosaic': 10},C:\Users\agd01\Documents\1ДипломМага\Проги\shelfvision\runs_night_backup\E10_close_mosaic_10__full,3802.6,ok,63.38,False

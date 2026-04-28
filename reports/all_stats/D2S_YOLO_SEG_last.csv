@@ -1,0 +1,2 @@
+run_dir,status,epoch_last,P_box,R_box,mAP50_box,mAP5095_box,mAP50_mask,mAP5095_mask
+/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/runs/d2s_seg/d2s_small_yolov8s_seg_img6402,ok,30,0.88011,0.58831,0.75064,0.71896,0.75064,0.71763
