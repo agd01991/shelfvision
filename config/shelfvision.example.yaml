@@ -37,6 +37,16 @@ density:
   cols: 3
   limit: 20
 
+video:
+  input_path: data/video/test.mp4
+  output_dir: results/video/yolo
+  frame_skip: 3
+  max_frames: 0
+  save_video: true
+  sample_frames: 8
+  show_masks: true
+  codec: mp4v
+
 setup:
   # Windows/local virtual environment used to launch Streamlit Control Panel.
   venv_dir: .venv
