@@ -15,13 +15,13 @@ from control_panel import (
     load_config,
     page_downloads,
     page_results,
-    page_setup,
     rel_path,
     resolve_path,
     run_command,
     save_config,
     venv_python,
 )
+from setup_pages import page_setup
 
 
 ROOT = Path(__file__).resolve().parents[1]
