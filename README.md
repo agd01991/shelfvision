@@ -9,6 +9,7 @@
 - Streamlit-интерфейс экспериментов;
 - Streamlit-интерфейс интерактивного инференса;
 - единую панель управления для первого запуска, настройки и запуска сценариев кнопками;
+- отдельную установку зависимостей через WSL в Linux-среду `.venv_wsl`;
 - единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
 - расчёт bbox-метрик и визуализацию ошибок модели;
 - автоматическую рекомендацию лучшего pipeline по набору метрик;
@@ -35,7 +36,7 @@ scripts\windows\start_control_panel.bat
 - открывает ShelfVision Control Panel.
 
 После открытия панели можно кнопками:
-- установить все зависимости из `requirements.txt`;
+- установить все зависимости из `requirements.txt` через WSL в `.venv_wsl`;
 - проверить или установить WSL;
 - скачать веса моделей и файлы данных по указанным URL;
 - настроить пути к изображениям, разметке, весам и папке результатов;
@@ -43,6 +44,46 @@ scripts\windows\start_control_panel.bat
 - запустить инференс;
 - запустить полный pipeline;
 - открыть результаты.
+
+## Установка зависимостей через WSL
+
+В Control Panel в разделе **«Первый запуск»** есть отдельная кнопка:
+
+```text
+Создать WSL venv и установить зависимости
+```
+
+Она создаёт Linux-виртуальную среду:
+
+```text
+.venv_wsl
+```
+
+и устанавливает зависимости командой внутри WSL:
+
+```bash
+python3 -m venv .venv_wsl
+.venv_wsl/bin/python -m pip install --upgrade pip
+.venv_wsl/bin/python -m pip install -r requirements.txt
+```
+
+То же самое можно запустить без интерфейса:
+
+```bat
+scripts\windows\setup_wsl_env.bat
+```
+
+или командой:
+
+```bash
+python scripts/setup_wsl_env.py --venv-dir .venv_wsl --requirements requirements.txt
+```
+
+Подробности вынесены в:
+
+```text
+docs/wsl_setup.md
+```
 
 ## Запуск панели управления вручную
 
@@ -330,6 +371,7 @@ scripts/windows/
 
 ```text
 start_control_panel.bat        — первый запуск, .venv, минимальные пакеты и панель управления
+setup_wsl_env.bat              — установка всех зависимостей через WSL в .venv_wsl
 run_interface.bat              — запуск интерфейса таблиц и графиков
 run_inference_app.bat          — запуск интерфейса инференса
 run_yolo_inference_example.bat — пример запуска YOLO на одном изображении
@@ -380,6 +422,9 @@ config/
 ├── shelfvision.example.yaml  # пример конфигурации
 └── shelfvision.yaml          # локальная конфигурация после первого запуска
 
+docs/
+└── wsl_setup.md              # установка зависимостей через WSL
+
 src/inference/
 ├── prediction.py             # единый формат результата
 ├── yolo_inference.py         # адаптер YOLO/YOLO-Seg
@@ -404,6 +449,7 @@ src/reporting/
 
 scripts/
 ├── control_panel.py          # панель управления первым запуском и сценариями
+├── setup_wsl_env.py          # создание .venv_wsl и установка requirements через WSL
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
 ├── inference_app.py          # интерактивный инференс по изображению
 ├── smoke_cli.py              # smoke-проверка CLI и импортов
