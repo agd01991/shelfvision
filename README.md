@@ -1,7 +1,13 @@
-# ShelfVision (scaffold)
+# ShelfVision
 
-Минимальный каркас проекта для ВКР: подготовка датасета в единый COCO-подобный формат (bbox),
-валидация разметки, групповое разбиение train/val/test, генерация отчётов с примерами.
+Проект для ВКР: система анализа изображений товарных полок с использованием моделей детекции и сегментации.
+
+Сейчас проект включает:
+- подготовку датасета в COCO/YOLO-подобных форматах;
+- обучение и сравнение моделей;
+- отчётные таблицы и графики;
+- Streamlit-интерфейс экспериментов;
+- единый слой инференса для постепенного подключения YOLO, RT-DETR, Faster R-CNN и WBF.
 
 ## Быстрый старт
 
@@ -25,3 +31,70 @@ python scripts/prepare_dataset.py --dataset demo_coco --version v1
 - data/prepared/demo_coco/v1/passport.json
 - data/prepared/demo_coco/v1/issues.json
 - data/prepared/demo_coco/v1/reports/samples_{train,val,test}/
+
+## Запуск интерфейса экспериментов
+
+```bash
+streamlit run scripts/interface_app.py
+```
+
+Интерфейс показывает таблицы метрик, графики, визуальные примеры, устойчивость моделей и результаты YOLO-Seg.
+
+## Запуск инференса YOLO на одном изображении
+
+```bash
+python run_inference.py --model yolo --weights models/yolo/best.pt --image data/test/image_001.jpg --out-dir results/inference/yolo
+```
+
+После запуска будут сохранены:
+- `results/inference/yolo/prediction.json` — предсказания в едином формате;
+- `results/inference/yolo/summary.csv` — краткая аналитика;
+- `results/inference/yolo/visualized/` — изображение с bbox/masks.
+
+## Пакетная обработка папки изображений
+
+```bash
+python run_inference.py --model yolo --weights models/yolo/best.pt --images-dir data/test --out-dir results/inference/yolo_batch
+```
+
+После запуска будут сохранены:
+- `predictions.json`;
+- `summary.csv`;
+- папка `visualized/` с отрисованными результатами.
+
+## Новая структура инференса
+
+```text
+src/inference/
+├── prediction.py      # единый формат результата
+└── yolo_inference.py  # адаптер YOLO/YOLO-Seg
+
+src/visualization/
+└── draw_boxes.py      # отрисовка bbox и masks
+
+run_inference.py       # CLI-запуск инференса
+```
+
+Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
+
+```python
+{
+    "image_path": "data/test/image_001.jpg",
+    "model_name": "YOLO",
+    "boxes": [[x1, y1, x2, y2]],
+    "scores": [0.91],
+    "labels": ["product"],
+    "masks": [],
+    "objects_count": 1,
+    "average_confidence": 0.91,
+    "inference_time": 0.08
+}
+```
+
+## Следующие этапы
+
+1. Подключить RT-DETR-L к тому же формату результата.
+2. Подключить Faster R-CNN.
+3. Добавить WBF-ансамбль поверх результатов YOLO и RT-DETR.
+4. Добавить расчёт метрик и визуализацию ошибок.
+5. Расширить интерфейс режимом загрузки изображения и выбора модели.
