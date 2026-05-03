@@ -4,12 +4,16 @@
 
 Сейчас проект включает:
 - подготовку датасета в COCO/YOLO-подобных форматах;
+- конвертацию COCO segmentation в YOLO-Seg labels;
 - обучение и сравнение моделей;
+- отдельное обучение YOLO-Seg;
+- инференс YOLO, YOLO-Seg, RT-DETR, Faster R-CNN и WBF;
 - отчётные таблицы и графики;
 - Streamlit-интерфейс экспериментов;
 - Streamlit-интерфейс интерактивного инференса;
-- единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
+- единый слой инференса для подключения YOLO, YOLO-Seg, RT-DETR, Faster R-CNN и WBF;
 - расчёт bbox-метрик и визуализацию ошибок модели;
+- расчёт mask-метрик для YOLO-Seg: mask IoU, APmask50, APmask75, APmask50-95;
 - автоматическую рекомендацию лучшего pipeline по набору метрик;
 - единый отчёт сравнения нескольких моделей с таблицами и графиками;
 - анализ плотности найденных товаров по зонам изображения;
@@ -41,6 +45,44 @@ python scripts/prepare_dataset.py --dataset demo_coco --version v1
 - data/prepared/demo_coco/v1/issues.json
 - data/prepared/demo_coco/v1/reports/samples_{train,val,test}/
 
+## Подготовка сегментационного YOLO-Seg датасета
+
+Если исходная разметка хранится в COCO segmentation, её можно перевести в YOLO-Seg формат:
+
+```bash
+python scripts/coco_to_yolo_seg.py \
+  --images_root data/raw/d2s_small/images \
+  --train_json data/raw/d2s_small/annotations_train.json \
+  --val_json data/raw/d2s_small/annotations_val.json \
+  --test_json data/raw/d2s_small/annotations_test.json \
+  --out_dir data/yolo_cache/d2s_small_seg
+```
+
+После запуска будут сохранены:
+- `data/yolo_cache/d2s_small_seg/dataset.yaml`;
+- `data/yolo_cache/d2s_small_seg/meta.json`;
+- `images/train`, `images/val`, `images/test`;
+- `labels/train`, `labels/val`, `labels/test`.
+
+## Обучение YOLO-Seg
+
+```bash
+python scripts/train_yolo_seg.py \
+  --data data/yolo_cache/d2s_small_seg/dataset.yaml \
+  --model yolov8s-seg.pt \
+  --epochs 30 \
+  --imgsz 640 \
+  --batch 8 \
+  --project runs/yolo_seg \
+  --name d2s_small_yolov8s_seg
+```
+
+После обучения основные веса находятся здесь:
+
+```text
+runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt
+```
+
 ## Запуск интерфейса экспериментов
 
 ```bash
@@ -69,6 +111,14 @@ streamlit run scripts/inference_app.py
 ```bash
 python run_inference.py --model yolo --weights models/yolo/best.pt --image data/test/image_001.jpg --out-dir results/inference/yolo
 ```
+
+## Запуск инференса YOLO-Seg на одном изображении
+
+```bash
+python run_inference.py --model yolo_seg --weights runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt --image data/test/image_001.jpg --out-dir results/inference/yolo_seg
+```
+
+Если модель возвращает маски, они сохраняются в поле `masks` внутри `prediction.json` / `predictions.json` и отрисовываются в `visualized/`.
 
 ## Запуск инференса RT-DETR-L на одном изображении
 
@@ -108,6 +158,11 @@ YOLO:
 python run_inference.py --model yolo --weights models/yolo/best.pt --images-dir data/test --out-dir results/inference/yolo_batch
 ```
 
+YOLO-Seg:
+```bash
+python run_inference.py --model yolo_seg --weights runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt --images-dir data/yolo_cache/d2s_small_seg/images/test --out-dir results/inference/yolo_seg_batch
+```
+
 RT-DETR-L:
 ```bash
 python run_inference.py --model rtdetr --weights models/rtdetr/best.pt --images-dir data/test --out-dir results/inference/rtdetr_batch
@@ -128,7 +183,7 @@ python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-
 - `summary.csv`;
 - папка `visualized/` с отрисованными результатами.
 
-## Расчёт метрик
+## Расчёт bbox-метрик
 
 Для COCO-разметки:
 
@@ -159,6 +214,33 @@ python run_evaluation.py --predictions results/inference/yolo_batch/predictions.
 - зелёный — правильное обнаружение TP;
 - красный — ложное обнаружение FP;
 - жёлтый — пропущенный объект FN.
+
+## Расчёт mask-метрик для YOLO-Seg
+
+Для оценки масок нужен COCO JSON с `segmentation`:
+
+```bash
+python run_segmentation_evaluation.py \
+  --predictions results/inference/yolo_seg_batch/predictions.json \
+  --gt-coco data/raw/d2s_small/annotations_test.json \
+  --out-dir results/evaluation/yolo_seg_masks \
+  --iou 0.5
+```
+
+После запуска будут сохранены:
+- `segmentation_metrics.json`;
+- `segmentation_metrics_summary.csv`;
+- `segmentation_metrics_per_image.csv`;
+- `mask_ap_by_threshold.csv`.
+
+Основные показатели:
+- `mean_mask_iou`;
+- `mask_precision`;
+- `mask_recall`;
+- `mask_f1`;
+- `APmask50`;
+- `APmask75`;
+- `APmask50-95`.
 
 ## Автоматическая рекомендация лучшего pipeline
 
@@ -248,7 +330,7 @@ python run_mini_report.py --comparison-json results/model_comparison/model_compa
 
 ## Запуск полного pipeline одной командой
 
-Полный pipeline запускает инференс, оценку, рекомендацию, сравнение моделей, анализ плотности и мини-отчёт:
+Полный bbox-pipeline запускает инференс, оценку, рекомендацию, сравнение моделей, анализ плотности и мини-отчёт:
 
 ```bash
 python run_full_pipeline.py --images-dir data/test/images --gt-yolo-labels data/test/labels --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --models yolo rtdetr wbf --out-dir results/full_pipeline
@@ -266,9 +348,22 @@ python run_full_pipeline.py --images-dir data/test/images --gt-coco data/test/an
 python run_full_pipeline.py --images-dir data/test/images --gt-yolo-labels data/test/labels --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --frcnn-weights models/faster_rcnn/model_final.pth --models yolo rtdetr frcnn wbf --out-dir results/full_pipeline
 ```
 
+Для запуска сегментационной ветки YOLO-Seg:
+
+```bash
+python run_full_pipeline.py \
+  --images-dir data/yolo_cache/d2s_small_seg/images/test \
+  --gt-coco data/raw/d2s_small/annotations_test.json \
+  --yolo-seg-weights runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt \
+  --models yolo_seg \
+  --density-model yolo_seg \
+  --out-dir results/full_pipeline_seg
+```
+
 После запуска будут сформированы папки:
 - `inference/` — предсказания и визуализации моделей;
-- `evaluation/` — метрики и ошибки;
+- `evaluation/` — bbox-метрики и ошибки;
+- `segmentation_evaluation/` — mask-метрики YOLO-Seg;
 - `recommendation/` — выбор лучшего pipeline;
 - `model_comparison/` — единый отчёт сравнения;
 - `density/` — анализ плотности;
@@ -342,7 +437,8 @@ src/visualization/
 └── draw_boxes.py             # отрисовка bbox и masks
 
 src/evaluation/
-├── metrics.py                # IoU, Precision, Recall, F1, AP50, AP50-95
+├── metrics.py                # IoU, Precision, Recall, F1, AP50, AP50-95 для bbox
+├── segmentation_metrics.py   # mask IoU, APmask50, APmask75, APmask50-95
 ├── error_visualization.py    # отрисовка TP/FP/FN
 ├── recommend_model.py        # автоматический выбор лучшего pipeline
 └── compare_models.py         # единый отчёт сравнения моделей
@@ -354,13 +450,16 @@ src/reporting/
 └── mini_report.py            # итоговый мини-отчёт для презентации
 
 scripts/
+├── coco_to_yolo_seg.py       # конвертация COCO segmentation в YOLO-Seg
+├── train_yolo_seg.py         # обучение YOLO-Seg
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
 ├── inference_app.py          # интерактивный инференс по изображению
 ├── smoke_cli.py              # smoke-проверка CLI и импортов
 └── windows/                  # .bat-файлы для Windows
 
 run_inference.py              # CLI-запуск инференса
-run_evaluation.py             # CLI-запуск оценки качества
+run_evaluation.py             # CLI-запуск bbox-оценки качества
+run_segmentation_evaluation.py # CLI-запуск mask-оценки качества
 run_recommendation.py         # CLI-рекомендация лучшего pipeline
 run_compare.py                # CLI-сравнение нескольких моделей
 run_density.py                # CLI-анализ плотности товаров
@@ -373,11 +472,11 @@ run_full_pipeline.py          # CLI-запуск полного pipeline
 ```python
 {
     "image_path": "data/test/image_001.jpg",
-    "model_name": "YOLO",
+    "model_name": "YOLO-Seg",
     "boxes": [[x1, y1, x2, y2]],
     "scores": [0.91],
     "labels": ["product"],
-    "masks": [],
+    "masks": [[[x1, y1], [x2, y2], [x3, y3]]],
     "objects_count": 1,
     "average_confidence": 0.91,
     "inference_time": 0.08
@@ -387,4 +486,5 @@ run_full_pipeline.py          # CLI-запуск полного pipeline
 ## Следующие этапы
 
 1. Провести ручную проверку pipeline на реальных весах и тестовой папке.
-2. При необходимости добавить в интерфейс вкладку с мини-отчётом.
+2. При необходимости добавить в интерфейс вкладку с mini-report и mask-метриками.
+3. Расширить mask-оценку визуализацией TP/FP/FN для масок.
