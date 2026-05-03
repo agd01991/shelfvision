@@ -7,7 +7,8 @@
 - обучение и сравнение моделей;
 - отчётные таблицы и графики;
 - Streamlit-интерфейс экспериментов;
-- единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF.
+- единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
+- расчёт bbox-метрик и визуализацию ошибок модели.
 
 ## Быстрый старт
 
@@ -104,7 +105,39 @@ python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-
 - `summary.csv`;
 - папка `visualized/` с отрисованными результатами.
 
-## Новая структура инференса
+## Расчёт метрик
+
+Для COCO-разметки:
+
+```bash
+python run_evaluation.py --predictions results/inference/yolo_batch/predictions.json --gt-coco data/test/annotations.json --out-dir results/evaluation/yolo
+```
+
+Для YOLO-разметки:
+
+```bash
+python run_evaluation.py --predictions results/inference/yolo_batch/predictions.json --gt-yolo-labels data/test/labels --images-dir data/test/images --out-dir results/evaluation/yolo
+```
+
+С визуализацией ошибок:
+
+```bash
+python run_evaluation.py --predictions results/inference/yolo_batch/predictions.json --gt-yolo-labels data/test/labels --images-dir data/test/images --out-dir results/evaluation/yolo --visualize-errors --limit 20
+```
+
+После запуска будут сохранены:
+- `metrics.json`;
+- `metrics_summary.csv`;
+- `metrics_per_image.csv`;
+- `ap_by_threshold.csv`;
+- `errors/` с изображениями ошибок, если указан `--visualize-errors`.
+
+Цвета ошибок:
+- зелёный — правильное обнаружение TP;
+- красный — ложное обнаружение FP;
+- жёлтый — пропущенный объект FN.
+
+## Новая структура инференса и оценки
 
 ```text
 src/inference/
@@ -117,7 +150,12 @@ src/inference/
 src/visualization/
 └── draw_boxes.py             # отрисовка bbox и masks
 
+src/evaluation/
+├── metrics.py                # IoU, Precision, Recall, F1, AP50, AP50-95
+└── error_visualization.py    # отрисовка TP/FP/FN
+
 run_inference.py              # CLI-запуск инференса
+run_evaluation.py             # CLI-запуск оценки качества
 ```
 
 Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
@@ -138,6 +176,6 @@ run_inference.py              # CLI-запуск инференса
 
 ## Следующие этапы
 
-1. Добавить расчёт метрик и визуализацию ошибок.
-2. Расширить интерфейс режимом загрузки изображения и выбора модели.
-3. Добавить автоматическую рекомендацию лучшего pipeline.
+1. Расширить интерфейс режимом загрузки изображения и выбора модели.
+2. Добавить автоматическую рекомендацию лучшего pipeline.
+3. Добавить сравнение нескольких моделей в одном отчёте.
