@@ -10,7 +10,8 @@
 - Streamlit-интерфейс интерактивного инференса;
 - единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
 - расчёт bbox-метрик и визуализацию ошибок модели;
-- автоматическую рекомендацию лучшего pipeline по набору метрик.
+- автоматическую рекомендацию лучшего pipeline по набору метрик;
+- единый отчёт сравнения нескольких моделей с таблицами и графиками.
 
 ## Быстрый старт
 
@@ -181,6 +182,22 @@ python run_recommendation.py --metrics results/evaluation/yolo/metrics_summary.c
 - `recommendation_ranking.csv`;
 - `recommendation.md`.
 
+## Единый отчёт сравнения моделей
+
+Для формирования отчёта по нескольким моделям:
+
+```bash
+python run_compare.py --metrics results/evaluation/yolo/metrics_summary.csv results/evaluation/rtdetr/metrics_summary.csv results/evaluation/frcnn/metrics_summary.csv results/evaluation/wbf/metrics_summary.csv --labels YOLO RT-DETR Faster-R-CNN WBF --out-dir results/model_comparison
+```
+
+После запуска будут сохранены:
+- `model_comparison.json`;
+- `model_comparison.csv`;
+- `model_comparison.md`;
+- `plots/` с графиками по AP50-95, AP50, precision, recall, F1 и recommendation score.
+
+Этот отчёт удобно использовать в практической главе ВКР: он показывает рейтинг моделей, лучшую модель по каждой метрике и итоговую рекомендацию pipeline.
+
 ## Новая структура инференса и оценки
 
 ```text
@@ -197,7 +214,8 @@ src/visualization/
 src/evaluation/
 ├── metrics.py                # IoU, Precision, Recall, F1, AP50, AP50-95
 ├── error_visualization.py    # отрисовка TP/FP/FN
-└── recommend_model.py        # автоматический выбор лучшего pipeline
+├── recommend_model.py        # автоматический выбор лучшего pipeline
+└── compare_models.py         # единый отчёт сравнения моделей
 
 scripts/
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
@@ -206,6 +224,7 @@ scripts/
 run_inference.py              # CLI-запуск инференса
 run_evaluation.py             # CLI-запуск оценки качества
 run_recommendation.py         # CLI-рекомендация лучшего pipeline
+run_compare.py                # CLI-сравнение нескольких моделей
 ```
 
 Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
@@ -226,5 +245,5 @@ run_recommendation.py         # CLI-рекомендация лучшего pipe
 
 ## Следующие этапы
 
-1. Добавить сравнение нескольких моделей в одном отчёте.
-2. Добавить отдельный блок анализа плотности товаров.
+1. Добавить отдельный блок анализа плотности товаров.
+2. Добавить экспорт итогового мини-отчёта для презентации.
