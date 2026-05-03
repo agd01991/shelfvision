@@ -13,26 +13,31 @@ def quote_bash(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def run_wsl_python(venv_dir: str, script: str, script_args: List[str]) -> int:
+def run_wsl_python(venv_dir: str, python_args: List[str]) -> int:
     venv_dir = venv_dir.replace("\\", "/")
-    script = script.replace("\\", "/")
-    args = " ".join(quote_bash(arg.replace("\\", "/")) for arg in script_args)
-    command = f"cd \"$(wslpath '{ROOT}')\" && {quote_bash(f'{venv_dir}/bin/python')} {quote_bash(script)} {args}"
+    normalized_args = [arg.replace("\\", "/") for arg in python_args]
+    args = " ".join(quote_bash(arg) for arg in normalized_args)
+    command = f"cd \"$(wslpath '{ROOT}')\" && {quote_bash(f'{venv_dir}/bin/python')} {args}"
     result = subprocess.run(["wsl", "bash", "-lc", command], cwd=str(ROOT), text=True)
     return result.returncode
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run ShelfVision script through WSL virtual environment")
+    parser = argparse.ArgumentParser(
+        description="Run ShelfVision Python command through WSL virtual environment",
+        usage="python scripts/wsl_runtime.py [--venv-dir .venv_wsl] <python args...>",
+    )
     parser.add_argument("--venv-dir", default=".venv_wsl", help="WSL venv directory inside repository")
-    parser.add_argument("script", help="Python script to run, e.g. run_inference.py")
-    parser.add_argument("script_args", nargs=argparse.REMAINDER, help="Arguments passed to the target script")
-    return parser.parse_args()
+    known, python_args = parser.parse_known_args()
+    if not python_args:
+        parser.error("pass Python arguments, for example: run_inference.py --help or -m streamlit run scripts/video_app.py")
+    known.python_args = python_args
+    return known
 
 
 def main() -> None:
     args = parse_args()
-    raise SystemExit(run_wsl_python(args.venv_dir, args.script, args.script_args))
+    raise SystemExit(run_wsl_python(args.venv_dir, args.python_args))
 
 
 if __name__ == "__main__":
