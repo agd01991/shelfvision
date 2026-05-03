@@ -14,7 +14,8 @@
 - единый отчёт сравнения нескольких моделей с таблицами и графиками;
 - анализ плотности найденных товаров по зонам изображения;
 - экспорт итогового мини-отчёта для презентации и защиты;
-- запуск полного pipeline одной командой.
+- запуск полного pipeline одной командой;
+- `.bat`-файлы для удобного запуска на Windows.
 
 ## Быстрый старт
 
@@ -272,6 +273,33 @@ python run_full_pipeline.py --images-dir data/test/images --gt-yolo-labels data/
 - `density/` — анализ плотности;
 - `mini_report/` — итоговый HTML/Markdown-отчёт.
 
+## Запуск на Windows через `.bat`
+
+Готовые `.bat`-файлы лежат в папке:
+
+```text
+scripts/windows/
+```
+
+Доступные сценарии:
+
+```text
+run_interface.bat              — запуск интерфейса таблиц и графиков
+run_inference_app.bat          — запуск интерфейса инференса
+run_yolo_inference_example.bat — пример запуска YOLO на одном изображении
+run_full_pipeline_example.bat  — пример запуска полного pipeline
+run_mini_report_example.bat    — пример сборки мини-отчёта
+```
+
+Перед запуском example-файлов нужно открыть `.bat` и при необходимости изменить пути:
+
+```bat
+set WEIGHTS=models\yolo\best.pt
+set IMAGE=data\test\image_001.jpg
+set IMAGES_DIR=data\test\images
+set LABELS_DIR=data\test\labels
+```
+
 ## Новая структура инференса, оценки, аналитики и отчётов
 
 ```text
@@ -299,7 +327,8 @@ src/reporting/
 
 scripts/
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
-└── inference_app.py          # интерактивный инференс по изображению
+├── inference_app.py          # интерактивный инференс по изображению
+└── windows/                  # .bat-файлы для Windows
 
 run_inference.py              # CLI-запуск инференса
 run_evaluation.py             # CLI-запуск оценки качества
@@ -328,5 +357,5 @@ run_full_pipeline.py          # CLI-запуск полного pipeline
 
 ## Следующие этапы
 
-1. Добавить `.bat`-файлы для удобного запуска на Windows.
-2. Добавить smoke-тесты для проверки основных CLI-скриптов.
+1. Добавить smoke-тесты для проверки основных CLI-скриптов.
+2. Провести ручную проверку pipeline на реальных весах и тестовой папке.
