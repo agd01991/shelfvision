@@ -136,6 +136,17 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         density["cols"] = st.number_input("Cols", 1, 10, int(density.get("cols", 3)))
         density["limit"] = st.number_input("Visualize limit", 0, 1000, int(density.get("limit", 20)))
 
+        st.subheader("Видео")
+        video = config.setdefault("video", {})
+        video["input_path"] = st.text_input("Видеофайл", value=str(video.get("input_path", "data/video/test.mp4")))
+        video["output_dir"] = st.text_input("Папка результатов видео", value=str(video.get("output_dir", "results/video/yolo")))
+        video["frame_skip"] = st.number_input("Обрабатывать каждый N-й кадр", 1, 120, int(video.get("frame_skip", 3)))
+        video["max_frames"] = st.number_input("Максимум кадров, 0 — всё видео", 0, 100000, int(video.get("max_frames", 0)))
+        video["save_video"] = st.checkbox("Сохранять размеченное видео", value=bool(video.get("save_video", True)))
+        video["sample_frames"] = st.number_input("Кадры-примеры", 0, 100, int(video.get("sample_frames", 8)))
+        video["show_masks"] = st.checkbox("Показывать masks на видео", value=bool(video.get("show_masks", True)))
+        video["codec"] = st.text_input("Кодек", value=str(video.get("codec", "mp4v")))
+
         submitted = st.form_submit_button("Сохранить настройки")
         if submitted:
             save_config(config)
@@ -155,7 +166,7 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
 
     st.subheader("Интерфейсы")
     st.caption("Панель управления запускается из Windows .venv. Остальные рабочие задачи можно запускать через WSL.")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("Открыть интерфейс экспериментов", use_container_width=True):
             result = run_command(streamlit_command(config, "scripts/interface_app.py"))
@@ -163,6 +174,10 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
     with c2:
         if st.button("Открыть интерфейс инференса", use_container_width=True):
             result = run_command(streamlit_command(config, "scripts/inference_app.py"))
+            render_command_result(result)
+    with c3:
+        if st.button("Открыть видеоинтерфейс", use_container_width=True):
+            result = run_command(streamlit_command(config, "scripts/video_app.py"))
             render_command_result(result)
 
     st.subheader("Инференс одного изображения")
@@ -186,6 +201,41 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
         if device:
             args.extend(["--device", device])
         result = run_command(python_command(config, "run_inference.py", args))
+        render_command_result(result)
+
+    st.subheader("Видеоинференс")
+    if st.button("Обработать видео через выбранный runtime", use_container_width=True):
+        video = config.get("video", {})
+        args = [
+            "--model",
+            "yolo",
+            "--weights",
+            config["weights"]["yolo"],
+            "--video",
+            video.get("input_path", "data/video/test.mp4"),
+            "--out-dir",
+            video.get("output_dir", str(out_base / "video")),
+            "--conf",
+            str(runtime["conf"]),
+            "--imgsz",
+            str(runtime["imgsz"]),
+            "--frame-skip",
+            str(video.get("frame_skip", 3)),
+            "--max-frames",
+            str(video.get("max_frames", 0)),
+            "--sample-frames",
+            str(video.get("sample_frames", 8)),
+            "--codec",
+            str(video.get("codec", "mp4v")),
+        ]
+        if not bool(video.get("save_video", True)):
+            args.append("--no-save-video")
+        if not bool(video.get("show_masks", True)):
+            args.append("--no-masks")
+        device = str(runtime.get("device", "")).strip()
+        if device:
+            args.extend(["--device", device])
+        result = run_command(python_command(config, "run_video_inference.py", args))
         render_command_result(result)
 
     st.subheader("Полный pipeline")
