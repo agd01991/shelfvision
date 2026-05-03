@@ -21,10 +21,10 @@
 
 ## Самый простой первый запуск на Windows
 
-После скачивания проекта можно запустить файл из корня репозитория:
+После скачивания проекта можно запустить файл:
 
 ```bat
-start_control_panel.bat
+scripts\windows\start_control_panel.bat
 ```
 
 Он автоматически:
@@ -48,12 +48,6 @@ start_control_panel.bat
 
 ```bash
 streamlit run scripts/control_panel.py
-```
-
-Или через Windows `.bat`:
-
-```bat
-scripts\windows\run_control_panel.bat
 ```
 
 Конфигурация хранится в файле:
@@ -335,7 +329,7 @@ scripts/windows/
 Доступные сценарии:
 
 ```text
-run_control_panel.bat          — запуск панели управления
+start_control_panel.bat        — первый запуск, .venv, минимальные пакеты и панель управления
 run_interface.bat              — запуск интерфейса таблиц и графиков
 run_inference_app.bat          — запуск интерфейса инференса
 run_yolo_inference_example.bat — пример запуска YOLO на одном изображении
@@ -415,7 +409,6 @@ scripts/
 ├── smoke_cli.py              # smoke-проверка CLI и импортов
 └── windows/                  # .bat-файлы для Windows
 
-start_control_panel.bat       # первый запуск на Windows
 run_inference.py              # CLI-запуск инференса
 run_evaluation.py             # CLI-запуск оценки качества
 run_recommendation.py         # CLI-рекомендация лучшего pipeline
