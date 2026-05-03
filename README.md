@@ -9,7 +9,8 @@
 - Streamlit-интерфейс экспериментов;
 - Streamlit-интерфейс интерактивного инференса;
 - единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
-- расчёт bbox-метрик и визуализацию ошибок модели.
+- расчёт bbox-метрик и визуализацию ошибок модели;
+- автоматическую рекомендацию лучшего pipeline по набору метрик.
 
 ## Быстрый старт
 
@@ -153,6 +154,33 @@ python run_evaluation.py --predictions results/inference/yolo_batch/predictions.
 - красный — ложное обнаружение FP;
 - жёлтый — пропущенный объект FN.
 
+## Автоматическая рекомендация лучшего pipeline
+
+После расчёта метрик для нескольких моделей можно выбрать лучший pipeline:
+
+```bash
+python run_recommendation.py --metrics results/evaluation/yolo/metrics_summary.csv results/evaluation/rtdetr/metrics_summary.csv results/evaluation/frcnn/metrics_summary.csv results/evaluation/wbf/metrics_summary.csv --labels YOLO RT-DETR Faster-R-CNN WBF --out-dir results/recommendation
+```
+
+По умолчанию итоговый score считается по весам:
+- AP50-95 — 0.40;
+- AP50 — 0.20;
+- Recall — 0.15;
+- Precision — 0.15;
+- F1 — 0.05;
+- скорость — 0.05.
+
+Веса можно менять через параметры:
+
+```bash
+python run_recommendation.py --metrics results/evaluation/yolo/metrics_summary.csv results/evaluation/rtdetr/metrics_summary.csv --labels YOLO RT-DETR --w-ap50-95 0.50 --w-recall 0.20 --out-dir results/recommendation
+```
+
+После запуска будут сохранены:
+- `recommendation.json`;
+- `recommendation_ranking.csv`;
+- `recommendation.md`.
+
 ## Новая структура инференса и оценки
 
 ```text
@@ -168,7 +196,8 @@ src/visualization/
 
 src/evaluation/
 ├── metrics.py                # IoU, Precision, Recall, F1, AP50, AP50-95
-└── error_visualization.py    # отрисовка TP/FP/FN
+├── error_visualization.py    # отрисовка TP/FP/FN
+└── recommend_model.py        # автоматический выбор лучшего pipeline
 
 scripts/
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
@@ -176,6 +205,7 @@ scripts/
 
 run_inference.py              # CLI-запуск инференса
 run_evaluation.py             # CLI-запуск оценки качества
+run_recommendation.py         # CLI-рекомендация лучшего pipeline
 ```
 
 Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
@@ -196,6 +226,5 @@ run_evaluation.py             # CLI-запуск оценки качества
 
 ## Следующие этапы
 
-1. Добавить автоматическую рекомендацию лучшего pipeline.
-2. Добавить сравнение нескольких моделей в одном отчёте.
-3. Добавить отдельный блок анализа плотности товаров.
+1. Добавить сравнение нескольких моделей в одном отчёте.
+2. Добавить отдельный блок анализа плотности товаров.
