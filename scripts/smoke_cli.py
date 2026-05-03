@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -10,10 +11,13 @@ from typing import List
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 CLI_SCRIPTS = [
     "run_inference.py",
+    "run_video_inference.py",
     "run_evaluation.py",
     "run_recommendation.py",
     "run_compare.py",
@@ -29,6 +33,7 @@ MODULES = [
     "src.inference.rtdetr_inference",
     "src.inference.faster_rcnn_inference",
     "src.inference.ensemble_wbf",
+    "src.inference.video_inference",
     "src.visualization.draw_boxes",
     "src.evaluation.metrics",
     "src.evaluation.error_visualization",
@@ -46,6 +51,13 @@ class CheckResult:
     details: str = ""
 
 
+def _subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(ROOT) if not existing else str(ROOT) + os.pathsep + existing
+    return env
+
+
 def run_help_check(script_name: str, timeout: int = 30) -> CheckResult:
     script_path = ROOT / script_name
     if not script_path.exists():
@@ -59,6 +71,7 @@ def run_help_check(script_name: str, timeout: int = 30) -> CheckResult:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=timeout,
+            env=_subprocess_env(),
         )
     except Exception as exc:
         return CheckResult(script_name, False, str(exc))
@@ -94,6 +107,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     all_results: List[CheckResult] = []
+
+    print(f"Project root: {ROOT}")
+    print(f"Python:       {sys.executable}")
 
     if not args.skip_imports:
         import_results = [run_import_check(module) for module in MODULES]

@@ -11,7 +11,11 @@
 - отчётные таблицы и графики;
 - Streamlit-интерфейс экспериментов;
 - Streamlit-интерфейс интерактивного инференса;
-- единый слой инференса для подключения YOLO, YOLO-Seg, RT-DETR, Faster R-CNN и WBF;
+- Streamlit-интерфейс видеоинференса;
+- единую панель управления для первого запуска, настройки и запуска сценариев кнопками;
+- отдельную установку зависимостей через WSL в Linux-среду `.venv_wsl`;
+- единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
+- модуль видеоинференса YOLO для обработки видеофайлов;
 - расчёт bbox-метрик и визуализацию ошибок модели;
 - расчёт mask-метрик для YOLO-Seg: mask IoU, APmask50, APmask75, APmask50-95;
 - автоматическую рекомендацию лучшего pipeline по набору метрик;
@@ -22,7 +26,134 @@
 - `.bat`-файлы для удобного запуска на Windows;
 - smoke-проверку основных CLI-скриптов и модулей.
 
-## Быстрый старт
+## Самый простой первый запуск на Windows
+
+После скачивания проекта можно запустить файл:
+
+```bat
+scripts\windows\start_control_panel.bat
+```
+
+Он автоматически:
+- создаёт виртуальную среду `.venv`, если её ещё нет;
+- обновляет `pip`;
+- устанавливает минимальные зависимости для панели управления: `streamlit`, `PyYAML`, `pandas`;
+- создаёт `config/shelfvision.yaml` из примера;
+- открывает ShelfVision Control Panel.
+
+После открытия панели можно кнопками:
+- установить все зависимости из `requirements.txt` через WSL в `.venv_wsl`;
+- проверить или установить WSL;
+- скачать веса моделей и файлы данных по указанным URL;
+- настроить пути к изображениям, разметке, весам, видео и папке результатов;
+- запустить smoke-проверку;
+- запустить инференс;
+- запустить видеоинференс;
+- запустить полный pipeline;
+- открыть результаты.
+
+## Установка зависимостей через WSL
+
+В Control Panel в разделе **«Первый запуск»** есть отдельная кнопка:
+
+```text
+Создать WSL venv и установить зависимости
+```
+
+Она создаёт Linux-виртуальную среду:
+
+```text
+.venv_wsl
+```
+
+и устанавливает зависимости командой внутри WSL:
+
+```bash
+python3 -m venv .venv_wsl
+.venv_wsl/bin/python -m pip install --upgrade pip
+.venv_wsl/bin/python -m pip install -r requirements.txt
+```
+
+То же самое можно запустить без интерфейса:
+
+```bat
+scripts\windows\setup_wsl_env.bat
+```
+
+или командой:
+
+```bash
+python scripts/setup_wsl_env.py --venv-dir .venv_wsl --requirements requirements.txt
+```
+
+Подробности вынесены в:
+
+```text
+docs/wsl_setup.md
+```
+
+## Запуск панели управления вручную
+
+```bash
+streamlit run scripts/control_panel_wsl.py
+```
+
+Конфигурация хранится в файле:
+
+```text
+config/shelfvision.yaml
+```
+
+Шаблон конфигурации:
+
+```text
+config/shelfvision.example.yaml
+```
+
+## Видеоинференс YOLO
+
+Видеорежим обрабатывает видеофайл по кадрам, рисует bbox/masks и сохраняет итоговое видео со статистикой:
+
+```bash
+python run_video_inference.py --model yolo --weights models/yolo/best.pt --video data/video/test.mp4 --out-dir results/video/yolo --conf 0.25 --imgsz 640 --frame-skip 3
+```
+
+Запуск отдельного видеоинтерфейса:
+
+```bash
+streamlit run scripts/video_app.py
+```
+
+Запуск видеоинтерфейса через WSL `.venv_wsl` на Windows:
+
+```bat
+scripts\windows\run_video_app.bat
+```
+
+Запуск видеообработки через WSL `.venv_wsl` на Windows:
+
+```bat
+scripts\windows\run_video_inference_wsl_example.bat
+```
+
+После запуска сохраняются:
+- `output_video.mp4` — размеченное видео;
+- `frame_stats.csv` — статистика по кадрам;
+- `video_summary.json` — краткая сводка;
+- `sample_frames/` — первые размеченные кадры для отчёта.
+
+Основные параметры:
+- `--frame-skip 3` — обрабатывать каждый третий кадр;
+- `--max-frames 300` — ограничить число обработанных кадров;
+- `--no-save-video` — не сохранять итоговое видео;
+- `--sample-frames 8` — сохранить первые 8 кадров-примеров;
+- `--no-masks` — не отрисовывать маски.
+
+В Control Panel в разделе **«Запуск задач»** также есть кнопки:
+- `Открыть видеоинтерфейс`;
+- `Обработать видео через выбранный runtime`.
+
+## Быстрый старт через командную строку
 
 1) Установка зависимостей:
 ```bash
@@ -380,18 +511,24 @@ scripts/windows/
 Доступные сценарии:
 
 ```text
-run_interface.bat              — запуск интерфейса таблиц и графиков
-run_inference_app.bat          — запуск интерфейса инференса
-run_yolo_inference_example.bat — пример запуска YOLO на одном изображении
-run_full_pipeline_example.bat  — пример запуска полного pipeline
-run_mini_report_example.bat    — пример сборки мини-отчёта
-run_smoke_cli.bat              — проверка CLI-скриптов и импортов
+start_control_panel.bat             — первый запуск, .venv, минимальные пакеты и панель управления
+setup_wsl_env.bat                   — установка всех зависимостей через WSL в .venv_wsl
+run_video_app.bat                   — запуск видеоинтерфейса через WSL .venv_wsl
+run_video_inference_wsl_example.bat — пример видеоинференса через WSL .venv_wsl
+run_interface.bat                   — запуск интерфейса таблиц и графиков
+run_inference_app.bat               — запуск интерфейса инференса
+run_yolo_inference_example.bat      — пример запуска YOLO на одном изображении
+run_full_pipeline_example.bat       — пример запуска полного pipeline
+run_full_pipeline_wsl_example.bat   — пример запуска полного pipeline через WSL
+run_mini_report_example.bat         — пример сборки мини-отчёта
+run_smoke_cli.bat                   — проверка CLI-скриптов и импортов
 ```
 
 Перед запуском example-файлов нужно открыть `.bat` и при необходимости изменить пути:
 
 ```bat
 set WEIGHTS=models\yolo\best.pt
+set VIDEO=data\video\test.mp4
 set IMAGE=data\test\image_001.jpg
 set IMAGES_DIR=data\test\images
 set LABELS_DIR=data\test\labels
@@ -426,12 +563,20 @@ python scripts/smoke_cli.py --skip-help
 ## Новая структура инференса, оценки, аналитики и отчётов
 
 ```text
+config/
+├── shelfvision.example.yaml  # пример конфигурации
+└── shelfvision.yaml          # локальная конфигурация после первого запуска
+
+docs/
+└── wsl_setup.md              # установка зависимостей через WSL
+
 src/inference/
 ├── prediction.py             # единый формат результата
 ├── yolo_inference.py         # адаптер YOLO/YOLO-Seg
 ├── rtdetr_inference.py       # адаптер RT-DETR-L
 ├── faster_rcnn_inference.py  # адаптер Faster R-CNN
-└── ensemble_wbf.py           # WBF-ансамбль YOLO + RT-DETR
+├── ensemble_wbf.py           # WBF-ансамбль YOLO + RT-DETR
+└── video_inference.py        # видеоинференс YOLO
 
 src/visualization/
 └── draw_boxes.py             # отрисовка bbox и masks
@@ -450,16 +595,19 @@ src/reporting/
 └── mini_report.py            # итоговый мини-отчёт для презентации
 
 scripts/
-├── coco_to_yolo_seg.py       # конвертация COCO segmentation в YOLO-Seg
-├── train_yolo_seg.py         # обучение YOLO-Seg
+├── control_panel.py          # панель управления первым запуском и сценариями
+├── control_panel_wsl.py      # панель управления с WSL runtime
+├── setup_wsl_env.py          # создание .venv_wsl и установка requirements через WSL
+├── wsl_runtime.py            # запуск скриптов через WSL .venv_wsl
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
 ├── inference_app.py          # интерактивный инференс по изображению
+├── video_app.py              # интерфейс видеоинференса
 ├── smoke_cli.py              # smoke-проверка CLI и импортов
 └── windows/                  # .bat-файлы для Windows
 
 run_inference.py              # CLI-запуск инференса
-run_evaluation.py             # CLI-запуск bbox-оценки качества
-run_segmentation_evaluation.py # CLI-запуск mask-оценки качества
+run_video_inference.py        # CLI-запуск видеоинференса
+run_evaluation.py             # CLI-запуск оценки качества
 run_recommendation.py         # CLI-рекомендация лучшего pipeline
 run_compare.py                # CLI-сравнение нескольких моделей
 run_density.py                # CLI-анализ плотности товаров
@@ -485,6 +633,5 @@ run_full_pipeline.py          # CLI-запуск полного pipeline
 
 ## Следующие этапы
 
-1. Провести ручную проверку pipeline на реальных весах и тестовой папке.
-2. При необходимости добавить в интерфейс вкладку с mini-report и mask-метриками.
-3. Расширить mask-оценку визуализацией TP/FP/FN для масок.
+1. Добавить live camera / browser camera demo.
+2. Добавить сравнение статистики видео по нескольким роликам.

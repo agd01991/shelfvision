@@ -21,6 +21,9 @@ weights:
   frcnn: models/faster_rcnn/model_final.pth
 
 runtime:
+  # If true, action buttons in Control Panel run scripts through WSL .venv_wsl.
+  # Windows .venv is used only to launch the Control Panel itself.
+  use_wsl_runtime: true
   conf: 0.25
   imgsz: 640
   device: "0"
@@ -41,8 +44,21 @@ density:
   cols: 3
   limit: 20
 
+video:
+  input_path: data/video/test.mp4
+  output_dir: results/video/yolo
+  frame_skip: 3
+  max_frames: 0
+  save_video: true
+  sample_frames: 8
+  show_masks: true
+  codec: mp4v
+
 setup:
+  # Windows/local virtual environment used to launch Streamlit Control Panel.
   venv_dir: .venv
+  # Linux virtual environment created and filled through WSL.
+  venv_dir_wsl: .venv_wsl
   requirements: requirements.txt
   # Optional file downloads. Add your own URLs here if needed.
   downloads:

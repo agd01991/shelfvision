@@ -1,0 +1,3 @@
+﻿dataset_mode,path,status,images,objects_or_annotations,categories,train,val,test,tile_count,tile_size,stride,overlap,notes
+non_tiled,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/prepared/sku110k_small/v1,found,300,43947,1,240,30,30,,,,,passport.json прочитан; annotations.json прочитан; splits.json прочитан; 
+tiled,/mnt/c/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/prepared/sku110k_small/v1_tiled,found,3699,87715,1,2946,369,384,3699.0,,,,passport.json прочитан; annotations.json прочитан; splits.json прочитан; tile_map.json прочитан; 
