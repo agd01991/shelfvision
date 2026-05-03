@@ -12,7 +12,8 @@
 - расчёт bbox-метрик и визуализацию ошибок модели;
 - автоматическую рекомендацию лучшего pipeline по набору метрик;
 - единый отчёт сравнения нескольких моделей с таблицами и графиками;
-- анализ плотности найденных товаров по зонам изображения.
+- анализ плотности найденных товаров по зонам изображения;
+- экспорт итогового мини-отчёта для презентации и защиты.
 
 ## Быстрый старт
 
@@ -221,7 +222,28 @@ python run_density.py --predictions results/inference/yolo/prediction.json --out
 
 Этот блок можно описывать как аналитический модуль для ритейла: система не только находит товары, но и показывает, какие части полки заполнены сильнее.
 
-## Новая структура инференса, оценки и аналитики
+## Итоговый мини-отчёт для презентации
+
+После сравнения моделей и анализа плотности можно собрать короткий отчёт для презентации:
+
+```bash
+python run_mini_report.py --comparison-json results/model_comparison/model_comparison.json --comparison-csv results/model_comparison/model_comparison.csv --recommendation-json results/recommendation/recommendation.json --density-json results/density/yolo/density_report.json --density-csv results/density/yolo/density_summary.csv --images-dir results/density/yolo/visualized --out-dir results/mini_report
+```
+
+После запуска будут сохранены:
+- `mini_report.md` — markdown-отчёт;
+- `mini_report.html` — HTML-отчёт для просмотра в браузере;
+- `mini_report_manifest.json` — список использованных входных и выходных файлов.
+
+Мини-отчёт содержит:
+- назначение системы;
+- рекомендуемый pipeline;
+- таблицу сравнения моделей;
+- анализ плотности товаров;
+- визуальные примеры;
+- список пунктов, которые удобно показать на защите.
+
+## Новая структура инференса, оценки, аналитики и отчётов
 
 ```text
 src/inference/
@@ -243,6 +265,9 @@ src/evaluation/
 src/analytics/
 └── density.py                # анализ плотности товаров по зонам
 
+src/reporting/
+└── mini_report.py            # итоговый мини-отчёт для презентации
+
 scripts/
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
 └── inference_app.py          # интерактивный инференс по изображению
@@ -252,6 +277,7 @@ run_evaluation.py             # CLI-запуск оценки качества
 run_recommendation.py         # CLI-рекомендация лучшего pipeline
 run_compare.py                # CLI-сравнение нескольких моделей
 run_density.py                # CLI-анализ плотности товаров
+run_mini_report.py            # CLI-сборка мини-отчёта
 ```
 
 Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
@@ -272,5 +298,5 @@ run_density.py                # CLI-анализ плотности товаро
 
 ## Следующие этапы
 
-1. Добавить экспорт итогового мини-отчёта для презентации.
-2. Добавить запуск полного pipeline одной командой.
+1. Добавить запуск полного pipeline одной командой.
+2. Добавить `.bat`-файлы для удобного запуска на Windows.
