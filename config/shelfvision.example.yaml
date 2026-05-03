@@ -8,8 +8,15 @@ paths:
   gt_yolo_labels: data/test/labels
   out_dir: results/control_panel
 
+segmentation:
+  images_dir: data/yolo_cache/d2s_small_seg/images/test
+  gt_coco: data/raw/d2s_small/annotations_test.json
+  dataset_yaml: data/yolo_cache/d2s_small_seg/dataset.yaml
+  out_dir: results/full_pipeline_seg
+
 weights:
   yolo: models/yolo/best.pt
+  yolo_seg: runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt
   rtdetr: models/rtdetr/best.pt
   frcnn: models/faster_rcnn/model_final.pth
 
@@ -42,6 +49,9 @@ setup:
     - name: yolo_weights
       url: ""
       output: models/yolo/best.pt
+    - name: yolo_seg_weights
+      url: ""
+      output: runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt
     - name: rtdetr_weights
       url: ""
       output: models/rtdetr/best.pt
