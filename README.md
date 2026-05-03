@@ -60,6 +60,18 @@ python run_inference.py --model frcnn --weights models/faster_rcnn/model_final.p
 
 Faster R-CNN использует Detectron2. Если библиотека не установлена, её нужно поставить отдельно под свою версию PyTorch/CUDA.
 
+## Запуск WBF-ансамбля на одном изображении
+
+```bash
+python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --image data/test/image_001.jpg --out-dir results/inference/wbf
+```
+
+WBF объединяет bbox-предсказания YOLO и RT-DETR-L. Дополнительно можно менять параметры:
+
+```bash
+python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --image data/test/image_001.jpg --out-dir results/inference/wbf --wbf-iou 0.55 --wbf-skip 0.001 --yolo-weight 1.0 --rtdetr-weight 1.0
+```
+
 После запуска будут сохранены:
 - `prediction.json` — предсказания в едином формате;
 - `summary.csv` — краткая аналитика;
@@ -82,6 +94,11 @@ Faster R-CNN:
 python run_inference.py --model frcnn --weights models/faster_rcnn/model_final.pth --images-dir data/test --out-dir results/inference/frcnn_batch
 ```
 
+WBF:
+```bash
+python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --images-dir data/test --out-dir results/inference/wbf_batch
+```
+
 После запуска будут сохранены:
 - `predictions.json`;
 - `summary.csv`;
@@ -91,15 +108,16 @@ python run_inference.py --model frcnn --weights models/faster_rcnn/model_final.p
 
 ```text
 src/inference/
-├── prediction.py          # единый формат результата
-├── yolo_inference.py      # адаптер YOLO/YOLO-Seg
-├── rtdetr_inference.py    # адаптер RT-DETR-L
-└── faster_rcnn_inference.py # адаптер Faster R-CNN
+├── prediction.py             # единый формат результата
+├── yolo_inference.py         # адаптер YOLO/YOLO-Seg
+├── rtdetr_inference.py       # адаптер RT-DETR-L
+├── faster_rcnn_inference.py  # адаптер Faster R-CNN
+└── ensemble_wbf.py           # WBF-ансамбль YOLO + RT-DETR
 
 src/visualization/
-└── draw_boxes.py          # отрисовка bbox и masks
+└── draw_boxes.py             # отрисовка bbox и masks
 
-run_inference.py           # CLI-запуск инференса
+run_inference.py              # CLI-запуск инференса
 ```
 
 Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
@@ -120,6 +138,6 @@ run_inference.py           # CLI-запуск инференса
 
 ## Следующие этапы
 
-1. Добавить WBF-ансамбль поверх результатов YOLO и RT-DETR.
-2. Добавить расчёт метрик и визуализацию ошибок.
-3. Расширить интерфейс режимом загрузки изображения и выбора модели.
+1. Добавить расчёт метрик и визуализацию ошибок.
+2. Расширить интерфейс режимом загрузки изображения и выбора модели.
+3. Добавить автоматическую рекомендацию лучшего pipeline.
