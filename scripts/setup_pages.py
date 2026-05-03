@@ -120,26 +120,42 @@ def _render_candidate_select(label: str, candidates: List[AssetCandidate], key: 
     return selected
 
 
+def _default_search_roots() -> List[str]:
+    roots = [
+        ROOT,
+        ROOT / "models",
+        ROOT / "data",
+        Path("D:/1Diplom"),
+        Path("D:/1Diplom/models"),
+        Path("D:/1Diplom/data"),
+        Path.home() / "Downloads",
+        Path.home() / "Documents",
+    ]
+
+    unique: List[str] = []
+    seen = set()
+    for root in roots:
+        value = str(root)
+        normalized = value.lower().replace("\\", "/")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(value)
+    return unique
+
+
 def _render_asset_discovery(config: Dict[str, Any]) -> None:
     st.subheader("Автопоиск файлов")
     st.caption(
         "Можно указать папки, где лежат веса, изображения и видео. Программа найдёт подходящие файлы и предложит записать пути в config."
     )
 
-    default_roots = "\n".join(
-        [
-            str(ROOT),
-            str(ROOT / "models"),
-            str(ROOT / "data"),
-            str(Path.home() / "Downloads"),
-            str(Path.home() / "Documents"),
-        ]
-    )
+    default_roots = "\n".join(_default_search_roots())
     raw_roots = st.text_area(
         "Где искать",
         value=default_roots,
-        height=140,
-        help="Каждая папка с новой строки. Лучше не указывать весь диск C:, чтобы поиск не был слишком долгим.",
+        height=170,
+        help="Каждая папка с новой строки. Лучше не указывать весь диск C: или D:, чтобы поиск не был слишком долгим. Для твоего случая добавлен D:/1Diplom.",
     )
     limit = st.number_input("Сколько кандидатов показывать на каждый тип", 1, 30, 10)
 
