@@ -8,6 +8,7 @@
 - отчётные таблицы и графики;
 - Streamlit-интерфейс экспериментов;
 - Streamlit-интерфейс интерактивного инференса;
+- Streamlit-интерфейс видеоинференса;
 - единую панель управления для первого запуска, настройки и запуска сценариев кнопками;
 - отдельную установку зависимостей через WSL в Linux-среду `.venv_wsl`;
 - единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
@@ -40,9 +41,10 @@ scripts\windows\start_control_panel.bat
 - установить все зависимости из `requirements.txt` через WSL в `.venv_wsl`;
 - проверить или установить WSL;
 - скачать веса моделей и файлы данных по указанным URL;
-- настроить пути к изображениям, разметке, весам и папке результатов;
+- настроить пути к изображениям, разметке, весам, видео и папке результатов;
 - запустить smoke-проверку;
 - запустить инференс;
+- запустить видеоинференс;
 - запустить полный pipeline;
 - открыть результаты.
 
@@ -112,7 +114,19 @@ config/shelfvision.example.yaml
 python run_video_inference.py --model yolo --weights models/yolo/best.pt --video data/video/test.mp4 --out-dir results/video/yolo --conf 0.25 --imgsz 640 --frame-skip 3
 ```
 
-Запуск через WSL `.venv_wsl` на Windows:
+Запуск отдельного видеоинтерфейса:
+
+```bash
+streamlit run scripts/video_app.py
+```
+
+Запуск видеоинтерфейса через WSL `.venv_wsl` на Windows:
+
+```bat
+scripts\windows\run_video_app.bat
+```
+
+Запуск видеообработки через WSL `.venv_wsl` на Windows:
 
 ```bat
 scripts\windows\run_video_inference_wsl_example.bat
@@ -130,6 +144,10 @@ scripts\windows\run_video_inference_wsl_example.bat
 - `--no-save-video` — не сохранять итоговое видео;
 - `--sample-frames 8` — сохранить первые 8 кадров-примеров;
 - `--no-masks` — не отрисовывать маски.
+
+В Control Panel в разделе **«Запуск задач»** также есть кнопки:
+- `Открыть видеоинтерфейс`;
+- `Обработать видео через выбранный runtime`.
 
 ## Быстрый старт через командную строку
 
@@ -400,6 +418,7 @@ scripts/windows/
 ```text
 start_control_panel.bat             — первый запуск, .venv, минимальные пакеты и панель управления
 setup_wsl_env.bat                   — установка всех зависимостей через WSL в .venv_wsl
+run_video_app.bat                   — запуск видеоинтерфейса через WSL .venv_wsl
 run_video_inference_wsl_example.bat — пример видеоинференса через WSL .venv_wsl
 run_interface.bat                   — запуск интерфейса таблиц и графиков
 run_inference_app.bat               — запуск интерфейса инференса
@@ -486,6 +505,7 @@ scripts/
 ├── wsl_runtime.py            # запуск скриптов через WSL .venv_wsl
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
 ├── inference_app.py          # интерактивный инференс по изображению
+├── video_app.py              # интерфейс видеоинференса
 ├── smoke_cli.py              # smoke-проверка CLI и импортов
 └── windows/                  # .bat-файлы для Windows
 
@@ -517,5 +537,5 @@ run_full_pipeline.py          # CLI-запуск полного pipeline
 
 ## Следующие этапы
 
-1. Добавить Streamlit-интерфейс для загрузки видео и предпросмотра обработки.
-2. Добавить кнопку видеорежима в Control Panel.
+1. Добавить live camera / browser camera demo.
+2. Добавить сравнение статистики видео по нескольким роликам.
