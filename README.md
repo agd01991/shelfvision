@@ -15,7 +15,8 @@
 - анализ плотности найденных товаров по зонам изображения;
 - экспорт итогового мини-отчёта для презентации и защиты;
 - запуск полного pipeline одной командой;
-- `.bat`-файлы для удобного запуска на Windows.
+- `.bat`-файлы для удобного запуска на Windows;
+- smoke-проверку основных CLI-скриптов и модулей.
 
 ## Быстрый старт
 
@@ -289,6 +290,7 @@ run_inference_app.bat          — запуск интерфейса инфер�
 run_yolo_inference_example.bat — пример запуска YOLO на одном изображении
 run_full_pipeline_example.bat  — пример запуска полного pipeline
 run_mini_report_example.bat    — пример сборки мини-отчёта
+run_smoke_cli.bat              — проверка CLI-скриптов и импортов
 ```
 
 Перед запуском example-файлов нужно открыть `.bat` и при необходимости изменить пути:
@@ -298,6 +300,32 @@ set WEIGHTS=models\yolo\best.pt
 set IMAGE=data\test\image_001.jpg
 set IMAGES_DIR=data\test\images
 set LABELS_DIR=data\test\labels
+```
+
+## Smoke-проверка CLI
+
+Smoke-проверка не запускает модели и не требует весов. Она проверяет, что основные модули импортируются, а CLI-скрипты открывают `--help` без ошибок:
+
+```bash
+python scripts/smoke_cli.py
+```
+
+На Windows можно запустить:
+
+```bat
+scripts\windows\run_smoke_cli.bat
+```
+
+Если нужно проверить только `--help` без импортов:
+
+```bash
+python scripts/smoke_cli.py --skip-imports
+```
+
+Если нужно проверить только импорты:
+
+```bash
+python scripts/smoke_cli.py --skip-help
 ```
 
 ## Новая структура инференса, оценки, аналитики и отчётов
@@ -328,6 +356,7 @@ src/reporting/
 scripts/
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
 ├── inference_app.py          # интерактивный инференс по изображению
+├── smoke_cli.py              # smoke-проверка CLI и импортов
 └── windows/                  # .bat-файлы для Windows
 
 run_inference.py              # CLI-запуск инференса
@@ -357,5 +386,5 @@ run_full_pipeline.py          # CLI-запуск полного pipeline
 
 ## Следующие этапы
 
-1. Добавить smoke-тесты для проверки основных CLI-скриптов.
-2. Провести ручную проверку pipeline на реальных весах и тестовой папке.
+1. Провести ручную проверку pipeline на реальных весах и тестовой папке.
+2. При необходимости добавить в интерфейс вкладку с мини-отчётом.
