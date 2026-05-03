@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
+from asset_discovery import AssetCandidate, discover_assets
 from control_panel import ROOT, check_path, rel_path, resolve_path, save_config, venv_python
 from panel_progress import CommandStep, run_steps_with_progress
 
@@ -88,6 +89,96 @@ def _wsl_reset_steps(config: Dict[str, Any]) -> List[CommandStep]:
         ),
         *_wsl_setup_steps(config),
     ]
+
+
+def _to_config_path(path: str) -> str:
+    p = Path(path)
+    try:
+        return str(p.relative_to(ROOT)).replace("\\", "/")
+    except Exception:
+        return str(p).replace("\\", "/")
+
+
+def _candidate_options(candidates: List[AssetCandidate]) -> List[str]:
+    return [candidate.path for candidate in candidates]
+
+
+def _render_candidate_select(label: str, candidates: List[AssetCandidate], key: str) -> str | None:
+    if not candidates:
+        st.warning(f"{label}: кандидаты не найдены")
+        return None
+    options = _candidate_options(candidates)
+    selected = st.selectbox(
+        label,
+        options=options,
+        key=key,
+        format_func=lambda value: f"{_to_config_path(value)}",
+    )
+    selected_candidate = next((item for item in candidates if item.path == selected), None)
+    if selected_candidate:
+        st.caption(f"score={selected_candidate.score}; {selected_candidate.reason}")
+    return selected
+
+
+def _render_asset_discovery(config: Dict[str, Any]) -> None:
+    st.subheader("Автопоиск файлов")
+    st.caption(
+        "Можно указать папки, где лежат веса, изображения и видео. Программа найдёт подходящие файлы и предложит записать пути в config."
+    )
+
+    default_roots = "\n".join(
+        [
+            str(ROOT),
+            str(ROOT / "models"),
+            str(ROOT / "data"),
+            str(Path.home() / "Downloads"),
+            str(Path.home() / "Documents"),
+        ]
+    )
+    raw_roots = st.text_area(
+        "Где искать",
+        value=default_roots,
+        height=140,
+        help="Каждая папка с новой строки. Лучше не указывать весь диск C:, чтобы поиск не был слишком долгим.",
+    )
+    limit = st.number_input("Сколько кандидатов показывать на каждый тип", 1, 30, 10)
+
+    if st.button("Найти веса, изображения и видео", use_container_width=True):
+        roots = [Path(line.strip()) for line in raw_roots.splitlines() if line.strip()]
+        with st.spinner("Идёт поиск файлов. Если выбраны большие папки, это может занять время..."):
+            st.session_state["asset_discovery_results"] = discover_assets(roots, limit=int(limit))
+        st.success("Поиск завершён")
+
+    results = st.session_state.get("asset_discovery_results")
+    if not results:
+        return
+
+    st.divider()
+    st.write("Выбери найденные пути и нажми **Применить выбранные пути в config**.")
+
+    selected: Dict[str, str | None] = {}
+    col1, col2 = st.columns(2)
+    with col1:
+        selected["yolo"] = _render_candidate_select("YOLO weights", results.get("yolo", []), "auto_yolo")
+        selected["rtdetr"] = _render_candidate_select("RT-DETR weights", results.get("rtdetr", []), "auto_rtdetr")
+        selected["frcnn"] = _render_candidate_select("Faster R-CNN weights", results.get("frcnn", []), "auto_frcnn")
+    with col2:
+        selected["images_dir"] = _render_candidate_select("Папка изображений", results.get("images_dir", []), "auto_images")
+        selected["video"] = _render_candidate_select("Видео", results.get("video", []), "auto_video")
+
+    if st.button("Применить выбранные пути в config", use_container_width=True):
+        if selected.get("yolo"):
+            config["weights"]["yolo"] = _to_config_path(selected["yolo"] or "")
+        if selected.get("rtdetr"):
+            config["weights"]["rtdetr"] = _to_config_path(selected["rtdetr"] or "")
+        if selected.get("frcnn"):
+            config["weights"]["frcnn"] = _to_config_path(selected["frcnn"] or "")
+        if selected.get("images_dir"):
+            config["paths"]["images_dir"] = _to_config_path(selected["images_dir"] or "")
+        if selected.get("video"):
+            config.setdefault("video", {})["input_path"] = _to_config_path(selected["video"] or "")
+        save_config(config)
+        st.success("Выбранные пути сохранены в config/shelfvision.yaml")
 
 
 def page_setup(config: Dict[str, Any]) -> None:
@@ -192,3 +283,6 @@ def page_setup(config: Dict[str, Any]) -> None:
     check_path("RT-DETR weights", config["weights"].get("rtdetr", ""))
     check_path("Faster R-CNN weights", config["weights"].get("frcnn", ""))
     check_path("Images dir", config["paths"].get("images_dir", ""))
+
+    st.divider()
+    _render_asset_discovery(config)
