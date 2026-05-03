@@ -15,7 +15,12 @@ from src.visualization.draw_boxes import draw_prediction
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ShelfVision inference runner")
-    parser.add_argument("--model", choices=["yolo", "rtdetr", "frcnn", "wbf"], default="yolo", help="Модель для запуска")
+    parser.add_argument(
+        "--model",
+        choices=["yolo", "yolo_seg", "rtdetr", "frcnn", "wbf"],
+        default="yolo",
+        help="Модель для запуска",
+    )
     parser.add_argument("--weights", help="Путь к весам одной модели, например models/yolo/best.pt")
     parser.add_argument("--yolo-weights", help="Путь к весам YOLO для WBF")
     parser.add_argument("--rtdetr-weights", help="Путь к весам RT-DETR для WBF")
@@ -59,6 +64,8 @@ def get_predictors(model: str) -> tuple[
 ]:
     if model == "yolo":
         return predict_yolo_image, predict_yolo_folder, "YOLO"
+    if model == "yolo_seg":
+        return predict_yolo_image, predict_yolo_folder, "YOLO-Seg"
     if model == "rtdetr":
         return predict_rtdetr_image, predict_rtdetr_folder, "RT-DETR-L"
     if model == "frcnn":
