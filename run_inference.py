@@ -5,6 +5,7 @@ import csv
 from pathlib import Path
 from typing import Callable, List
 
+from src.inference.faster_rcnn_inference import predict_faster_rcnn_folder, predict_faster_rcnn_image
 from src.inference.prediction import ImagePrediction, save_prediction_json, save_predictions_json
 from src.inference.rtdetr_inference import predict_rtdetr_folder, predict_rtdetr_image
 from src.inference.yolo_inference import predict_yolo_folder, predict_yolo_image, prediction_summary
@@ -13,7 +14,7 @@ from src.visualization.draw_boxes import draw_prediction
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ShelfVision inference runner")
-    parser.add_argument("--model", choices=["yolo", "rtdetr"], default="yolo", help="Модель для запуска")
+    parser.add_argument("--model", choices=["yolo", "rtdetr", "frcnn"], default="yolo", help="Модель для запуска")
     parser.add_argument("--weights", required=True, help="Путь к весам модели, например models/yolo/best.pt")
     parser.add_argument("--image", help="Путь к одному изображению")
     parser.add_argument("--images-dir", help="Путь к папке с изображениями для пакетной обработки")
@@ -53,6 +54,8 @@ def get_predictors(model: str) -> tuple[
         return predict_yolo_image, predict_yolo_folder, "YOLO"
     if model == "rtdetr":
         return predict_rtdetr_image, predict_rtdetr_folder, "RT-DETR-L"
+    if model == "frcnn":
+        return predict_faster_rcnn_image, predict_faster_rcnn_folder, "Faster R-CNN"
     raise ValueError(f"Неизвестная модель: {model}")
 
 
