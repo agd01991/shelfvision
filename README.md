@@ -11,6 +11,7 @@
 - единую панель управления для первого запуска, настройки и запуска сценариев кнопками;
 - отдельную установку зависимостей через WSL в Linux-среду `.venv_wsl`;
 - единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
+- модуль видеоинференса YOLO для обработки видеофайлов;
 - расчёт bbox-метрик и визуализацию ошибок модели;
 - автоматическую рекомендацию лучшего pipeline по набору метрик;
 - единый отчёт сравнения нескольких моделей с таблицами и графиками;
@@ -88,7 +89,7 @@ docs/wsl_setup.md
 ## Запуск панели управления вручную
 
 ```bash
-streamlit run scripts/control_panel.py
+streamlit run scripts/control_panel_wsl.py
 ```
 
 Конфигурация хранится в файле:
@@ -102,6 +103,33 @@ config/shelfvision.yaml
 ```text
 config/shelfvision.example.yaml
 ```
+
+## Видеоинференс YOLO
+
+Видеорежим обрабатывает видеофайл по кадрам, рисует bbox/masks и сохраняет итоговое видео со статистикой:
+
+```bash
+python run_video_inference.py --model yolo --weights models/yolo/best.pt --video data/video/test.mp4 --out-dir results/video/yolo --conf 0.25 --imgsz 640 --frame-skip 3
+```
+
+Запуск через WSL `.venv_wsl` на Windows:
+
+```bat
+scripts\windows\run_video_inference_wsl_example.bat
+```
+
+После запуска сохраняются:
+- `output_video.mp4` — размеченное видео;
+- `frame_stats.csv` — статистика по кадрам;
+- `video_summary.json` — краткая сводка;
+- `sample_frames/` — первые размеченные кадры для отчёта.
+
+Основные параметры:
+- `--frame-skip 3` — обрабатывать каждый третий кадр;
+- `--max-frames 300` — ограничить число обработанных кадров;
+- `--no-save-video` — не сохранять итоговое видео;
+- `--sample-frames 8` — сохранить первые 8 кадров-примеров;
+- `--no-masks` — не отрисовывать маски.
 
 ## Быстрый старт через командную строку
 
@@ -370,20 +398,23 @@ scripts/windows/
 Доступные сценарии:
 
 ```text
-start_control_panel.bat        — первый запуск, .venv, минимальные пакеты и панель управления
-setup_wsl_env.bat              — установка всех зависимостей через WSL в .venv_wsl
-run_interface.bat              — запуск интерфейса таблиц и графиков
-run_inference_app.bat          — запуск интерфейса инференса
-run_yolo_inference_example.bat — пример запуска YOLO на одном изображении
-run_full_pipeline_example.bat  — пример запуска полного pipeline
-run_mini_report_example.bat    — пример сборки мини-отчёта
-run_smoke_cli.bat              — проверка CLI-скриптов и импортов
+start_control_panel.bat             — первый запуск, .venv, минимальные пакеты и панель управления
+setup_wsl_env.bat                   — установка всех зависимостей через WSL в .venv_wsl
+run_video_inference_wsl_example.bat — пример видеоинференса через WSL .venv_wsl
+run_interface.bat                   — запуск интерфейса таблиц и графиков
+run_inference_app.bat               — запуск интерфейса инференса
+run_yolo_inference_example.bat      — пример запуска YOLO на одном изображении
+run_full_pipeline_example.bat       — пример запуска полного pipeline
+run_full_pipeline_wsl_example.bat   — пример запуска полного pipeline через WSL
+run_mini_report_example.bat         — пример сборки мини-отчёта
+run_smoke_cli.bat                   — проверка CLI-скриптов и импортов
 ```
 
 Перед запуском example-файлов нужно открыть `.bat` и при необходимости изменить пути:
 
 ```bat
 set WEIGHTS=models\yolo\best.pt
+set VIDEO=data\video\test.mp4
 set IMAGE=data\test\image_001.jpg
 set IMAGES_DIR=data\test\images
 set LABELS_DIR=data\test\labels
@@ -430,7 +461,8 @@ src/inference/
 ├── yolo_inference.py         # адаптер YOLO/YOLO-Seg
 ├── rtdetr_inference.py       # адаптер RT-DETR-L
 ├── faster_rcnn_inference.py  # адаптер Faster R-CNN
-└── ensemble_wbf.py           # WBF-ансамбль YOLO + RT-DETR
+├── ensemble_wbf.py           # WBF-ансамбль YOLO + RT-DETR
+└── video_inference.py        # видеоинференс YOLO
 
 src/visualization/
 └── draw_boxes.py             # отрисовка bbox и masks
@@ -449,13 +481,16 @@ src/reporting/
 
 scripts/
 ├── control_panel.py          # панель управления первым запуском и сценариями
+├── control_panel_wsl.py      # панель управления с WSL runtime
 ├── setup_wsl_env.py          # создание .venv_wsl и установка requirements через WSL
+├── wsl_runtime.py            # запуск скриптов через WSL .venv_wsl
 ├── interface_app.py          # интерфейс таблиц и графиков экспериментов
 ├── inference_app.py          # интерактивный инференс по изображению
 ├── smoke_cli.py              # smoke-проверка CLI и импортов
 └── windows/                  # .bat-файлы для Windows
 
 run_inference.py              # CLI-запуск инференса
+run_video_inference.py        # CLI-запуск видеоинференса
 run_evaluation.py             # CLI-запуск оценки качества
 run_recommendation.py         # CLI-рекомендация лучшего pipeline
 run_compare.py                # CLI-сравнение нескольких моделей
@@ -482,5 +517,5 @@ run_full_pipeline.py          # CLI-запуск полного pipeline
 
 ## Следующие этапы
 
-1. Провести ручную проверку pipeline на реальных весах и тестовой папке.
-2. При необходимости добавить в интерфейс вкладку с мини-отчётом.
+1. Добавить Streamlit-интерфейс для загрузки видео и предпросмотра обработки.
+2. Добавить кнопку видеорежима в Control Panel.
