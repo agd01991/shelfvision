@@ -35,7 +35,10 @@ density:
   limit: 20
 
 setup:
+  # Windows/local virtual environment used to launch Streamlit Control Panel.
   venv_dir: .venv
+  # Linux virtual environment created and filled through WSL.
+  venv_dir_wsl: .venv_wsl
   requirements: requirements.txt
   # Optional file downloads. Add your own URLs here if needed.
   downloads:
