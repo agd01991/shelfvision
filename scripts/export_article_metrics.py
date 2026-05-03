@@ -3,14 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
-
 ARTICLE1_TILING_EXPECTED = "reports/article_eval/article1_tiling_robustness.csv"
 ARTICLE2_MODEL_ROBUSTNESS_EXPECTED = "reports/article_eval/article2_model_robustness.csv"
-
 
 MODEL_PARADIGM = {
     "yolov8s": "one-stage",
@@ -25,15 +23,14 @@ MODEL_PARADIGM = {
     "wbf": "ensemble",
 }
 
-
 ARTICLE2_ORDER = ["YOLOv8s", "RT-DETR-L", "Faster R-CNN (D2)", "WBF(YOLO+RTDETR)"]
 
 
 def read_json(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8").strip()
     try:
-        data = json.loads(text)
-        return data if isinstance(data, dict) else {"_value": data}
+        value = json.loads(text)
+        return value if isinstance(value, dict) else {"_value": value}
     except json.JSONDecodeError:
         decoder = json.JSONDecoder()
         value, _ = decoder.raw_decode(text)
@@ -60,17 +57,27 @@ def existing(path: Optional[Path]) -> Optional[Path]:
     return path if path and path.exists() else None
 
 
+def add_status(df: pd.DataFrame, value: str = "ok") -> pd.DataFrame:
+    """Добавляет/обновляет колонку status без падения, если она уже есть в CSV."""
+    if "status" in df.columns:
+        df["status"] = df["status"].fillna(value)
+        df.loc[df["status"].astype(str).str.strip().eq(""), "status"] = value
+    else:
+        df.insert(0, "status", value)
+    return df
+
+
 def count_split_items(value: Any) -> Optional[int]:
     if isinstance(value, list):
         return len(value)
     if isinstance(value, dict):
-        for nested_key in ("images", "image_ids", "ids", "items"):
-            if nested_key in value and isinstance(value[nested_key], list):
-                return len(value[nested_key])
+        for key in ("images", "image_ids", "ids", "items"):
+            if key in value and isinstance(value[key], list):
+                return len(value[key])
     return None
 
 
-def pick_first(mapping: dict[str, Any], keys: Iterable[str]) -> Any:
+def pick_first(mapping: dict[str, Any], keys: list[str]) -> Any:
     for key in keys:
         if key in mapping and mapping[key] not in (None, ""):
             return mapping[key]
@@ -112,26 +119,26 @@ def summarize_dataset(dataset_dir: Optional[Path], label: str) -> dict[str, Any]
         row["overlap"] = pick_first(passport, ["overlap", "tile_overlap"])
         row["notes"] += "passport.json прочитан; "
 
-    for annotations_name in ("annotations.json", "instances.json"):
-        annotations_path = dataset_dir / annotations_name
-        if annotations_path.exists():
-            coco = safe_read_json(annotations_path)
+    for name in ("annotations.json", "instances.json"):
+        p = dataset_dir / name
+        if p.exists():
+            coco = safe_read_json(p)
             if isinstance(coco.get("images"), list):
                 row["images"] = row["images"] or len(coco["images"])
             if isinstance(coco.get("annotations"), list):
                 row["objects_or_annotations"] = row["objects_or_annotations"] or len(coco["annotations"])
             if isinstance(coco.get("categories"), list):
                 row["categories"] = row["categories"] or len(coco["categories"])
-            row["notes"] += f"{annotations_name} прочитан; "
+            row["notes"] += f"{name} прочитан; "
             break
 
-    for splits_name in ("splits.json", "split.json"):
-        splits_path = dataset_dir / splits_name
-        if splits_path.exists():
-            splits = safe_read_json(splits_path)
+    for name in ("splits.json", "split.json"):
+        p = dataset_dir / name
+        if p.exists():
+            splits = safe_read_json(p)
             for split_key in ("train", "val", "test"):
                 row[split_key] = count_split_items(splits.get(split_key))
-            row["notes"] += f"{splits_name} прочитан; "
+            row["notes"] += f"{name} прочитан; "
             break
 
     tile_map_path = dataset_dir / "tile_map.json"
@@ -152,12 +159,9 @@ def summarize_dataset(dataset_dir: Optional[Path], label: str) -> dict[str, Any]
 def load_dir1_models(paths: dict[str, Any]) -> pd.DataFrame:
     p = existing(path_from(paths, "DIR1_metrics_csv"))
     if not p:
-        return pd.DataFrame([
-            {"status": "missing", "note": "DIR1_metrics_csv не найден. Перезапусти сравнение моделей."}
-        ])
-
+        return pd.DataFrame([{"status": "missing", "note": "DIR1_metrics_csv не найден."}])
     df = pd.read_csv(p)
-    df.insert(0, "status", "ok")
+    add_status(df)
     df["source_file"] = str(p)
     if "model" in df.columns:
         df["paradigm"] = df["model"].map(lambda x: MODEL_PARADIGM.get(str(x).lower(), "уточнить"))
@@ -170,9 +174,7 @@ def load_dir1_models(paths: dict[str, Any]) -> pd.DataFrame:
 def load_yolo_ablations(paths: dict[str, Any]) -> pd.DataFrame:
     p = existing(path_from(paths, "YOLO_11_summary_csv"))
     if not p:
-        return pd.DataFrame([
-            {"status": "missing", "note": "YOLO_11_summary_csv не найден."}
-        ])
+        return pd.DataFrame([{"status": "missing", "note": "YOLO_11_summary_csv не найден."}])
     df = pd.read_csv(p)
     for col in ("P", "R", "mAP50", "mAP50-95", "seconds_total"):
         if col in df.columns:
@@ -183,43 +185,38 @@ def load_yolo_ablations(paths: dict[str, Any]) -> pd.DataFrame:
         rank = df["mAP50-95"].fillna(-1) * 1000 + df.get("mAP50", pd.Series([-1] * len(df))).fillna(-1)
         df["is_best"] = False
         df.loc[rank.idxmax(), "is_best"] = True
-    df.insert(0, "status", "ok")
+    add_status(df)
     df["source_file"] = str(p)
     return df
 
 
 def load_robustness_current(paths: dict[str, Any]) -> pd.DataFrame:
     robustness_dir = existing(path_from(paths, "DIR5_robustness_dir"))
-    rows: list[dict[str, Any]] = []
+    if not robustness_dir:
+        return pd.DataFrame([{"status": "missing", "note": "DIR5_robustness_dir не найден."}])
 
-    if robustness_dir:
-        for metrics_path in sorted(robustness_dir.glob("metrics_*.json")):
-            data = safe_read_json(metrics_path)
-            metrics = data.get("metrics", {}) if isinstance(data.get("metrics"), dict) else {}
-            rows.append(
-                {
-                    "model": data.get("model", "current_base_detector"),
-                    "dataset_mode": data.get("dataset_mode", "current_or_unspecified"),
-                    "corruption": data.get("mode", metrics_path.stem.replace("metrics_", "")),
-                    "param": data.get("param"),
-                    "AP50-95": metrics.get("AP"),
-                    "AP50": metrics.get("AP50"),
-                    "AP75": metrics.get("AP75"),
-                    "AR100": metrics.get("AR100"),
-                    "source_file": str(metrics_path),
-                }
-            )
-    else:
-        return pd.DataFrame([
-            {"status": "missing", "note": "DIR5_robustness_dir не найден. Перезапусти robustness eval."}
-        ])
+    rows: list[dict[str, Any]] = []
+    for metrics_path in sorted(robustness_dir.glob("metrics_*.json")):
+        data = safe_read_json(metrics_path)
+        metrics = data.get("metrics", {}) if isinstance(data.get("metrics"), dict) else {}
+        rows.append(
+            {
+                "model": data.get("model", "current_base_detector"),
+                "dataset_mode": data.get("dataset_mode", "current_or_unspecified"),
+                "corruption": data.get("mode", metrics_path.stem.replace("metrics_", "")),
+                "param": data.get("param"),
+                "AP50-95": metrics.get("AP"),
+                "AP50": metrics.get("AP50"),
+                "AP75": metrics.get("AP75"),
+                "AR100": metrics.get("AR100"),
+                "source_file": str(metrics_path),
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame([{"status": "missing", "note": f"В {robustness_dir} нет metrics_*.json."}])
 
     df = pd.DataFrame(rows)
-    if df.empty:
-        return pd.DataFrame([
-            {"status": "missing", "note": f"В {robustness_dir} нет metrics_*.json."}
-        ])
-
     for col in ("param", "AP50-95", "AP50", "AP75", "AR100"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -233,23 +230,25 @@ def load_robustness_current(paths: dict[str, Any]) -> pd.DataFrame:
         for metric in ("AP50-95", "AP50", "AP75", "AR100"):
             df[f"delta_{metric}"] = None
 
-    df.insert(0, "status", "ok")
+    add_status(df)
     return df
 
 
 def load_optional_extended_csv(repo_root: Path, relative_path: str, required_columns: set[str]) -> pd.DataFrame:
     p = repo_root / relative_path
     if not p.exists():
-        return pd.DataFrame([
-            {
-                "status": "missing",
-                "expected_file": str(p),
-                "note": "Опциональный файл не найден. Создай его, если хочешь закрыть все таблицы статей без ручной склейки.",
-            }
-        ])
+        return pd.DataFrame(
+            [
+                {
+                    "status": "missing",
+                    "expected_file": str(p),
+                    "note": "Опциональный файл не найден. Создай его, если хочешь закрыть все таблицы статей без ручной склейки.",
+                }
+            ]
+        )
     df = pd.read_csv(p)
     missing = required_columns - set(df.columns)
-    df.insert(0, "status", "ok" if not missing else "bad_columns")
+    add_status(df, "ok" if not missing else "bad_columns")
     if missing:
         df["missing_columns"] = ", ".join(sorted(missing))
     df["source_file"] = str(p)
@@ -259,12 +258,20 @@ def load_optional_extended_csv(repo_root: Path, relative_path: str, required_col
 def make_article2_clean_table(dir1_models: pd.DataFrame) -> pd.DataFrame:
     if "model" not in dir1_models.columns:
         return dir1_models
-    columns = [c for c in ["model", "paradigm", "AP50-95", "AP50", "AP75", "AP_small", "AP_medium", "AP_large", "ms_per_image"] if c in dir1_models.columns]
+    columns = [
+        c
+        for c in ["model", "paradigm", "AP50-95", "AP50", "AP75", "AP_small", "AP_medium", "AP_large", "ms_per_image"]
+        if c in dir1_models.columns
+    ]
     df = dir1_models[columns].copy()
     for col in ("AP50-95", "AP50", "AP75", "AP_small", "AP_medium", "AP_large", "ms_per_image"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").round(5)
     return df
+
+
+def has_ok(df: pd.DataFrame) -> bool:
+    return "status" in df.columns and (df["status"] == "ok").any()
 
 
 def make_missing_checklist(
@@ -274,66 +281,50 @@ def make_missing_checklist(
     robustness_current: pd.DataFrame,
     dir1_models: pd.DataFrame,
 ) -> pd.DataFrame:
-    def has_ok(df: pd.DataFrame) -> bool:
-        return "status" in df.columns and (df["status"] == "ok").any()
-
-    rows = []
-    rows.append(
-        {
-            "article": "1",
-            "item": "Характеристики non-tiled/tiled датасетов",
-            "status": "ok" if len(dataset_summary) and (dataset_summary["status"] == "found").any() else "missing",
-            "what_to_do": "Проверь dataset_summary.csv; если counts пустые, открой passport.json/annotations.json вручную.",
-        }
+    return pd.DataFrame(
+        [
+            {
+                "article": "1",
+                "item": "Характеристики non-tiled/tiled датасетов",
+                "status": "ok" if len(dataset_summary) and (dataset_summary["status"] == "found").any() else "missing",
+                "what_to_do": "Проверь dataset_summary.csv; если counts пустые, открой passport.json/annotations.json вручную.",
+            },
+            {
+                "article": "1",
+                "item": "Парное сравнение tiled vs non-tiled на clean/degraded",
+                "status": "ok" if has_ok(article1_extended) else "missing",
+                "what_to_do": f"Нужен файл {ARTICLE1_TILING_EXPECTED} с колонками model,dataset_mode,corruption,AP50-95,AP50,AP75,AR100,ms_per_image.",
+            },
+            {
+                "article": "1/2",
+                "item": "Текущая robustness-таблица по деградациям",
+                "status": "ok" if has_ok(robustness_current) else "missing",
+                "what_to_do": "Используй current_robustness_with_delta.csv как временную таблицу; она не заменяет tiled/non-tiled и 3-model robustness.",
+            },
+            {
+                "article": "2",
+                "item": "Clean-сравнение YOLO / RT-DETR / Faster R-CNN",
+                "status": "ok" if "model" in dir1_models.columns else "missing",
+                "what_to_do": "Используй article2_clean_models.csv.",
+            },
+            {
+                "article": "2",
+                "item": "Robustness YOLO / RT-DETR / Faster R-CNN",
+                "status": "ok" if has_ok(article2_extended) else "missing",
+                "what_to_do": f"Нужен файл {ARTICLE2_MODEL_ROBUSTNESS_EXPECTED} с колонками model,corruption,AP50-95,AP50,AP75,AR100,delta_AP50-95.",
+            },
+            {
+                "article": "2",
+                "item": "AR100 в clean-сравнении моделей",
+                "status": "ok" if "AR100" in dir1_models.columns else "missing",
+                "what_to_do": "Если AR100 нужен в статье 2, дополни DIR1_metrics_csv или отдельный article2_model_robustness.csv clean-строками.",
+            },
+        ]
     )
-    rows.append(
-        {
-            "article": "1",
-            "item": "Парное сравнение tiled vs non-tiled на clean/degraded",
-            "status": "ok" if has_ok(article1_extended) else "missing",
-            "what_to_do": f"Нужен файл {ARTICLE1_TILING_EXPECTED} с колонками model,dataset_mode,corruption,AP50-95,AP50,AP75,AR100,ms_per_image.",
-        }
-    )
-    rows.append(
-        {
-            "article": "1/2",
-            "item": "Текущая robustness-таблица по деградациям",
-            "status": "ok" if has_ok(robustness_current) else "missing",
-            "what_to_do": "Используй current_robustness_with_delta.csv как временную таблицу; она не заменяет tiled/non-tiled и 3-model robustness.",
-        }
-    )
-    rows.append(
-        {
-            "article": "2",
-            "item": "Clean-сравнение YOLO / RT-DETR / Faster R-CNN",
-            "status": "ok" if "model" in dir1_models.columns else "missing",
-            "what_to_do": "Используй article2_clean_models.csv.",
-        }
-    )
-    rows.append(
-        {
-            "article": "2",
-            "item": "Robustness YOLO / RT-DETR / Faster R-CNN",
-            "status": "ok" if has_ok(article2_extended) else "missing",
-            "what_to_do": f"Нужен файл {ARTICLE2_MODEL_ROBUSTNESS_EXPECTED} с колонками model,corruption,AP50-95,AP50,AP75,AR100,delta_AP50-95.",
-        }
-    )
-    rows.append(
-        {
-            "article": "2",
-            "item": "AR100 в clean-сравнении моделей",
-            "status": "ok" if "AR100" in dir1_models.columns else "missing",
-            "what_to_do": "Если AR100 нужен в статье 2, дополни DIR1_metrics_csv или отдельный article2_model_robustness.csv clean-строками.",
-        }
-    )
-    return pd.DataFrame(rows)
 
 
 def write_markdown(out_dir: Path, sheets: dict[str, pd.DataFrame]) -> None:
-    lines: list[str] = []
-    lines.append("# Таблицы для статей\n")
-    lines.append("Сгенерировано скриптом `scripts/export_article_metrics.py`.\n")
-
+    lines = ["# Таблицы для статей\n", "Сгенерировано скриптом `scripts/export_article_metrics.py`.\n"]
     for title, key in [
         ("Статья 2. Clean-сравнение моделей", "article2_clean_models"),
         ("Текущая robustness-таблица с Δ", "current_robustness_with_delta"),
@@ -347,7 +338,6 @@ def write_markdown(out_dir: Path, sheets: dict[str, pd.DataFrame]) -> None:
             except Exception:  # noqa: BLE001
                 lines.append(df.to_csv(index=False))
             lines.append("\n")
-
     (out_dir / "article_tables.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -372,11 +362,9 @@ def main() -> None:
             summarize_dataset(path_from(paths, "SKU_prepared_small_v1_tiled"), "tiled"),
         ]
     )
-
     dir1_models = load_dir1_models(paths)
     yolo_ablations = load_yolo_ablations(paths)
     robustness_current = load_robustness_current(paths)
-
     article1_extended = load_optional_extended_csv(
         repo_root,
         ARTICLE1_TILING_EXPECTED,
@@ -398,11 +386,7 @@ def main() -> None:
         "yolo_ablations_raw": yolo_ablations,
     }
     sheets["missing_checklist"] = make_missing_checklist(
-        dataset_summary,
-        article1_extended,
-        article2_extended,
-        robustness_current,
-        dir1_models,
+        dataset_summary, article1_extended, article2_extended, robustness_current, dir1_models
     )
 
     xlsx_path = out_dir / "article_metrics.xlsx"
