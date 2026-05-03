@@ -1,0 +1,52 @@
+paths:
+  images_dir: data/test/images
+  image: data/test/image_001.jpg
+  gt_coco: data/test/annotations.json
+  gt_yolo_labels: data/test/labels
+  out_dir: results/control_panel
+weights:
+  yolo: models/yolo/best.pt
+  rtdetr: models/rtdetr/best.pt
+  frcnn: models/faster_rcnn/model_final.pth
+runtime:
+  conf: 0.25
+  imgsz: 640
+  device: '0'
+  models:
+  - yolo
+  - rtdetr
+  - wbf
+  use_wsl_runtime: true
+wbf:
+  iou: 0.55
+  skip: 0.001
+  yolo_weight: 1.0
+  rtdetr_weight: 1.0
+density:
+  model: yolo
+  rows: 3
+  cols: 3
+  limit: 20
+setup:
+  venv_dir: .venv
+  venv_dir_wsl: .venv_wsl
+  requirements: requirements.txt
+  downloads:
+  - name: yolo_weights
+    url: ''
+    output: models/yolo/best.pt
+  - name: rtdetr_weights
+    url: ''
+    output: models/rtdetr/best.pt
+  - name: test_archive
+    url: ''
+    output: data/downloads/test_data.zip
+video:
+  input_path: data/video/test.mp4
+  output_dir: results/video/yolo
+  frame_skip: 3
+  max_frames: 0
+  save_video: true
+  sample_frames: 8
+  show_masks: true
+  codec: mp4v

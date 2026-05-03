@@ -9,6 +9,7 @@ from typing import List, Optional
 
 MODEL_LABELS = {
     "yolo": "YOLO",
+    "yolo_seg": "YOLO-Seg",
     "rtdetr": "RT-DETR",
     "frcnn": "Faster-R-CNN",
     "wbf": "WBF",
@@ -22,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", default="results/full_pipeline", help="Корневая папка для всех результатов")
 
     parser.add_argument("--yolo-weights", help="Путь к весам YOLO")
+    parser.add_argument("--yolo-seg-weights", help="Путь к весам YOLO-Seg")
     parser.add_argument("--rtdetr-weights", help="Путь к весам RT-DETR")
     parser.add_argument("--frcnn-weights", help="Путь к весам Faster R-CNN")
 
@@ -29,33 +31,39 @@ def parse_args() -> argparse.Namespace:
         "--models",
         nargs="+",
         default=["yolo", "rtdetr", "wbf"],
-        choices=["yolo", "rtdetr", "frcnn", "wbf"],
+        choices=["yolo", "yolo_seg", "rtdetr", "frcnn", "wbf"],
         help="Какие модели запускать",
     )
 
-    parser.add_argument("--gt-coco", help="COCO JSON с эталонной разметкой")
-    parser.add_argument("--gt-yolo-labels", help="Папка YOLO labels для оценки")
+    parser.add_argument("--gt-coco", help="COCO JSON с эталонной bbox/segmentation-разметкой")
+    parser.add_argument("--gt-yolo-labels", help="Папка YOLO labels для bbox-оценки")
     parser.add_argument("--gt-yolo-images", help="Папка изображений для YOLO labels. Если не указана, используется --images-dir")
 
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     parser.add_argument("--imgsz", type=int, default=640, help="Размер изображения для модели")
     parser.add_argument("--device", default=None, help="Устройство: 0, cpu, cuda:0")
-    parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold для оценки")
+    parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold для bbox/mask оценки")
 
     parser.add_argument("--wbf-iou", type=float, default=0.55, help="IoU threshold для WBF")
     parser.add_argument("--wbf-skip", type=float, default=0.001, help="Skip score threshold для WBF")
     parser.add_argument("--yolo-weight", type=float, default=1.0, help="Вес YOLO в WBF")
     parser.add_argument("--rtdetr-weight", type=float, default=1.0, help="Вес RT-DETR в WBF")
 
-    parser.add_argument("--density-model", default="yolo", choices=["yolo", "rtdetr", "frcnn", "wbf"], help="По какой модели считать плотность")
+    parser.add_argument(
+        "--density-model",
+        default="yolo",
+        choices=["yolo", "yolo_seg", "rtdetr", "frcnn", "wbf"],
+        help="По какой модели считать плотность",
+    )
     parser.add_argument("--density-rows", type=int, default=3, help="Количество зон по вертикали")
     parser.add_argument("--density-cols", type=int, default=3, help="Количество зон по горизонтали")
     parser.add_argument("--density-limit", type=int, default=20, help="Сколько изображений визуализировать для плотности")
 
-    parser.add_argument("--skip-evaluation", action="store_true", help="Пропустить оценку качества")
+    parser.add_argument("--skip-evaluation", action="store_true", help="Пропустить bbox-оценку качества")
+    parser.add_argument("--skip-segmentation-evaluation", action="store_true", help="Пропустить mask-оценку YOLO-Seg")
     parser.add_argument("--skip-density", action="store_true", help="Пропустить анализ плотности")
     parser.add_argument("--skip-mini-report", action="store_true", help="Пропустить мини-отчёт")
-    parser.add_argument("--visualize-errors", action="store_true", help="Сохранять визуализации TP/FP/FN при оценке")
+    parser.add_argument("--visualize-errors", action="store_true", help="Сохранять визуализации TP/FP/FN при bbox-оценке")
     parser.add_argument("--error-limit", type=int, default=20, help="Сколько error-визуализаций сохранять")
     return parser.parse_args()
 
@@ -76,6 +84,9 @@ def weight_args_for_model(args: argparse.Namespace, model: str) -> List[str]:
     if model == "yolo":
         require(bool(args.yolo_weights), "Для модели yolo укажите --yolo-weights")
         return ["--weights", args.yolo_weights]
+    if model == "yolo_seg":
+        require(bool(args.yolo_seg_weights), "Для модели yolo_seg укажите --yolo-seg-weights")
+        return ["--weights", args.yolo_seg_weights]
     if model == "rtdetr":
         require(bool(args.rtdetr_weights), "Для модели rtdetr укажите --rtdetr-weights")
         return ["--weights", args.rtdetr_weights]
@@ -121,6 +132,7 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     inference_root = out_dir / "inference"
     evaluation_root = out_dir / "evaluation"
+    segmentation_evaluation_root = out_dir / "segmentation_evaluation"
     comparison_dir = out_dir / "model_comparison"
     recommendation_dir = out_dir / "recommendation"
     density_dir = out_dir / "density"
@@ -153,7 +165,7 @@ def main() -> None:
             cmd.extend(["--device", args.device])
         run(cmd, cwd=root)
 
-    # 2. Evaluation
+    # 2. BBox evaluation
     metrics_files: List[Path] = []
     labels: List[str] = []
     if not args.skip_evaluation:
@@ -177,6 +189,25 @@ def main() -> None:
             run(cmd, cwd=root)
             metrics_files.append(eval_out / "metrics_summary.csv")
             labels.append(MODEL_LABELS[model])
+
+    # 2b. Mask evaluation for YOLO-Seg
+    if not args.skip_segmentation_evaluation and "yolo_seg" in args.models:
+        require(bool(args.gt_coco), "Для mask-оценки YOLO-Seg нужен --gt-coco с segmentation-разметкой")
+        run(
+            [
+                sys.executable,
+                "run_segmentation_evaluation.py",
+                "--predictions",
+                str(inference_root / "yolo_seg" / "predictions.json"),
+                "--gt-coco",
+                args.gt_coco,
+                "--out-dir",
+                str(segmentation_evaluation_root / "yolo_seg"),
+                "--iou",
+                str(args.iou),
+            ],
+            cwd=root,
+        )
 
     # 3. Recommendation and comparison
     if metrics_files:

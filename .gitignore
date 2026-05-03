@@ -9,6 +9,7 @@ __pycache__/
 # venv
 .venv/
 .venv_wsl/
+.venv_wsl_old/
 venv/
 env/
 
