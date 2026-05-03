@@ -13,7 +13,8 @@
 - автоматическую рекомендацию лучшего pipeline по набору метрик;
 - единый отчёт сравнения нескольких моделей с таблицами и графиками;
 - анализ плотности найденных товаров по зонам изображения;
-- экспорт итогового мини-отчёта для презентации и защиты.
+- экспорт итогового мини-отчёта для презентации и защиты;
+- запуск полного pipeline одной командой.
 
 ## Быстрый старт
 
@@ -243,6 +244,34 @@ python run_mini_report.py --comparison-json results/model_comparison/model_compa
 - визуальные примеры;
 - список пунктов, которые удобно показать на защите.
 
+## Запуск полного pipeline одной командой
+
+Полный pipeline запускает инференс, оценку, рекомендацию, сравнение моделей, анализ плотности и мини-отчёт:
+
+```bash
+python run_full_pipeline.py --images-dir data/test/images --gt-yolo-labels data/test/labels --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --models yolo rtdetr wbf --out-dir results/full_pipeline
+```
+
+Если используется COCO-разметка:
+
+```bash
+python run_full_pipeline.py --images-dir data/test/images --gt-coco data/test/annotations.json --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --models yolo rtdetr wbf --out-dir results/full_pipeline
+```
+
+Для добавления Faster R-CNN:
+
+```bash
+python run_full_pipeline.py --images-dir data/test/images --gt-yolo-labels data/test/labels --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --frcnn-weights models/faster_rcnn/model_final.pth --models yolo rtdetr frcnn wbf --out-dir results/full_pipeline
+```
+
+После запуска будут сформированы папки:
+- `inference/` — предсказания и визуализации моделей;
+- `evaluation/` — метрики и ошибки;
+- `recommendation/` — выбор лучшего pipeline;
+- `model_comparison/` — единый отчёт сравнения;
+- `density/` — анализ плотности;
+- `mini_report/` — итоговый HTML/Markdown-отчёт.
+
 ## Новая структура инференса, оценки, аналитики и отчётов
 
 ```text
@@ -278,6 +307,7 @@ run_recommendation.py         # CLI-рекомендация лучшего pipe
 run_compare.py                # CLI-сравнение нескольких моделей
 run_density.py                # CLI-анализ плотности товаров
 run_mini_report.py            # CLI-сборка мини-отчёта
+run_full_pipeline.py          # CLI-запуск полного pipeline
 ```
 
 Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
@@ -298,5 +328,5 @@ run_mini_report.py            # CLI-сборка мини-отчёта
 
 ## Следующие этапы
 
-1. Добавить запуск полного pipeline одной командой.
-2. Добавить `.bat`-файлы для удобного запуска на Windows.
+1. Добавить `.bat`-файлы для удобного запуска на Windows.
+2. Добавить smoke-тесты для проверки основных CLI-скриптов.
