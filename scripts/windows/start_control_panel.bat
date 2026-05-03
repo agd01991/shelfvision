@@ -8,28 +8,40 @@ echo.
 
 cd /d %~dp0\..\..
 
-if not exist .venv\Scripts\python.exe (
-  echo [1/4] Creating virtual environment .venv ...
-  python -m venv .venv
+set WIN_VENV=.venv
+set WIN_PY=%WIN_VENV%\Scripts\python.exe
+
+if exist "%WIN_PY%" (
+  "%WIN_PY%" -c "import sys; print(sys.executable)" >nul 2>nul
   if errorlevel 1 (
-    echo Failed to create .venv. Check that Python is installed and added to PATH.
+    echo [1/4] Existing .venv is broken or was created inside WSL. Recreating Windows .venv ...
+    rmdir /s /q "%WIN_VENV%"
+  ) else (
+    echo [1/4] Windows virtual environment already exists.
+  )
+)
+
+if not exist "%WIN_PY%" (
+  echo [1/4] Creating Windows virtual environment .venv ...
+  python -m venv "%WIN_VENV%"
+  if errorlevel 1 (
+    echo Failed to create .venv. Check that Python for Windows is installed and added to PATH.
+    echo You can test it with: python --version
     pause
     exit /b 1
   )
-) else (
-  echo [1/4] Virtual environment already exists.
 )
 
-echo [2/4] Upgrading pip ...
-.venv\Scripts\python.exe -m pip install --upgrade pip
+echo [2/4] Upgrading pip in Windows .venv ...
+"%WIN_PY%" -m pip install --upgrade pip
 if errorlevel 1 (
-  echo Failed to upgrade pip.
+  echo Failed to upgrade pip in Windows .venv.
   pause
   exit /b 1
 )
 
 echo [3/4] Installing minimal packages for control panel ...
-.venv\Scripts\python.exe -m pip install streamlit PyYAML pandas
+"%WIN_PY%" -m pip install streamlit PyYAML pandas
 if errorlevel 1 (
   echo Failed to install minimal packages.
   pause
@@ -46,7 +58,8 @@ if not exist config\shelfvision.yaml (
 
 echo.
 echo Starting ShelfVision Control Panel with WSL runtime support ...
-echo Windows .venv is used only for the panel. Work tasks can run through .venv_wsl.
-.venv\Scripts\python.exe -m streamlit run scripts\control_panel_wsl.py
+echo Windows .venv is used only for the panel.
+echo Work tasks can run through WSL .venv_wsl after scripts\windows\setup_wsl_env.bat.
+"%WIN_PY%" -m streamlit run scripts\control_panel_wsl.py
 
 pause
