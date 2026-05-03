@@ -14,6 +14,9 @@ weights:
   frcnn: models/faster_rcnn/model_final.pth
 
 runtime:
+  # If true, action buttons in Control Panel run scripts through WSL .venv_wsl.
+  # Windows .venv is used only to launch the Control Panel itself.
+  use_wsl_runtime: true
   conf: 0.25
   imgsz: 640
   device: "0"
