@@ -45,7 +45,8 @@ if not exist config\shelfvision.yaml (
 )
 
 echo.
-echo Starting ShelfVision Control Panel ...
-.venv\Scripts\python.exe -m streamlit run scripts\control_panel.py
+echo Starting ShelfVision Control Panel with WSL runtime support ...
+echo Windows .venv is used only for the panel. Work tasks can run through .venv_wsl.
+.venv\Scripts\python.exe -m streamlit run scripts\control_panel_wsl.py
 
 pause
