@@ -1,0 +1,50 @@
+# ShelfVision example configuration
+# Copy this file to config/shelfvision.yaml and edit paths for your machine.
+
+paths:
+  images_dir: data/test/images
+  image: data/test/image_001.jpg
+  gt_coco: data/test/annotations.json
+  gt_yolo_labels: data/test/labels
+  out_dir: results/control_panel
+
+weights:
+  yolo: models/yolo/best.pt
+  rtdetr: models/rtdetr/best.pt
+  frcnn: models/faster_rcnn/model_final.pth
+
+runtime:
+  conf: 0.25
+  imgsz: 640
+  device: "0"
+  models:
+    - yolo
+    - rtdetr
+    - wbf
+
+wbf:
+  iou: 0.55
+  skip: 0.001
+  yolo_weight: 1.0
+  rtdetr_weight: 1.0
+
+density:
+  model: yolo
+  rows: 3
+  cols: 3
+  limit: 20
+
+setup:
+  venv_dir: .venv
+  requirements: requirements.txt
+  # Optional file downloads. Add your own URLs here if needed.
+  downloads:
+    - name: yolo_weights
+      url: ""
+      output: models/yolo/best.pt
+    - name: rtdetr_weights
+      url: ""
+      output: models/rtdetr/best.pt
+    - name: test_archive
+      url: ""
+      output: data/downloads/test_data.zip
