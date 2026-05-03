@@ -46,15 +46,27 @@ streamlit run scripts/interface_app.py
 python run_inference.py --model yolo --weights models/yolo/best.pt --image data/test/image_001.jpg --out-dir results/inference/yolo
 ```
 
+## Запуск инференса RT-DETR-L на одном изображении
+
+```bash
+python run_inference.py --model rtdetr --weights models/rtdetr/best.pt --image data/test/image_001.jpg --out-dir results/inference/rtdetr
+```
+
 После запуска будут сохранены:
-- `results/inference/yolo/prediction.json` — предсказания в едином формате;
-- `results/inference/yolo/summary.csv` — краткая аналитика;
-- `results/inference/yolo/visualized/` — изображение с bbox/masks.
+- `prediction.json` — предсказания в едином формате;
+- `summary.csv` — краткая аналитика;
+- `visualized/` — изображение с bbox/masks.
 
 ## Пакетная обработка папки изображений
 
+YOLO:
 ```bash
 python run_inference.py --model yolo --weights models/yolo/best.pt --images-dir data/test --out-dir results/inference/yolo_batch
+```
+
+RT-DETR-L:
+```bash
+python run_inference.py --model rtdetr --weights models/rtdetr/best.pt --images-dir data/test --out-dir results/inference/rtdetr_batch
 ```
 
 После запуска будут сохранены:
@@ -66,13 +78,14 @@ python run_inference.py --model yolo --weights models/yolo/best.pt --images-dir 
 
 ```text
 src/inference/
-├── prediction.py      # единый формат результата
-└── yolo_inference.py  # адаптер YOLO/YOLO-Seg
+├── prediction.py       # единый формат результата
+├── yolo_inference.py   # адаптер YOLO/YOLO-Seg
+└── rtdetr_inference.py # адаптер RT-DETR-L
 
 src/visualization/
-└── draw_boxes.py      # отрисовка bbox и masks
+└── draw_boxes.py       # отрисовка bbox и masks
 
-run_inference.py       # CLI-запуск инференса
+run_inference.py        # CLI-запуск инференса
 ```
 
 Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
@@ -93,8 +106,7 @@ run_inference.py       # CLI-запуск инференса
 
 ## Следующие этапы
 
-1. Подключить RT-DETR-L к тому же формату результата.
-2. Подключить Faster R-CNN.
-3. Добавить WBF-ансамбль поверх результатов YOLO и RT-DETR.
-4. Добавить расчёт метрик и визуализацию ошибок.
-5. Расширить интерфейс режимом загрузки изображения и выбора модели.
+1. Подключить Faster R-CNN.
+2. Добавить WBF-ансамбль поверх результатов YOLO и RT-DETR.
+3. Добавить расчёт метрик и визуализацию ошибок.
+4. Расширить интерфейс режимом загрузки изображения и выбора модели.
