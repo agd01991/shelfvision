@@ -52,6 +52,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "setup": {
         "venv_dir": ".venv",
+        "venv_dir_wsl": ".venv_wsl",
         "requirements": "requirements.txt",
         "downloads": [
             {"name": "yolo_weights", "url": "", "output": "models/yolo/best.pt"},
@@ -200,17 +201,17 @@ def page_setup(config: Dict[str, Any]) -> None:
             path = save_config(config)
             st.success(f"Конфигурация сохранена: {rel_path(path)}")
 
-        if st.button("Создать виртуальную среду .venv", use_container_width=True):
+        if st.button("Создать виртуальную среду .venv (Windows/local)", use_container_width=True):
             venv_dir = resolve_path(config["setup"].get("venv_dir", ".venv"))
             result = run_command([sys.executable, "-m", "venv", str(venv_dir)])
             render_command_result(result)
 
-        if st.button("Обновить pip в .venv", use_container_width=True):
+        if st.button("Обновить pip в .venv (Windows/local)", use_container_width=True):
             py = venv_python(config)
             result = run_command([str(py), "-m", "pip", "install", "--upgrade", "pip"])
             render_command_result(result)
 
-        if st.button("Установить зависимости из requirements.txt", use_container_width=True):
+        if st.button("Установить зависимости в .venv (Windows/local)", use_container_width=True):
             py = venv_python(config)
             req = resolve_path(config["setup"].get("requirements", "requirements.txt"))
             result = run_command([str(py), "-m", "pip", "install", "-r", str(req)])
@@ -220,7 +221,7 @@ def page_setup(config: Dict[str, Any]) -> None:
         st.subheader("WSL")
         st.warning(
             "Установка WSL может требовать прав администратора и перезагрузки. "
-            "Для ShelfVision это не обязательно, но полезно, если дальше планируется работа в Linux-окружении."
+            "Для установки зависимостей через WSL должна быть установлена Linux-система и пакеты python3, python3-venv, python3-pip."
         )
         if st.button("Проверить WSL", use_container_width=True):
             result = run_command(["wsl", "--status"])
@@ -228,6 +229,19 @@ def page_setup(config: Dict[str, Any]) -> None:
 
         if st.button("Запустить wsl --install", use_container_width=True):
             result = run_command(["wsl", "--install"])
+            render_command_result(result)
+
+        if st.button("Создать WSL venv и установить зависимости", use_container_width=True):
+            result = run_command(
+                [
+                    sys.executable,
+                    "scripts/setup_wsl_env.py",
+                    "--venv-dir",
+                    config["setup"].get("venv_dir_wsl", ".venv_wsl"),
+                    "--requirements",
+                    config["setup"].get("requirements", "requirements.txt"),
+                ]
+            )
             render_command_result(result)
 
         if st.button("Smoke-проверка CLI", use_container_width=True):
@@ -238,6 +252,7 @@ def page_setup(config: Dict[str, Any]) -> None:
     st.subheader("Проверка путей")
     check_path("requirements.txt", config["setup"].get("requirements", "requirements.txt"))
     check_path("Python .venv", str(venv_python(config)))
+    check_path("WSL venv", config["setup"].get("venv_dir_wsl", ".venv_wsl"))
     check_path("YOLO weights", config["weights"].get("yolo", ""))
     check_path("RT-DETR weights", config["weights"].get("rtdetr", ""))
     check_path("Faster R-CNN weights", config["weights"].get("frcnn", ""))
@@ -303,6 +318,12 @@ def page_config(config: Dict[str, Any]) -> Dict[str, Any]:
         weights["yolo"] = st.text_input("YOLO weights", value=str(weights.get("yolo", "")))
         weights["rtdetr"] = st.text_input("RT-DETR weights", value=str(weights.get("rtdetr", "")))
         weights["frcnn"] = st.text_input("Faster R-CNN weights", value=str(weights.get("frcnn", "")))
+
+        st.subheader("Setup")
+        setup = config["setup"]
+        setup["venv_dir"] = st.text_input("Windows/local venv", value=str(setup.get("venv_dir", ".venv")))
+        setup["venv_dir_wsl"] = st.text_input("WSL venv", value=str(setup.get("venv_dir_wsl", ".venv_wsl")))
+        setup["requirements"] = st.text_input("requirements.txt", value=str(setup.get("requirements", "requirements.txt")))
 
         st.subheader("Runtime")
         runtime = config["runtime"]
