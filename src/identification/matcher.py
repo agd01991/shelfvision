@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+
+from .crop_extractor import CropRecord, extract_crops_from_predictions_file
+from .feature_extractor import VisualFeatureExtractor, cosine_similarity
+from .sku_gallery import SkuGalleryItem, load_gallery
+
+
+@dataclass
+class SkuCandidate:
+    sku_id: str
+    sku_name: str
+    category: str
+    score: float
+    gallery_image_path: str
+
+
+@dataclass
+class IdentificationResult:
+    image_path: str
+    image_name: str
+    object_id: int
+    crop_path: str
+    source_type: str
+    detection_score: float
+    sku_id: Optional[str]
+    sku_name: str
+    sku_confidence: float
+    sku_status: str
+    top_k: List[SkuCandidate]
+
+
+def _build_gallery_features(
+    items: List[SkuGalleryItem],
+    extractor: VisualFeatureExtractor,
+) -> List[tuple[SkuGalleryItem, np.ndarray]]:
+    features: List[tuple[SkuGalleryItem, np.ndarray]] = []
+    for item in items:
+        try:
+            features.append((item, extractor.extract_from_path(item.image_path)))
+        except FileNotFoundError:
+            continue
+    if not features:
+        raise FileNotFoundError("Не найдено ни одного доступного изображения в SKU-галерее")
+    return features
+
+
+def _match_one_crop(
+    crop: CropRecord,
+    gallery_features: List[tuple[SkuGalleryItem, np.ndarray]],
+    extractor: VisualFeatureExtractor,
+    threshold: float,
+    top_k: int,
+) -> IdentificationResult:
+    crop_feature = extractor.extract_from_path(crop.crop_path)
+    candidates: List[SkuCandidate] = []
+    for item, gallery_feature in gallery_features:
+        score = cosine_similarity(crop_feature, gallery_feature)
+        candidates.append(
+            SkuCandidate(
+                sku_id=item.sku_id,
+                sku_name=item.sku_name,
+                category=item.category,
+                score=score,
+                gallery_image_path=item.image_path,
+            )
+        )
+
+    candidates.sort(key=lambda item: item.score, reverse=True)
+    best = candidates[0] if candidates else None
+    status = "matched" if best and best.score >= threshold else "unknown"
+    return IdentificationResult(
+        image_path=crop.image_path,
+        image_name=crop.image_name,
+        object_id=crop.object_id,
+        crop_path=crop.crop_path,
+        source_type=crop.source_type,
+        detection_score=crop.score,
+        sku_id=best.sku_id if status == "matched" and best else None,
+        sku_name=best.sku_name if status == "matched" and best else "unknown",
+        sku_confidence=best.score if best else 0.0,
+        sku_status=status,
+        top_k=candidates[:top_k],
+    )
+
+
+def results_to_dataframe(results: List[IdentificationResult]) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    for item in results:
+        row = asdict(item)
+        row["top_k"] = " | ".join(
+            f"{cand.sku_id}:{cand.score:.4f}" for cand in item.top_k
+        )
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def run_sku_matching(
+    predictions_json: str | Path,
+    images_dir: str | Path | None,
+    out_dir: str | Path,
+    gallery_csv: str | Path | None = None,
+    gallery_dir: str | Path | None = None,
+    use_masks: bool = True,
+    threshold: float = 0.65,
+    top_k: int = 3,
+    padding_ratio: float = 0.05,
+) -> List[IdentificationResult]:
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    crops = extract_crops_from_predictions_file(
+        predictions_json=predictions_json,
+        images_dir=images_dir,
+        out_dir=out_dir,
+        use_masks=use_masks,
+        padding_ratio=padding_ratio,
+    )
+    gallery_items = load_gallery(gallery_csv=gallery_csv, gallery_dir=gallery_dir)
+    extractor = VisualFeatureExtractor()
+    gallery_features = _build_gallery_features(gallery_items, extractor)
+
+    results = [
+        _match_one_crop(
+            crop=crop,
+            gallery_features=gallery_features,
+            extractor=extractor,
+            threshold=threshold,
+            top_k=top_k,
+        )
+        for crop in crops
+    ]
+
+    results_to_dataframe(results).to_csv(out_dir / "identification_results.csv", index=False)
+    return results
