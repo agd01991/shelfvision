@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -10,6 +13,7 @@ import streamlit as st
 
 from asset_discovery import AssetCandidate, discover_assets
 from control_panel import ROOT, check_path, rel_path, resolve_path, save_config, venv_python
+from estimate_dependencies import estimate_dependency_seconds
 from panel_progress import CommandStep, run_long_task_with_progress, run_steps_with_progress
 
 
@@ -51,6 +55,47 @@ def _wsl_pip_install_script(config: Dict[str, Any]) -> str:
     )
 
 
+def _estimate_windows_dependency_seconds(requirements: str | Path, assume_empty: bool = False) -> int:
+    try:
+        result = estimate_dependency_seconds(requirements, assume_empty=assume_empty)
+        return int(result.get("estimated_seconds", 600))
+    except Exception:
+        return 600 if assume_empty else 180
+
+
+def _estimate_wsl_dependency_seconds(config: Dict[str, Any], assume_empty: bool = False) -> int:
+    """Estimate install time from real missing packages in WSL .venv_wsl when possible."""
+
+    requirements = str(config["setup"].get("requirements", "requirements.txt")).replace("\\", "/")
+    venv_dir = str(config["setup"].get("venv_dir_wsl", ".venv_wsl")).replace("\\", "/")
+
+    if assume_empty:
+        return 90 + _estimate_windows_dependency_seconds(resolve_path(requirements), assume_empty=True)
+
+    command = (
+        f"cd \"$(wslpath '{ROOT}')\" && "
+        f"if [ -x '{venv_dir}/bin/python' ]; then "
+        f"'{venv_dir}/bin/python' scripts/estimate_dependencies.py --requirements '{requirements}' --json; "
+        f"else exit 2; fi"
+    )
+    try:
+        result = subprocess.run(
+            ["wsl", "bash", "-lc", command],
+            cwd=str(ROOT),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=45,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout.strip().splitlines()[-1])
+            return max(30, int(data.get("estimated_seconds", 600)))
+    except Exception:
+        pass
+
+    return _estimate_wsl_dependency_seconds(config, assume_empty=True)
+
+
 def _windows_venv_steps(config: Dict[str, Any], install_full_requirements: bool = False) -> List[CommandStep]:
     venv_dir = resolve_path(config["setup"].get("venv_dir", ".venv"))
     py = _windows_python_path(venv_dir)
@@ -86,14 +131,18 @@ def _windows_venv_steps(config: Dict[str, Any], install_full_requirements: bool 
                 title="Установка всех зависимостей requirements.txt в Windows .venv",
                 cmd=[str(py), "-m", "pip", "install", "-r", str(req)],
                 cwd=ROOT,
-                description="Ставятся все зависимости проекта в Windows .venv. Для рабочей схемы через WSL это обычно не требуется.",
-                estimated_seconds=1800,
+                description=(
+                    "Ставятся все зависимости проекта в Windows .venv. "
+                    "ETA рассчитано автоматически по requirements.txt."
+                ),
+                estimated_seconds=_estimate_windows_dependency_seconds(req, assume_empty=not py.exists()),
             )
         )
     return steps
 
 
 def _wsl_setup_steps(config: Dict[str, Any]) -> List[CommandStep]:
+    estimate = _estimate_wsl_dependency_seconds(config, assume_empty=True)
     return [
         CommandStep(
             title="Создание WSL .venv_wsl и установка requirements.txt",
@@ -108,9 +157,9 @@ def _wsl_setup_steps(config: Dict[str, Any]) -> List[CommandStep]:
             cwd=ROOT,
             description=(
                 "Команда создаёт Linux-среду внутри WSL и устанавливает зависимости проекта. "
-                "На этапе torch/ultralytics/pip загрузка может выглядеть долгой, но таймер ниже показывает, что процесс живой."
+                "Примерное время рассчитано автоматически по списку пакетов requirements.txt."
             ),
-            estimated_seconds=2400,
+            estimated_seconds=estimate,
         )
     ]
 
@@ -132,6 +181,7 @@ def _wsl_check_dependency_steps(config: Dict[str, Any], strict: bool = False) ->
 
 
 def _wsl_install_missing_steps(config: Dict[str, Any]) -> List[CommandStep]:
+    estimate = _estimate_wsl_dependency_seconds(config, assume_empty=False)
     return [
         CommandStep(
             title="Доустановка зависимостей в существующую WSL .venv_wsl",
@@ -139,9 +189,9 @@ def _wsl_install_missing_steps(config: Dict[str, Any]) -> List[CommandStep]:
             cwd=ROOT,
             description=(
                 "Запускается pip install -r requirements.txt в уже созданной WSL-среде. "
-                "pip сам пропустит уже установленные подходящие пакеты и доустановит недостающие."
+                "ETA рассчитано автоматически по фактически отсутствующим или неподходящим пакетам."
             ),
-            estimated_seconds=1800,
+            estimated_seconds=estimate,
         ),
         *_wsl_check_dependency_steps(config, strict=False),
     ]
@@ -214,21 +264,49 @@ def _default_search_roots() -> List[str]:
     return unique
 
 
+def _sample_root_complexity(root: Path, max_items: int = 1200) -> tuple[int, float, bool]:
+    start = time.perf_counter()
+    count = 0
+    truncated = False
+    try:
+        for _ in root.rglob("*"):
+            count += 1
+            if count >= max_items:
+                truncated = True
+                break
+    except Exception:
+        pass
+    elapsed = max(0.01, time.perf_counter() - start)
+    return count, elapsed, truncated
+
+
 def _estimate_asset_discovery_seconds(roots: List[Path]) -> int:
-    estimate = 20
-    for root in roots:
+    """Estimate search time from selected roots by doing a quick bounded sample."""
+
+    estimate = 5.0
+    existing_roots = [root for root in roots if root.exists()]
+    for root in existing_roots:
+        count, elapsed, truncated = _sample_root_complexity(root)
         root_text = str(root).replace("\\", "/").lower()
-        if not root.exists():
-            continue
-        if root == ROOT or root_text.endswith("/models") or root_text.endswith("/data"):
-            estimate += 20
-        elif "1diplom" in root_text:
-            estimate += 45
-        elif "downloads" in root_text or "documents" in root_text:
-            estimate += 90
+
+        # asset_discovery scans weights three times + images dirs + videos, so multiply sample cost.
+        if truncated:
+            root_estimate = max(30.0, elapsed * 5 * 8)
         else:
-            estimate += 60
-    return max(30, min(600, estimate))
+            root_estimate = max(5.0, elapsed * 5)
+
+        if "downloads" in root_text or "documents" in root_text:
+            root_estimate *= 1.4
+        if "1diplom" in root_text:
+            root_estimate *= 1.15
+        if root == ROOT:
+            root_estimate *= 0.8
+
+        estimate += root_estimate
+
+    if not existing_roots:
+        return 30
+    return max(20, min(900, int(estimate)))
 
 
 def _render_asset_discovery(config: Dict[str, Any]) -> None:
@@ -248,13 +326,14 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
 
     if st.button("Найти веса, изображения и видео", use_container_width=True):
         roots = [Path(line.strip()) for line in raw_roots.splitlines() if line.strip()]
-        estimate = _estimate_asset_discovery_seconds(roots)
+        with st.spinner("Быстрая оценка объёма выбранных папок..."):
+            estimate = _estimate_asset_discovery_seconds(roots)
         st.session_state["asset_discovery_results"] = run_long_task_with_progress(
             func=lambda: discover_assets(roots, limit=int(limit)),
             title="Автопоиск файлов",
             description=(
                 "Идёт поиск весов моделей, папок изображений и видеофайлов. "
-                "Если выбраны большие папки вроде Documents или Downloads, поиск может занять несколько минут."
+                "Примерное время рассчитано автоматически по выбранным папкам."
             ),
             estimated_seconds=estimate,
             progress_text="Поиск файлов",
