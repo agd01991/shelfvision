@@ -10,7 +10,7 @@ import streamlit as st
 
 from asset_discovery import AssetCandidate, discover_assets
 from control_panel import ROOT, check_path, rel_path, resolve_path, save_config, venv_python
-from panel_progress import CommandStep, run_steps_with_progress
+from panel_progress import CommandStep, run_long_task_with_progress, run_steps_with_progress
 
 
 def _windows_python_path(venv_dir: Path) -> Path:
@@ -214,6 +214,23 @@ def _default_search_roots() -> List[str]:
     return unique
 
 
+def _estimate_asset_discovery_seconds(roots: List[Path]) -> int:
+    estimate = 20
+    for root in roots:
+        root_text = str(root).replace("\\", "/").lower()
+        if not root.exists():
+            continue
+        if root == ROOT or root_text.endswith("/models") or root_text.endswith("/data"):
+            estimate += 20
+        elif "1diplom" in root_text:
+            estimate += 45
+        elif "downloads" in root_text or "documents" in root_text:
+            estimate += 90
+        else:
+            estimate += 60
+    return max(30, min(600, estimate))
+
+
 def _render_asset_discovery(config: Dict[str, Any]) -> None:
     st.subheader("Автопоиск файлов")
     st.caption(
@@ -231,8 +248,17 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
 
     if st.button("Найти веса, изображения и видео", use_container_width=True):
         roots = [Path(line.strip()) for line in raw_roots.splitlines() if line.strip()]
-        with st.spinner("Идёт поиск файлов. Если выбраны большие папки, это может занять время..."):
-            st.session_state["asset_discovery_results"] = discover_assets(roots, limit=int(limit))
+        estimate = _estimate_asset_discovery_seconds(roots)
+        st.session_state["asset_discovery_results"] = run_long_task_with_progress(
+            func=lambda: discover_assets(roots, limit=int(limit)),
+            title="Автопоиск файлов",
+            description=(
+                "Идёт поиск весов моделей, папок изображений и видеофайлов. "
+                "Если выбраны большие папки вроде Documents или Downloads, поиск может занять несколько минут."
+            ),
+            estimated_seconds=estimate,
+            progress_text="Поиск файлов",
+        )
         st.success("Поиск завершён")
 
     results = st.session_state.get("asset_discovery_results")
