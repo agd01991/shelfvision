@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import queue
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,22 +17,81 @@ class CommandStep:
     cmd: List[str]
     cwd: Path
     description: str = ""
+    estimated_seconds: Optional[int] = None
 
 
 def _format_cmd(cmd: List[str]) -> str:
     return " ".join(f'"{part}"' if " " in str(part) else str(part) for part in cmd)
 
 
+def _format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{sec:02d}"
+    return f"{minutes:02d}:{sec:02d}"
+
+
+def _eta_text(elapsed: float, estimated_seconds: Optional[int]) -> str:
+    if not estimated_seconds or estimated_seconds <= 0:
+        return "примерно оставшееся время: рассчитывается по ходу выполнения"
+    remaining = max(0, estimated_seconds - elapsed)
+    if remaining == 0:
+        return "примерно оставшееся время: меньше минуты или команда почти завершена"
+    return f"примерно осталось: {_format_duration(remaining)}"
+
+
+def _progress_fraction(elapsed: float, estimated_seconds: Optional[int]) -> float:
+    if not estimated_seconds or estimated_seconds <= 0:
+        return 0.0
+    return min(0.95, max(0.0, elapsed / estimated_seconds))
+
+
+def _reader_thread(stdout, output_queue: "queue.Queue[str]") -> None:
+    try:
+        for line in stdout:
+            output_queue.put(line.rstrip())
+    finally:
+        output_queue.put("__STREAM_CLOSED__")
+
+
+def _render_live_state(
+    timer_placeholder,
+    log_placeholder,
+    log_lines: List[str],
+    start: float,
+    estimated_seconds: Optional[int],
+    process_alive: bool,
+    max_log_lines: int,
+) -> None:
+    elapsed = time.perf_counter() - start
+    eta = _eta_text(elapsed, estimated_seconds)
+    timer_placeholder.info(
+        f"⏱ Прошло: **{_format_duration(elapsed)}** · {eta}. "
+        "Если лог не меняется несколько минут, это всё ещё может быть нормальной установкой тяжёлых пакетов."
+    )
+    visible = "\n".join(log_lines[-max_log_lines:])
+    if not visible and process_alive:
+        visible = "Команда запущена. Ожидание первого вывода..."
+    log_placeholder.code(visible or "Команда завершилась без текстового вывода.", language="text")
+
+
 def run_command_with_live_log(
     step: CommandStep,
     log_placeholder,
     command_placeholder,
+    timer_placeholder=None,
+    step_progress_placeholder=None,
     max_log_lines: int = 250,
 ) -> int:
     command_placeholder.info(f"Выполняется: `{_format_cmd(step.cmd)}`")
+    timer_placeholder = timer_placeholder or st.empty()
+    step_progress_placeholder = step_progress_placeholder or st.empty()
 
     log_lines: List[str] = []
     start = time.perf_counter()
+    output_queue: "queue.Queue[str]" = queue.Queue()
 
     try:
         process = subprocess.Popen(
@@ -48,12 +109,52 @@ def run_command_with_live_log(
         return 1
 
     assert process.stdout is not None
-    for line in process.stdout:
-        clean_line = line.rstrip()
-        if clean_line:
-            log_lines.append(clean_line)
-        visible = "\n".join(log_lines[-max_log_lines:])
-        log_placeholder.code(visible or "Ожидание вывода команды...", language="text")
+    thread = threading.Thread(target=_reader_thread, args=(process.stdout, output_queue), daemon=True)
+    thread.start()
+
+    stream_closed = False
+    last_render = 0.0
+
+    while process.poll() is None or not output_queue.empty() or not stream_closed:
+        changed = False
+        while True:
+            try:
+                line = output_queue.get_nowait()
+            except queue.Empty:
+                break
+            if line == "__STREAM_CLOSED__":
+                stream_closed = True
+                continue
+            if line:
+                log_lines.append(line)
+                changed = True
+
+        now = time.perf_counter()
+        elapsed = now - start
+        if changed or now - last_render >= 1.0:
+            last_render = now
+            step_fraction = _progress_fraction(elapsed, step.estimated_seconds)
+            if step.estimated_seconds:
+                step_progress_placeholder.progress(
+                    step_fraction,
+                    text=f"{step.title}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, step.estimated_seconds)}",
+                )
+            else:
+                step_progress_placeholder.progress(
+                    min(0.95, 0.1 + (elapsed % 30) / 35),
+                    text=f"{step.title}: прошло {_format_duration(elapsed)}, время зависит от скорости сети и pip",
+                )
+            _render_live_state(
+                timer_placeholder=timer_placeholder,
+                log_placeholder=log_placeholder,
+                log_lines=log_lines,
+                start=start,
+                estimated_seconds=step.estimated_seconds,
+                process_alive=process.poll() is None,
+                max_log_lines=max_log_lines,
+            )
+
+        time.sleep(0.2)
 
     return_code = process.wait()
     elapsed = time.perf_counter() - start
@@ -61,8 +162,17 @@ def run_command_with_live_log(
     if not log_lines:
         log_lines.append("Команда завершилась без текстового вывода.")
     log_lines.append(f"\nreturncode={return_code}, elapsed={elapsed:.1f}s")
+    step_progress_placeholder.progress(1.0, text=f"{step.title}: завершено за {_format_duration(elapsed)}")
+    timer_placeholder.info(f"⏱ Итого: **{_format_duration(elapsed)}** · returncode={return_code}")
     log_placeholder.code("\n".join(log_lines[-max_log_lines:]), language="text")
     return return_code
+
+
+def _total_estimated_seconds(steps: List[CommandStep]) -> Optional[int]:
+    estimates = [step.estimated_seconds for step in steps if step.estimated_seconds and step.estimated_seconds > 0]
+    if len(estimates) != len(steps):
+        return None
+    return int(sum(estimates))
 
 
 def run_steps_with_progress(
@@ -77,25 +187,45 @@ def run_steps_with_progress(
 
     st.subheader(title)
     progress = st.progress(0, text="Подготовка...")
+    step_progress_placeholder = st.empty()
+    timer_placeholder = st.empty()
     status_placeholder = st.empty()
     command_placeholder = st.empty()
     log_placeholder = st.empty()
 
     total = len(steps)
+    total_estimate = _total_estimated_seconds(steps)
+    all_start = time.perf_counter()
+
     for idx, step in enumerate(steps, start=1):
-        progress.progress((idx - 1) / total, text=f"[{idx}/{total}] {step.title}")
+        elapsed_total = time.perf_counter() - all_start
+        if total_estimate:
+            total_eta = _eta_text(elapsed_total, total_estimate)
+        else:
+            total_eta = "примерно оставшееся время зависит от текущего шага"
+        progress.progress((idx - 1) / total, text=f"[{idx}/{total}] {step.title} · прошло {_format_duration(elapsed_total)} · {total_eta}")
+
         if step.description:
             status_placeholder.info(step.description)
         else:
             status_placeholder.info(f"Выполняется шаг {idx} из {total}: {step.title}")
 
-        return_code = run_command_with_live_log(step, log_placeholder, command_placeholder)
+        return_code = run_command_with_live_log(
+            step,
+            log_placeholder,
+            command_placeholder,
+            timer_placeholder=timer_placeholder,
+            step_progress_placeholder=step_progress_placeholder,
+        )
         if return_code != 0:
             progress.progress(idx / total, text=f"Ошибка на шаге: {step.title}")
             status_placeholder.error(f"{failure_message}: {step.title}, returncode={return_code}")
             return False
 
-    progress.progress(1.0, text="Готово")
+    elapsed_total = time.perf_counter() - all_start
+    progress.progress(1.0, text=f"Готово за {_format_duration(elapsed_total)}")
     command_placeholder.empty()
+    step_progress_placeholder.empty()
+    timer_placeholder.success(f"⏱ Общее время выполнения: **{_format_duration(elapsed_total)}**")
     status_placeholder.success(success_message)
     return True
