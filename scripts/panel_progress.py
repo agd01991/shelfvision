@@ -6,9 +6,12 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional, TypeVar
 
 import streamlit as st
+
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -75,6 +78,70 @@ def _render_live_state(
     if not visible and process_alive:
         visible = "Команда запущена. Ожидание первого вывода..."
     log_placeholder.code(visible or "Команда завершилась без текстового вывода.", language="text")
+
+
+def run_long_task_with_progress(
+    func: Callable[[], T],
+    title: str,
+    description: str = "",
+    estimated_seconds: Optional[int] = None,
+    progress_text: str = "Выполняется операция...",
+) -> T:
+    """Runs a long synchronous Python task in a worker thread and keeps Streamlit UI alive.
+
+    Useful for tasks that do not stream stdout, for example local filesystem search.
+    """
+
+    st.subheader(title)
+    if description:
+        st.info(description)
+
+    progress = st.progress(0.0, text="Подготовка...")
+    timer_placeholder = st.empty()
+    status_placeholder = st.empty()
+
+    result_queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
+
+    def target() -> None:
+        try:
+            result_queue.put(("result", func()))
+        except Exception as exc:  # noqa: BLE001 - показываем ошибку в интерфейсе
+            result_queue.put(("error", exc))
+
+    start = time.perf_counter()
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+
+    while worker.is_alive():
+        elapsed = time.perf_counter() - start
+        if estimated_seconds:
+            progress.progress(
+                _progress_fraction(elapsed, estimated_seconds),
+                text=f"{progress_text}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, estimated_seconds)}",
+            )
+        else:
+            progress.progress(
+                min(0.95, 0.1 + (elapsed % 45) / 55),
+                text=f"{progress_text}: прошло {_format_duration(elapsed)}, время зависит от количества файлов",
+            )
+        timer_placeholder.info(
+            f"⏱ Прошло: **{_format_duration(elapsed)}** · {_eta_text(elapsed, estimated_seconds)}. "
+            "Если поиск идёт по большим папкам, это может занять несколько минут."
+        )
+        status_placeholder.info("Идёт обход выбранных папок и поиск весов, изображений и видео...")
+        time.sleep(1.0)
+
+    elapsed = time.perf_counter() - start
+    kind, payload = result_queue.get()
+    progress.progress(1.0, text=f"Готово за {_format_duration(elapsed)}")
+    timer_placeholder.success(f"⏱ Общее время выполнения: **{_format_duration(elapsed)}**")
+
+    if kind == "error":
+        status_placeholder.error(f"Операция завершилась с ошибкой: {payload}")
+        raise payload  # type: ignore[misc]
+
+    status_placeholder.success("Операция завершена")
+    return payload  # type: ignore[return-value]
 
 
 def run_command_with_live_log(
