@@ -11,6 +11,10 @@ def _result_key(result: IdentificationResult) -> tuple[str, int]:
     return (Path(result.image_path).name, result.object_id)
 
 
+def _get_indexed(values: List[Any], index: int, default: Any) -> Any:
+    return values[index] if index < len(values) else default
+
+
 def build_identified_predictions(
     predictions_json: str | Path,
     results: List[IdentificationResult],
@@ -22,16 +26,22 @@ def build_identified_predictions(
     for prediction in predictions:
         image_name = Path(str(prediction.get("image_path", ""))).name
         boxes = prediction.get("boxes", []) or []
+        scores = prediction.get("scores", []) or []
+        labels = prediction.get("labels", []) or []
+        class_ids = prediction.get("class_ids", []) or []
+        masks = prediction.get("masks", []) or []
+
         detections: List[Dict[str, Any]] = []
         for idx, box in enumerate(boxes, start=1):
+            array_index = idx - 1
             matched = result_by_key.get((image_name, idx))
             detection = {
                 "object_id": idx,
                 "box": box,
-                "score": (prediction.get("scores", []) or [0.0] * len(boxes))[idx - 1],
-                "label": (prediction.get("labels", []) or ["product"] * len(boxes))[idx - 1],
-                "class_id": (prediction.get("class_ids", []) or [0] * len(boxes))[idx - 1],
-                "mask": (prediction.get("masks", []) or [None] * len(boxes))[idx - 1],
+                "score": _get_indexed(scores, array_index, 0.0),
+                "label": _get_indexed(labels, array_index, "product"),
+                "class_id": _get_indexed(class_ids, array_index, 0),
+                "mask": _get_indexed(masks, array_index, None),
             }
             if matched:
                 detection.update(
