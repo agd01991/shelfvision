@@ -22,6 +22,35 @@ def _reset_directory(path: Path) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _wsl_bash_command(script: str) -> List[str]:
+    return ["wsl", "bash", "-lc", script]
+
+
+def _wsl_python_script(config: Dict[str, Any], script: str, extra_args: List[str] | None = None) -> str:
+    venv_dir = str(config["setup"].get("venv_dir_wsl", ".venv_wsl")).replace("\\", "/")
+    extra_args = extra_args or []
+    safe_args = " ".join(f"'{arg}'" for arg in extra_args)
+    return (
+        f"cd \"$(wslpath '{ROOT}')\" && "
+        f"if [ ! -x '{venv_dir}/bin/python' ]; then "
+        f"echo 'WSL virtual environment not found: {venv_dir}/bin/python'; "
+        f"echo 'Сначала создайте WSL .venv_wsl или установите зависимости.'; exit 2; fi && "
+        f"'{venv_dir}/bin/python' '{script}' {safe_args}"
+    )
+
+
+def _wsl_pip_install_script(config: Dict[str, Any]) -> str:
+    venv_dir = str(config["setup"].get("venv_dir_wsl", ".venv_wsl")).replace("\\", "/")
+    requirements = str(config["setup"].get("requirements", "requirements.txt")).replace("\\", "/")
+    return (
+        f"cd \"$(wslpath '{ROOT}')\" && "
+        f"if [ ! -x '{venv_dir}/bin/python' ]; then "
+        f"echo 'WSL virtual environment not found: {venv_dir}/bin/python'; "
+        f"echo 'Сначала нажмите Создать WSL venv и установить зависимости.'; exit 2; fi && "
+        f"'{venv_dir}/bin/python' -m pip install -r '{requirements}'"
+    )
+
+
 def _windows_venv_steps(config: Dict[str, Any], install_full_requirements: bool = False) -> List[CommandStep]:
     venv_dir = resolve_path(config["setup"].get("venv_dir", ".venv"))
     py = _windows_python_path(venv_dir)
@@ -83,6 +112,38 @@ def _wsl_setup_steps(config: Dict[str, Any]) -> List[CommandStep]:
             ),
             estimated_seconds=2400,
         )
+    ]
+
+
+def _wsl_check_dependency_steps(config: Dict[str, Any], strict: bool = False) -> List[CommandStep]:
+    requirements = str(config["setup"].get("requirements", "requirements.txt")).replace("\\", "/")
+    args = ["--requirements", requirements]
+    if strict:
+        args.append("--strict")
+    return [
+        CommandStep(
+            title="Проверка зависимостей в WSL .venv_wsl",
+            cmd=_wsl_bash_command(_wsl_python_script(config, "scripts/check_dependencies.py", args)),
+            cwd=ROOT,
+            description="Проверяется, какие пакеты из requirements.txt уже установлены в WSL .venv_wsl, без установки новых пакетов.",
+            estimated_seconds=30,
+        )
+    ]
+
+
+def _wsl_install_missing_steps(config: Dict[str, Any]) -> List[CommandStep]:
+    return [
+        CommandStep(
+            title="Доустановка зависимостей в существующую WSL .venv_wsl",
+            cmd=_wsl_bash_command(_wsl_pip_install_script(config)),
+            cwd=ROOT,
+            description=(
+                "Запускается pip install -r requirements.txt в уже созданной WSL-среде. "
+                "pip сам пропустит уже установленные подходящие пакеты и доустановит недостающие."
+            ),
+            estimated_seconds=1800,
+        ),
+        *_wsl_check_dependency_steps(config, strict=False),
     ]
 
 
@@ -270,6 +331,22 @@ def page_setup(config: Dict[str, Any]) -> None:
                 title="Проверка WSL",
                 success_message="WSL доступен.",
                 failure_message="WSL не отвечает или не установлен",
+            )
+
+        if st.button("Проверить зависимости в WSL .venv_wsl", use_container_width=True):
+            run_steps_with_progress(
+                _wsl_check_dependency_steps(config, strict=False),
+                title="Проверка зависимостей WSL .venv_wsl",
+                success_message="Проверка зависимостей завершена. Посмотри строки MISSING/VERSION в логе ниже.",
+                failure_message="Проверка зависимостей WSL завершилась с ошибкой",
+            )
+
+        if st.button("Доустановить недостающие зависимости в WSL .venv_wsl", use_container_width=True):
+            run_steps_with_progress(
+                _wsl_install_missing_steps(config),
+                title="Доустановка зависимостей WSL .venv_wsl",
+                success_message="Доустановка завершена, повторная проверка выполнена.",
+                failure_message="Ошибка доустановки зависимостей WSL .venv_wsl",
             )
 
         if st.button("Запустить wsl --install", use_container_width=True):
