@@ -38,17 +38,29 @@ def _format_duration(seconds: float) -> str:
 
 def _eta_text(elapsed: float, estimated_seconds: Optional[int]) -> str:
     if not estimated_seconds or estimated_seconds <= 0:
-        return "примерно оставшееся время: рассчитывается по ходу выполнения"
-    remaining = max(0, estimated_seconds - elapsed)
-    if remaining == 0:
-        return "примерно оставшееся время: меньше минуты или команда почти завершена"
+        return "оставшееся время: оценивается по ходу выполнения"
+
+    remaining = estimated_seconds - elapsed
+    if remaining <= 0:
+        overrun = elapsed - estimated_seconds
+        return (
+            "операция идёт дольше первичной оценки "
+            f"на {_format_duration(overrun)}; точное оставшееся время определить нельзя"
+        )
+
     return f"примерно осталось: {_format_duration(remaining)}"
 
 
 def _progress_fraction(elapsed: float, estimated_seconds: Optional[int]) -> float:
     if not estimated_seconds or estimated_seconds <= 0:
-        return 0.0
-    return min(0.95, max(0.0, elapsed / estimated_seconds))
+        return min(0.95, 0.1 + (elapsed % 45) / 55)
+
+    if elapsed <= estimated_seconds:
+        return min(0.9, max(0.0, elapsed / estimated_seconds * 0.9))
+
+    # После превышения оценки не показываем, будто задача почти завершена.
+    # Держим живую анимацию в диапазоне 90-97%.
+    return 0.9 + ((elapsed - estimated_seconds) % 20) / 20 * 0.07
 
 
 def _reader_thread(stdout, output_queue: "queue.Queue[str]") -> None:
@@ -67,13 +79,11 @@ def _render_live_state(
     estimated_seconds: Optional[int],
     process_alive: bool,
     max_log_lines: int,
+    hint: str,
 ) -> None:
     elapsed = time.perf_counter() - start
     eta = _eta_text(elapsed, estimated_seconds)
-    timer_placeholder.info(
-        f"⏱ Прошло: **{_format_duration(elapsed)}** · {eta}. "
-        "Если лог не меняется несколько минут, это всё ещё может быть нормальной установкой тяжёлых пакетов."
-    )
+    timer_placeholder.info(f"⏱ Прошло: **{_format_duration(elapsed)}** · {eta}. {hint}")
     visible = "\n".join(log_lines[-max_log_lines:])
     if not visible and process_alive:
         visible = "Команда запущена. Ожидание первого вывода..."
@@ -86,6 +96,8 @@ def run_long_task_with_progress(
     description: str = "",
     estimated_seconds: Optional[int] = None,
     progress_text: str = "Выполняется операция...",
+    status_text: str = "Операция выполняется...",
+    hint: str = "Если операция идёт по большим папкам или зависит от сети, это может занять несколько минут.",
 ) -> T:
     """Runs a long synchronous Python task in a worker thread and keeps Streamlit UI alive.
 
@@ -114,21 +126,12 @@ def run_long_task_with_progress(
 
     while worker.is_alive():
         elapsed = time.perf_counter() - start
-        if estimated_seconds:
-            progress.progress(
-                _progress_fraction(elapsed, estimated_seconds),
-                text=f"{progress_text}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, estimated_seconds)}",
-            )
-        else:
-            progress.progress(
-                min(0.95, 0.1 + (elapsed % 45) / 55),
-                text=f"{progress_text}: прошло {_format_duration(elapsed)}, время зависит от количества файлов",
-            )
-        timer_placeholder.info(
-            f"⏱ Прошло: **{_format_duration(elapsed)}** · {_eta_text(elapsed, estimated_seconds)}. "
-            "Если поиск идёт по большим папкам, это может занять несколько минут."
+        progress.progress(
+            _progress_fraction(elapsed, estimated_seconds),
+            text=f"{progress_text}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, estimated_seconds)}",
         )
-        status_placeholder.info("Идёт обход выбранных папок и поиск весов, изображений и видео...")
+        timer_placeholder.info(f"⏱ Прошло: **{_format_duration(elapsed)}** · {_eta_text(elapsed, estimated_seconds)}. {hint}")
+        status_placeholder.info(status_text)
         time.sleep(1.0)
 
     elapsed = time.perf_counter() - start
@@ -200,17 +203,10 @@ def run_command_with_live_log(
         elapsed = now - start
         if changed or now - last_render >= 1.0:
             last_render = now
-            step_fraction = _progress_fraction(elapsed, step.estimated_seconds)
-            if step.estimated_seconds:
-                step_progress_placeholder.progress(
-                    step_fraction,
-                    text=f"{step.title}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, step.estimated_seconds)}",
-                )
-            else:
-                step_progress_placeholder.progress(
-                    min(0.95, 0.1 + (elapsed % 30) / 35),
-                    text=f"{step.title}: прошло {_format_duration(elapsed)}, время зависит от скорости сети и pip",
-                )
+            step_progress_placeholder.progress(
+                _progress_fraction(elapsed, step.estimated_seconds),
+                text=f"{step.title}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, step.estimated_seconds)}",
+            )
             _render_live_state(
                 timer_placeholder=timer_placeholder,
                 log_placeholder=log_placeholder,
@@ -219,6 +215,7 @@ def run_command_with_live_log(
                 estimated_seconds=step.estimated_seconds,
                 process_alive=process.poll() is None,
                 max_log_lines=max_log_lines,
+                hint="Если лог не меняется несколько минут, это всё ещё может быть нормальной установкой тяжёлых пакетов.",
             )
 
         time.sleep(0.2)
@@ -266,11 +263,11 @@ def run_steps_with_progress(
 
     for idx, step in enumerate(steps, start=1):
         elapsed_total = time.perf_counter() - all_start
-        if total_estimate:
-            total_eta = _eta_text(elapsed_total, total_estimate)
-        else:
-            total_eta = "примерно оставшееся время зависит от текущего шага"
-        progress.progress((idx - 1) / total, text=f"[{idx}/{total}] {step.title} · прошло {_format_duration(elapsed_total)} · {total_eta}")
+        total_eta = _eta_text(elapsed_total, total_estimate) if total_estimate else "оставшееся время зависит от текущего шага"
+        progress.progress(
+            _progress_fraction(elapsed_total, total_estimate),
+            text=f"[{idx}/{total}] {step.title} · прошло {_format_duration(elapsed_total)} · {total_eta}",
+        )
 
         if step.description:
             status_placeholder.info(step.description)
