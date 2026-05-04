@@ -10,6 +10,7 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 WEIGHT_EXTS = {".pt", ".pth", ".onnx"}
 MODEL_KINDS = ("yolo", "rtdetr", "frcnn")
+DISCOVERY_MAX_ITEMS_PER_ROOT = 60000
 
 
 @dataclass
@@ -58,13 +59,8 @@ def _safe_iter_dirs(root: Path, max_dirs: int = 10000) -> Iterable[Path]:
         return
 
 
-def _safe_iter_tree(root: Path, max_items: int = 60000) -> Iterable[Path]:
-    """Bounded recursive iterator for the optimized one-pass discovery.
-
-    The old implementation walked every root several times: weights for YOLO,
-    weights for RT-DETR, weights for Faster R-CNN, video files and image dirs.
-    This iterator is used by discover_assets() to walk each selected root once.
-    """
+def _safe_iter_tree(root: Path, max_items: int = DISCOVERY_MAX_ITEMS_PER_ROOT) -> Iterable[Path]:
+    """Bounded recursive iterator for the optimized one-pass discovery."""
 
     count = 0
     try:
@@ -191,11 +187,7 @@ def find_video_candidates(search_roots: List[Path], limit: int = 10) -> List[Ass
 
 
 def discover_assets(search_roots: List[Path], limit: int = 10) -> Dict[str, List[AssetCandidate]]:
-    """Find model weights, image folders and video files in one pass per root.
-
-    This replaces the earlier multi-pass implementation that recursively scanned
-    every root separately for YOLO, RT-DETR, Faster R-CNN, images and video.
-    """
+    """Find model weights, image folders and video files in one pass per root."""
 
     weight_candidates: Dict[str, List[AssetCandidate]] = {kind: [] for kind in MODEL_KINDS}
     video_candidates: List[AssetCandidate] = []
@@ -204,10 +196,6 @@ def discover_assets(search_roots: List[Path], limit: int = 10) -> Dict[str, List
     for root in search_roots:
         if not root.exists():
             continue
-
-        direct = _score_images_dir(root)
-        if direct:
-            image_dir_counts[root] += int(direct.reason.split("изображений: ", 1)[1].split(",", 1)[0])
 
         for item in _safe_iter_tree(root):
             try:
