@@ -27,8 +27,14 @@ class IdentificationResult:
     image_name: str
     object_id: int
     crop_path: str
+    x1: float
+    y1: float
+    x2: float
+    y2: float
     source_type: str
     detection_score: float
+    label: str
+    class_id: int
     sku_id: Optional[str]
     sku_name: str
     sku_confidence: float
@@ -80,8 +86,14 @@ def _match_one_crop(
         image_name=crop.image_name,
         object_id=crop.object_id,
         crop_path=crop.crop_path,
+        x1=crop.x1,
+        y1=crop.y1,
+        x2=crop.x2,
+        y2=crop.y2,
         source_type=crop.source_type,
         detection_score=crop.score,
+        label=crop.label,
+        class_id=crop.class_id,
         sku_id=best.sku_id if status == "matched" and best else None,
         sku_name=best.sku_name if status == "matched" and best else "unknown",
         sku_confidence=best.score if best else 0.0,
@@ -90,10 +102,16 @@ def _match_one_crop(
     )
 
 
+def result_to_dict(result: IdentificationResult) -> Dict[str, Any]:
+    data = asdict(result)
+    data["top_k"] = [asdict(item) for item in result.top_k]
+    return data
+
+
 def results_to_dataframe(results: List[IdentificationResult]) -> pd.DataFrame:
     rows: List[Dict[str, Any]] = []
     for item in results:
-        row = asdict(item)
+        row = result_to_dict(item)
         row["top_k"] = " | ".join(
             f"{cand.sku_id}:{cand.score:.4f}" for cand in item.top_k
         )
