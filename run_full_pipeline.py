@@ -59,6 +59,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--density-cols", type=int, default=3, help="Количество зон по горизонтали")
     parser.add_argument("--density-limit", type=int, default=20, help="Сколько изображений визуализировать для плотности")
 
+    parser.add_argument("--run-identification", action="store_true", help="Запустить SKU-идентификацию после инференса")
+    parser.add_argument(
+        "--identification-model",
+        default="yolo_seg",
+        choices=["yolo", "yolo_seg", "rtdetr", "frcnn", "wbf"],
+        help="По предсказаниям какой модели запускать идентификацию",
+    )
+    parser.add_argument("--sku-gallery-csv", default=None, help="CSV SKU-галереи: sku_id, sku_name, category, image_path")
+    parser.add_argument("--sku-gallery-dir", default=None, help="Папка SKU-галереи вида <sku_id>/*.jpg")
+    parser.add_argument("--sku-gt-csv", default=None, help="Опциональный GT CSV: image_name, object_id, true_sku_id")
+    parser.add_argument("--sku-threshold", type=float, default=0.65, help="Порог similarity для matched/unknown")
+    parser.add_argument("--sku-top-k", type=int, default=3, help="Сколько кандидатов SKU сохранять")
+    parser.add_argument("--sku-padding", type=float, default=0.05, help="Padding вокруг bbox при crop extraction")
+    parser.add_argument("--sku-use-masks", action="store_true", help="Использовать masks для crop, если они есть")
+
     parser.add_argument("--skip-evaluation", action="store_true", help="Пропустить bbox-оценку качества")
     parser.add_argument("--skip-segmentation-evaluation", action="store_true", help="Пропустить mask-оценку YOLO-Seg")
     parser.add_argument("--skip-density", action="store_true", help="Пропустить анализ плотности")
@@ -133,6 +148,7 @@ def main() -> None:
     inference_root = out_dir / "inference"
     evaluation_root = out_dir / "evaluation"
     segmentation_evaluation_root = out_dir / "segmentation_evaluation"
+    identification_dir = out_dir / "identification"
     comparison_dir = out_dir / "model_comparison"
     recommendation_dir = out_dir / "recommendation"
     density_dir = out_dir / "density"
@@ -208,6 +224,36 @@ def main() -> None:
             ],
             cwd=root,
         )
+
+    # 2c. SKU identification
+    if args.run_identification:
+        require(args.identification_model in args.models, "Модель для идентификации должна быть указана в --models")
+        require(bool(args.sku_gallery_csv or args.sku_gallery_dir), "Для идентификации укажите --sku-gallery-csv или --sku-gallery-dir")
+        cmd = [
+            sys.executable,
+            "run_identification.py",
+            "--predictions",
+            str(inference_root / args.identification_model / "predictions.json"),
+            "--images-dir",
+            args.images_dir,
+            "--out-dir",
+            str(identification_dir / args.identification_model),
+            "--threshold",
+            str(args.sku_threshold),
+            "--top-k",
+            str(args.sku_top_k),
+            "--padding",
+            str(args.sku_padding),
+        ]
+        if args.sku_gallery_csv:
+            cmd.extend(["--gallery-csv", args.sku_gallery_csv])
+        if args.sku_gallery_dir:
+            cmd.extend(["--gallery-dir", args.sku_gallery_dir])
+        if args.sku_gt_csv:
+            cmd.extend(["--gt-csv", args.sku_gt_csv])
+        if args.sku_use_masks:
+            cmd.append("--use-masks")
+        run(cmd, cwd=root)
 
     # 3. Recommendation and comparison
     if metrics_files:
@@ -294,6 +340,8 @@ def main() -> None:
 
     print("\n=== DONE ===")
     print(f"All results saved to: {out_dir}")
+    if args.run_identification:
+        print(f"Identification: {identification_dir / args.identification_model}")
     if not args.skip_mini_report:
         print(f"Mini report: {mini_report_dir / 'mini_report.html'}")
 
