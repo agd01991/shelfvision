@@ -23,6 +23,7 @@ CLI_SCRIPTS = [
     "run_compare.py",
     "run_density.py",
     "run_mini_report.py",
+    "run_identification.py",
     "run_full_pipeline.py",
 ]
 
@@ -39,6 +40,13 @@ MODULES = [
     "src.evaluation.error_visualization",
     "src.evaluation.recommend_model",
     "src.evaluation.compare_models",
+    "src.identification.crop_extractor",
+    "src.identification.sku_gallery",
+    "src.identification.feature_extractor",
+    "src.identification.matcher",
+    "src.identification.metrics",
+    "src.identification.visualization",
+    "src.identification.report",
     "src.analytics.density",
     "src.reporting.mini_report",
 ]
