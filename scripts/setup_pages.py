@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
-from asset_discovery import AssetCandidate, discover_assets
+from asset_discovery import AssetCandidate, DISCOVERY_MAX_ITEMS_PER_ROOT, discover_assets
 from control_panel import ROOT, check_path, rel_path, resolve_path, save_config, venv_python
 from estimate_dependencies import estimate_dependency_seconds
 from panel_progress import CommandStep, run_long_task_with_progress, run_steps_with_progress
@@ -317,16 +317,13 @@ def _estimate_root_from_sample(root: Path, count: int, elapsed: float, truncated
 
     items_per_second = max(1.0, count / max(0.05, elapsed))
 
-    # asset_discovery currently performs several bounded passes:
-    # 4 file-oriented passes: yolo, rtdetr, frcnn, video; max 30000 files each.
-    # 1 dir-oriented pass for image folders; max 10000 dirs.
     if truncated:
-        estimated_work_items = 130_000
+        estimated_work_items = DISCOVERY_MAX_ITEMS_PER_ROOT
     else:
-        estimated_work_items = max(count * 5, count + 100)
+        estimated_work_items = max(count, count + 100)
 
     root_text = str(root).replace("\\", "/").lower()
-    overhead = 1.25
+    overhead = 1.35
     if "downloads" in root_text or "documents" in root_text:
         overhead *= 1.35
     if "onedrive" in root_text:
@@ -414,6 +411,8 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
                 ),
                 estimated_seconds=max(10, min(120, len(raw_roots_list) * 12)),
                 progress_text="Анализ папок",
+                status_text="Идёт пробный обход выбранных папок...",
+                hint="Анализ ограничен по количеству файлов и нужен только для подготовки плана поиска.",
             )
     with c2:
         if st.button("Сбросить план автопоиска", use_container_width=True):
@@ -437,10 +436,12 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
             title="Автопоиск файлов",
             description=(
                 "Идёт поиск весов моделей, папок изображений и видеофайлов по заранее рассчитанному плану. "
-                "Если результат оценки всё равно окажется неточным, таймер продолжит показывать реальное прошедшее время."
+                "Поиск теперь выполняется одним проходом по каждой папке."
             ),
             estimated_seconds=estimate,
             progress_text="Поиск файлов",
+            status_text="Идёт один проход по выбранным папкам: веса, изображения и видео ищутся одновременно...",
+            hint="Для очень больших папок поиск может идти дольше первичной оценки, но интерфейс больше не будет писать, что команда почти завершена.",
         )
         st.success("Поиск завершён")
 
