@@ -264,6 +264,17 @@ def _default_search_roots() -> List[str]:
     return unique
 
 
+def _format_seconds(seconds: int | float) -> str:
+    seconds = max(0, int(seconds))
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours} ч {minutes:02d} мин {sec:02d} сек"
+    if minutes:
+        return f"{minutes} мин {sec:02d} сек"
+    return f"{sec} сек"
+
+
 def _normalize_root(path: Path) -> Path:
     try:
         return path.resolve()
@@ -272,11 +283,7 @@ def _normalize_root(path: Path) -> Path:
 
 
 def _dedupe_nested_roots(roots: List[Path]) -> List[Path]:
-    """Remove roots that are already inside another selected root.
-
-    Example: if both D:/1Diplom and D:/1Diplom/models are selected, scanning
-    D:/1Diplom/models separately only repeats work and makes ETA less reliable.
-    """
+    """Remove roots that are already inside another selected root."""
 
     existing = [_normalize_root(root) for root in roots if root.exists()]
     existing.sort(key=lambda item: len(str(item)))
@@ -304,18 +311,15 @@ def _sample_root_complexity(root: Path, max_items: int = 8000, max_seconds: floa
     return count, elapsed, truncated
 
 
-def _estimate_root_discovery_seconds(root: Path) -> int:
-    count, elapsed, truncated = _sample_root_complexity(root)
+def _estimate_root_from_sample(root: Path, count: int, elapsed: float, truncated: bool) -> int:
     if count == 0:
         return 3
 
-    items_per_second = max(1.0, count / elapsed)
+    items_per_second = max(1.0, count / max(0.05, elapsed))
 
     # asset_discovery currently performs several bounded passes:
     # 4 file-oriented passes: yolo, rtdetr, frcnn, video; max 30000 files each.
     # 1 dir-oriented pass for image folders; max 10000 dirs.
-    # If sampling was truncated, use these caps as a realistic upper bound for one root.
-    # If the root was fully sampled, estimate from the observed count instead.
     if truncated:
         estimated_work_items = 130_000
     else:
@@ -333,25 +337,59 @@ def _estimate_root_discovery_seconds(root: Path) -> int:
     return int(max(5, min(900, estimated_work_items / items_per_second * overhead)))
 
 
-def _estimate_asset_discovery_seconds(roots: List[Path]) -> int:
-    """Estimate search time from selected roots by measuring traversal speed.
+def _build_asset_discovery_plan(raw_roots: List[Path], limit: int) -> Dict[str, Any]:
+    existing_input = [_normalize_root(root) for root in raw_roots if root.exists()]
+    missing_input = [str(root) for root in raw_roots if not root.exists()]
+    effective_roots = _dedupe_nested_roots(raw_roots)
+    skipped_nested = len(existing_input) - len(effective_roots)
 
-    The estimate intentionally becomes more conservative for large/truncated roots
-    and avoids double-counting nested roots.
-    """
+    rows: List[Dict[str, Any]] = []
+    total_estimate = 5
+    for root in effective_roots:
+        count, elapsed, truncated = _sample_root_complexity(root)
+        root_estimate = _estimate_root_from_sample(root, count, elapsed, truncated)
+        total_estimate += root_estimate
+        rows.append(
+            {
+                "Папка": str(root),
+                "Проба": f">={count}" if truncated else str(count),
+                "Время пробы": f"{elapsed:.2f} сек",
+                "Тип": "большая / проба ограничена" if truncated else "полная или небольшая",
+                "Оценка поиска": _format_seconds(root_estimate),
+            }
+        )
 
-    effective_roots = _dedupe_nested_roots(roots)
-    if not effective_roots:
-        return 20
+    total_estimate = max(20, min(1800, int(total_estimate)))
+    return {
+        "raw_roots": [str(root) for root in raw_roots],
+        "roots": [str(root) for root in effective_roots],
+        "limit": int(limit),
+        "missing_roots": missing_input,
+        "skipped_nested": skipped_nested,
+        "estimated_seconds": total_estimate,
+        "estimated_text": _format_seconds(total_estimate),
+        "rows": rows,
+        "created_at": time.time(),
+    }
 
-    estimate = 5 + sum(_estimate_root_discovery_seconds(root) for root in effective_roots)
-    return max(20, min(1800, int(estimate)))
+
+def _render_asset_plan(plan: Dict[str, Any]) -> None:
+    st.info(
+        f"План автопоиска готов. Будет просканировано папок: **{len(plan.get('roots', []))}**. "
+        f"Оценка времени: **{plan.get('estimated_text', 'не рассчитано')}**."
+    )
+    if plan.get("skipped_nested"):
+        st.caption(f"Вложенные дубли исключены из поиска: {plan['skipped_nested']}.")
+    if plan.get("missing_roots"):
+        st.warning("Некоторые папки не найдены и не будут использоваться:\n" + "\n".join(plan["missing_roots"]))
+    if plan.get("rows"):
+        st.table(plan["rows"])
 
 
 def _render_asset_discovery(config: Dict[str, Any]) -> None:
     st.subheader("Автопоиск файлов")
     st.caption(
-        "Можно указать папки, где лежат веса, изображения и видео. Программа найдёт подходящие файлы и предложит записать пути в config."
+        "Можно указать папки, где лежат веса, изображения и видео. Сначала выполняется быстрый анализ выбранных папок, затем автопоиск запускается по готовому плану."
     )
 
     default_roots = "\n".join(_default_search_roots())
@@ -359,24 +397,47 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
         "Где искать",
         value=default_roots,
         height=170,
-        help="Каждая папка с новой строки. Лучше не указывать весь диск C: или D:, чтобы поиск не был слишком долгим. Для твоего случая добавлен D:/1Diplom.",
+        help="Каждая папка с новой строки. Если указана родительская папка, вложенные дубли будут исключены на этапе анализа.",
     )
     limit = st.number_input("Сколько кандидатов показывать на каждый тип", 1, 30, 10)
+    raw_roots_list = [Path(line.strip()) for line in raw_roots.splitlines() if line.strip()]
 
-    if st.button("Найти веса, изображения и видео", use_container_width=True):
-        raw_roots_list = [Path(line.strip()) for line in raw_roots.splitlines() if line.strip()]
-        roots = _dedupe_nested_roots(raw_roots_list)
-        skipped = len([root for root in raw_roots_list if root.exists()]) - len(roots)
-        with st.spinner("Быстрая оценка объёма выбранных папок..."):
-            estimate = _estimate_asset_discovery_seconds(roots)
-        if skipped > 0:
-            st.info(f"Для ускорения поиска исключены вложенные дубли папок: {skipped}.")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("1. Проанализировать выбранные папки", use_container_width=True):
+            st.session_state["asset_discovery_plan"] = run_long_task_with_progress(
+                func=lambda: _build_asset_discovery_plan(raw_roots_list, int(limit)),
+                title="Быстрый анализ папок",
+                description=(
+                    "Проверяется существование папок, вложенность, примерный объём и скорость обхода. "
+                    "После анализа можно будет запустить автопоиск по рассчитанному плану."
+                ),
+                estimated_seconds=max(10, min(120, len(raw_roots_list) * 12)),
+                progress_text="Анализ папок",
+            )
+    with c2:
+        if st.button("Сбросить план автопоиска", use_container_width=True):
+            st.session_state.pop("asset_discovery_plan", None)
+            st.session_state.pop("asset_discovery_results", None)
+            st.success("План и результаты автопоиска сброшены")
+
+    plan = st.session_state.get("asset_discovery_plan")
+    if plan:
+        current_raw = [str(root) for root in raw_roots_list]
+        if current_raw != plan.get("raw_roots") or int(limit) != int(plan.get("limit", limit)):
+            st.warning("Пути или лимит изменились после анализа. Сначала снова нажми **1. Проанализировать выбранные папки**.")
+        _render_asset_plan(plan)
+
+    can_search = bool(plan) and [str(root) for root in raw_roots_list] == plan.get("raw_roots") and int(limit) == int(plan.get("limit", limit))
+    if st.button("2. Запустить автопоиск по этому плану", use_container_width=True, disabled=not can_search):
+        roots = [Path(path) for path in plan.get("roots", [])]
+        estimate = int(plan.get("estimated_seconds", 60))
         st.session_state["asset_discovery_results"] = run_long_task_with_progress(
-            func=lambda: discover_assets(roots, limit=int(limit)),
+            func=lambda: discover_assets(roots, limit=int(plan.get("limit", limit))),
             title="Автопоиск файлов",
             description=(
-                "Идёт поиск весов моделей, папок изображений и видеофайлов. "
-                "Первичная оценка рассчитана по измеренной скорости обхода выбранных папок."
+                "Идёт поиск весов моделей, папок изображений и видеофайлов по заранее рассчитанному плану. "
+                "Если результат оценки всё равно окажется неточным, таймер продолжит показывать реальное прошедшее время."
             ),
             estimated_seconds=estimate,
             progress_text="Поиск файлов",
