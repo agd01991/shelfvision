@@ -14,6 +14,19 @@ segmentation:
   dataset_yaml: data/yolo_cache/d2s_small_seg/dataset.yaml
   out_dir: results/full_pipeline_seg
 
+identification:
+  # Большие crop-ы, визуализации и отчёты лучше хранить вне папки программы.
+  # Для текущей ВКР используется отдельный диск/каталог:
+  out_dir: "D:/1Diplom/shelfvision_results/identification"
+  gallery_csv: "D:/1Diplom/sku_gallery/gallery.csv"
+  gallery_dir: "D:/1Diplom/sku_gallery"
+  gt_csv: ""
+  threshold: 0.65
+  top_k: 3
+  padding: 0.05
+  use_masks: true
+  visualize_limit: 30
+
 weights:
   yolo: models/yolo/best.pt
   yolo_seg: runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt
