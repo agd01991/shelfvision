@@ -33,18 +33,21 @@ def _windows_venv_steps(config: Dict[str, Any], install_full_requirements: bool 
             cmd=[sys.executable, "-m", "venv", str(venv_dir)],
             cwd=ROOT,
             description="Создаётся локальная Windows-среда. Она нужна для запуска Streamlit-панели.",
+            estimated_seconds=45,
         ),
         CommandStep(
             title="Обновление pip",
             cmd=[str(py), "-m", "pip", "install", "--upgrade", "pip"],
             cwd=ROOT,
             description="Обновляется pip внутри Windows .venv.",
+            estimated_seconds=45,
         ),
         CommandStep(
             title="Установка минимальных пакетов панели",
             cmd=[str(py), "-m", "pip", "install", "streamlit", "PyYAML", "pandas"],
             cwd=ROOT,
             description="Ставятся минимальные зависимости, чтобы открыть Control Panel.",
+            estimated_seconds=180,
         ),
     ]
 
@@ -55,6 +58,7 @@ def _windows_venv_steps(config: Dict[str, Any], install_full_requirements: bool 
                 cmd=[str(py), "-m", "pip", "install", "-r", str(req)],
                 cwd=ROOT,
                 description="Ставятся все зависимости проекта в Windows .venv. Для рабочей схемы через WSL это обычно не требуется.",
+                estimated_seconds=1800,
             )
         )
     return steps
@@ -73,7 +77,11 @@ def _wsl_setup_steps(config: Dict[str, Any]) -> List[CommandStep]:
                 config["setup"].get("requirements", "requirements.txt"),
             ],
             cwd=ROOT,
-            description="Команда создаёт Linux-среду внутри WSL и устанавливает зависимости проекта.",
+            description=(
+                "Команда создаёт Linux-среду внутри WSL и устанавливает зависимости проекта. "
+                "На этапе torch/ultralytics/pip загрузка может выглядеть долгой, но таймер ниже показывает, что процесс живой."
+            ),
+            estimated_seconds=2400,
         )
     ]
 
@@ -86,6 +94,7 @@ def _wsl_reset_steps(config: Dict[str, Any]) -> List[CommandStep]:
             cmd=["wsl", "bash", "-lc", f"cd \"$(wslpath '{ROOT}')\" && rm -rf '{venv_dir}'"],
             cwd=ROOT,
             description="Удаляется старая WSL-среда. Использовать только если зависимости сломались.",
+            estimated_seconds=60,
         ),
         *_wsl_setup_steps(config),
     ]
@@ -199,7 +208,7 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
 
 def page_setup(config: Dict[str, Any]) -> None:
     st.header("1. Первый запуск и установка")
-    st.caption("Здесь видно, какой процесс запущен, какой шаг выполняется, и есть живой лог команды.")
+    st.caption("Здесь видно, какой процесс запущен, какой шаг выполняется, таймер, примерное оставшееся время и живой лог команды.")
 
     st.info(
         "Обычный режим: Windows `.venv` нужна только для открытия панели, а рабочие зависимости ставятся в WSL `.venv_wsl`. "
@@ -257,7 +266,7 @@ def page_setup(config: Dict[str, Any]) -> None:
 
         if st.button("Проверить WSL", use_container_width=True):
             run_steps_with_progress(
-                [CommandStep("Проверка WSL", ["wsl", "--status"], ROOT, "Проверяется доступность WSL.")],
+                [CommandStep("Проверка WSL", ["wsl", "--status"], ROOT, "Проверяется доступность WSL.", estimated_seconds=10)],
                 title="Проверка WSL",
                 success_message="WSL доступен.",
                 failure_message="WSL не отвечает или не установлен",
@@ -265,7 +274,7 @@ def page_setup(config: Dict[str, Any]) -> None:
 
         if st.button("Запустить wsl --install", use_container_width=True):
             run_steps_with_progress(
-                [CommandStep("Установка WSL", ["wsl", "--install"], ROOT, "Запускается установка WSL.")],
+                [CommandStep("Установка WSL", ["wsl", "--install"], ROOT, "Запускается установка WSL.", estimated_seconds=600)],
                 title="Установка WSL",
                 success_message="Команда wsl --install выполнена. Может потребоваться перезагрузка.",
                 failure_message="Ошибка выполнения wsl --install",
