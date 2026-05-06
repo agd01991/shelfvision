@@ -185,6 +185,13 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         identification["use_masks"] = st.checkbox("Использовать masks для crop", value=bool(identification.get("use_masks", True)))
         identification["no_visualize"] = st.checkbox("Не сохранять визуализации", value=bool(identification.get("no_visualize", False)))
         identification["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 1000, int(identification.get("visualize_limit", 30)))
+        identification["render_identified_video"] = st.checkbox(
+            "Собрать видео с подписями SKU",
+            value=bool(identification.get("render_identified_video", True)),
+            help="Работает для video_predictions.json, если рядом есть video_summary.json или путь указан ниже.",
+        )
+        identification["video_summary"] = st.text_input("video_summary.json, опционально", value=str(identification.get("video_summary", "")))
+        identification["identified_video_codec"] = st.text_input("Кодек identified video", value=str(identification.get("identified_video_codec", "mp4v")))
 
         submitted = st.form_submit_button("Сохранить настройки")
         if submitted:
@@ -290,8 +297,10 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             video_out = Path(config.get("video", {}).get("output_dir", "results/video/yolo"))
             identification["predictions"] = str(video_out / "video_predictions.json")
             identification["images_dir"] = str(video_out / "frames_for_identification")
+            identification["video_summary"] = str(video_out / "video_summary.json")
+            identification["render_identified_video"] = True
             save_config(config)
-            st.success("В настройки идентификации подставлены video_predictions.json и frames_for_identification")
+            st.success("В настройки идентификации подставлены video_predictions.json, frames_for_identification и video_summary.json")
     with c2:
         if st.button("Запустить идентификацию SKU", use_container_width=True):
             args = [
@@ -324,6 +333,12 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
                 args.append("--use-masks")
             if bool(identification.get("no_visualize", False)):
                 args.append("--no-visualize")
+            if bool(identification.get("render_identified_video", False)):
+                args.append("--render-identified-video")
+                video_summary = str(identification.get("video_summary", "")).strip()
+                if video_summary:
+                    args.extend(["--video-summary", video_summary])
+                args.extend(["--identified-video-codec", str(identification.get("identified_video_codec", "mp4v"))])
 
             result = run_command(python_command(config, "run_identification.py", args))
             render_command_result(result)
