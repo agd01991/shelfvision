@@ -22,6 +22,7 @@ class DetectionPrediction:
     label: str = "product"
     class_id: int = 0
     mask: Optional[Polygon] = None
+    track_id: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -69,6 +70,7 @@ class ImagePrediction:
             "labels": [item.label for item in self.detections],
             "class_ids": [item.class_id for item in self.detections],
             "masks": [item.mask for item in self.detections],
+            "track_ids": [item.track_id for item in self.detections],
             "objects_count": self.objects_count,
             "average_confidence": self.average_confidence,
             "inference_time": self.inference_time,
