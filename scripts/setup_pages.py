@@ -6,12 +6,13 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List
 
 import streamlit as st
 
-from asset_discovery import AssetCandidate, DISCOVERY_MAX_ITEMS_PER_ROOT, discover_assets
+from asset_discovery import AssetCandidate, DiscoveryRootStats, analyze_and_discover_assets
 from control_panel import ROOT, check_path, rel_path, resolve_path, save_config, venv_python
 from estimate_dependencies import estimate_dependency_seconds
 from panel_progress import CommandStep, run_long_task_with_progress, run_steps_with_progress
@@ -64,8 +65,6 @@ def _estimate_windows_dependency_seconds(requirements: str | Path, assume_empty:
 
 
 def _estimate_wsl_dependency_seconds(config: Dict[str, Any], assume_empty: bool = False) -> int:
-    """Estimate install time from real missing packages in WSL .venv_wsl when possible."""
-
     requirements = str(config["setup"].get("requirements", "requirements.txt")).replace("\\", "/")
     venv_dir = str(config["setup"].get("venv_dir_wsl", ".venv_wsl")).replace("\\", "/")
 
@@ -131,10 +130,7 @@ def _windows_venv_steps(config: Dict[str, Any], install_full_requirements: bool 
                 title="Установка всех зависимостей requirements.txt в Windows .venv",
                 cmd=[str(py), "-m", "pip", "install", "-r", str(req)],
                 cwd=ROOT,
-                description=(
-                    "Ставятся все зависимости проекта в Windows .venv. "
-                    "ETA рассчитано автоматически по requirements.txt."
-                ),
+                description="Ставятся все зависимости проекта в Windows .venv. ETA рассчитано автоматически по requirements.txt.",
                 estimated_seconds=_estimate_windows_dependency_seconds(req, assume_empty=not py.exists()),
             )
         )
@@ -146,19 +142,9 @@ def _wsl_setup_steps(config: Dict[str, Any]) -> List[CommandStep]:
     return [
         CommandStep(
             title="Создание WSL .venv_wsl и установка requirements.txt",
-            cmd=[
-                sys.executable,
-                "scripts/setup_wsl_env.py",
-                "--venv-dir",
-                config["setup"].get("venv_dir_wsl", ".venv_wsl"),
-                "--requirements",
-                config["setup"].get("requirements", "requirements.txt"),
-            ],
+            cmd=[sys.executable, "scripts/setup_wsl_env.py", "--venv-dir", config["setup"].get("venv_dir_wsl", ".venv_wsl"), "--requirements", config["setup"].get("requirements", "requirements.txt")],
             cwd=ROOT,
-            description=(
-                "Команда создаёт Linux-среду внутри WSL и устанавливает зависимости проекта. "
-                "Примерное время рассчитано автоматически по списку пакетов requirements.txt."
-            ),
+            description="Команда создаёт Linux-среду внутри WSL и устанавливает зависимости проекта. Примерное время рассчитано автоматически по списку пакетов requirements.txt.",
             estimated_seconds=estimate,
         )
     ]
@@ -169,46 +155,20 @@ def _wsl_check_dependency_steps(config: Dict[str, Any], strict: bool = False) ->
     args = ["--requirements", requirements]
     if strict:
         args.append("--strict")
-    return [
-        CommandStep(
-            title="Проверка зависимостей в WSL .venv_wsl",
-            cmd=_wsl_bash_command(_wsl_python_script(config, "scripts/check_dependencies.py", args)),
-            cwd=ROOT,
-            description="Проверяется, какие пакеты из requirements.txt уже установлены в WSL .venv_wsl, без установки новых пакетов.",
-            estimated_seconds=30,
-        )
-    ]
+    return [CommandStep("Проверка зависимостей в WSL .venv_wsl", _wsl_bash_command(_wsl_python_script(config, "scripts/check_dependencies.py", args)), ROOT, "Проверяется, какие пакеты из requirements.txt уже установлены в WSL .venv_wsl, без установки новых пакетов.", estimated_seconds=30)]
 
 
 def _wsl_install_missing_steps(config: Dict[str, Any]) -> List[CommandStep]:
     estimate = _estimate_wsl_dependency_seconds(config, assume_empty=False)
     return [
-        CommandStep(
-            title="Доустановка зависимостей в существующую WSL .venv_wsl",
-            cmd=_wsl_bash_command(_wsl_pip_install_script(config)),
-            cwd=ROOT,
-            description=(
-                "Запускается pip install -r requirements.txt в уже созданной WSL-среде. "
-                "ETA рассчитано автоматически по фактически отсутствующим или неподходящим пакетам."
-            ),
-            estimated_seconds=estimate,
-        ),
+        CommandStep("Доустановка зависимостей в существующую WSL .venv_wsl", _wsl_bash_command(_wsl_pip_install_script(config)), ROOT, "Запускается pip install -r requirements.txt в уже созданной WSL-среде. ETA рассчитано автоматически по фактически отсутствующим или неподходящим пакетам.", estimated_seconds=estimate),
         *_wsl_check_dependency_steps(config, strict=False),
     ]
 
 
 def _wsl_reset_steps(config: Dict[str, Any]) -> List[CommandStep]:
     venv_dir = config["setup"].get("venv_dir_wsl", ".venv_wsl")
-    return [
-        CommandStep(
-            title="Удаление старой WSL .venv_wsl",
-            cmd=["wsl", "bash", "-lc", f"cd \"$(wslpath '{ROOT}')\" && rm -rf '{venv_dir}'"],
-            cwd=ROOT,
-            description="Удаляется старая WSL-среда. Использовать только если зависимости сломались.",
-            estimated_seconds=60,
-        ),
-        *_wsl_setup_steps(config),
-    ]
+    return [CommandStep("Удаление старой WSL .venv_wsl", ["wsl", "bash", "-lc", f"cd \"$(wslpath '{ROOT}')\" && rm -rf '{venv_dir}'"], ROOT, "Удаляется старая WSL-среда. Использовать только если зависимости сломались.", estimated_seconds=60), *_wsl_setup_steps(config)]
 
 
 def _to_config_path(path: str) -> str:
@@ -228,12 +188,7 @@ def _render_candidate_select(label: str, candidates: List[AssetCandidate], key: 
         st.warning(f"{label}: кандидаты не найдены")
         return None
     options = _candidate_options(candidates)
-    selected = st.selectbox(
-        label,
-        options=options,
-        key=key,
-        format_func=lambda value: f"{_to_config_path(value)}",
-    )
+    selected = st.selectbox(label, options=options, key=key, format_func=lambda value: f"{_to_config_path(value)}")
     selected_candidate = next((item for item in candidates if item.path == selected), None)
     if selected_candidate:
         st.caption(f"score={selected_candidate.score}; {selected_candidate.reason}")
@@ -241,17 +196,7 @@ def _render_candidate_select(label: str, candidates: List[AssetCandidate], key: 
 
 
 def _default_search_roots() -> List[str]:
-    roots = [
-        ROOT,
-        ROOT / "models",
-        ROOT / "data",
-        Path("D:/1Diplom"),
-        Path("D:/1Diplom/models"),
-        Path("D:/1Diplom/data"),
-        Path.home() / "Downloads",
-        Path.home() / "Documents",
-    ]
-
+    roots = [ROOT, ROOT / "models", ROOT / "data", Path("D:/1Diplom"), Path("D:/1Diplom/models"), Path("D:/1Diplom/data"), Path.home() / "Downloads", Path.home() / "Documents"]
     unique: List[str] = []
     seen = set()
     for root in roots:
@@ -283,8 +228,6 @@ def _normalize_root(path: Path) -> Path:
 
 
 def _dedupe_nested_roots(roots: List[Path]) -> List[Path]:
-    """Remove roots that are already inside another selected root."""
-
     existing = [_normalize_root(root) for root in roots if root.exists()]
     existing.sort(key=lambda item: len(str(item)))
     result: List[Path] = []
@@ -295,43 +238,22 @@ def _dedupe_nested_roots(roots: List[Path]) -> List[Path]:
     return result
 
 
-def _sample_root_complexity(root: Path, max_items: int = 8000, max_seconds: float = 4.0) -> tuple[int, float, bool]:
-    start = time.perf_counter()
-    count = 0
-    truncated = False
-    try:
-        for _ in root.rglob("*"):
-            count += 1
-            if count >= max_items or time.perf_counter() - start >= max_seconds:
-                truncated = True
-                break
-    except Exception:
-        pass
-    elapsed = max(0.05, time.perf_counter() - start)
-    return count, elapsed, truncated
-
-
-def _estimate_root_from_sample(root: Path, count: int, elapsed: float, truncated: bool) -> int:
-    if count == 0:
-        return 3
-
-    items_per_second = max(1.0, count / max(0.05, elapsed))
-
-    if truncated:
-        estimated_work_items = DISCOVERY_MAX_ITEMS_PER_ROOT
-    else:
-        estimated_work_items = max(count, count + 100)
-
-    root_text = str(root).replace("\\", "/").lower()
-    overhead = 1.35
-    if "downloads" in root_text or "documents" in root_text:
-        overhead *= 1.35
-    if "onedrive" in root_text:
-        overhead *= 1.4
-    if root.drive.upper().startswith("D") or "/mnt/d" in root_text:
-        overhead *= 1.15
-
-    return int(max(5, min(900, estimated_work_items / items_per_second * overhead)))
+def _stats_to_rows(stats: List[DiscoveryRootStats]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "Папка": item.root,
+            "Статус": item.status,
+            "Время": _format_seconds(item.elapsed_seconds),
+            "Папок": item.dirs_scanned,
+            "Файлов": item.files_scanned,
+            "Весов": item.weight_files,
+            "Изображений": item.image_files,
+            "Папок с изображениями": item.image_dirs,
+            "Видео": item.video_files,
+            "Пропущено служебных папок": item.skipped_dirs,
+        }
+        for item in stats
+    ]
 
 
 def _build_asset_discovery_plan(raw_roots: List[Path], limit: int) -> Dict[str, Any]:
@@ -340,80 +262,70 @@ def _build_asset_discovery_plan(raw_roots: List[Path], limit: int) -> Dict[str, 
     effective_roots = _dedupe_nested_roots(raw_roots)
     skipped_nested = len(existing_input) - len(effective_roots)
 
-    rows: List[Dict[str, Any]] = []
-    total_estimate = 5
-    for root in effective_roots:
-        count, elapsed, truncated = _sample_root_complexity(root)
-        root_estimate = _estimate_root_from_sample(root, count, elapsed, truncated)
-        total_estimate += root_estimate
-        rows.append(
-            {
-                "Папка": str(root),
-                "Проба": f">={count}" if truncated else str(count),
-                "Время пробы": f"{elapsed:.2f} сек",
-                "Тип": "большая / проба ограничена" if truncated else "полная или небольшая",
-                "Оценка поиска": _format_seconds(root_estimate),
-            }
-        )
+    analysis = analyze_and_discover_assets(effective_roots, limit=limit)
+    stats = analysis.get("stats", [])
+    elapsed = float(analysis.get("elapsed_seconds", 0.0))
 
-    total_estimate = max(20, min(1800, int(total_estimate)))
     return {
         "raw_roots": [str(root) for root in raw_roots],
         "roots": [str(root) for root in effective_roots],
         "limit": int(limit),
         "missing_roots": missing_input,
         "skipped_nested": skipped_nested,
-        "estimated_seconds": total_estimate,
-        "estimated_text": _format_seconds(total_estimate),
-        "rows": rows,
+        "estimated_seconds": max(1, int(elapsed)),
+        "estimated_text": _format_seconds(elapsed),
+        "elapsed_seconds": elapsed,
+        "rows": _stats_to_rows(stats),
+        "results": analysis.get("results", {}),
+        "excluded_dirs": analysis.get("excluded_dirs", []),
         "created_at": time.time(),
     }
 
 
 def _render_asset_plan(plan: Dict[str, Any]) -> None:
-    st.info(
-        f"План автопоиска готов. Будет просканировано папок: **{len(plan.get('roots', []))}**. "
-        f"Оценка времени: **{plan.get('estimated_text', 'не рассчитано')}**."
-    )
+    st.info(f"Глубокий анализ готов. Просканировано папок: **{len(plan.get('roots', []))}**. Фактическое время анализа: **{plan.get('estimated_text', 'не рассчитано')}**.")
     if plan.get("skipped_nested"):
         st.caption(f"Вложенные дубли исключены из поиска: {plan['skipped_nested']}.")
     if plan.get("missing_roots"):
         st.warning("Некоторые папки не найдены и не будут использоваться:\n" + "\n".join(plan["missing_roots"]))
+    if plan.get("excluded_dirs"):
+        st.caption("Служебные папки исключены из глубокого обхода: " + ", ".join(plan["excluded_dirs"]))
     if plan.get("rows"):
         st.table(plan["rows"])
 
 
+def _deserialize_candidates(items: List[Any]) -> List[AssetCandidate]:
+    result: List[AssetCandidate] = []
+    for item in items or []:
+        if isinstance(item, AssetCandidate):
+            result.append(item)
+        elif isinstance(item, dict):
+            result.append(AssetCandidate(**item))
+    return result
+
+
 def _render_asset_discovery(config: Dict[str, Any]) -> None:
     st.subheader("Автопоиск файлов")
-    st.caption(
-        "Можно указать папки, где лежат веса, изображения и видео. Сначала выполняется быстрый анализ выбранных папок, затем автопоиск запускается по готовому плану."
-    )
+    st.caption("Сначала выполняется глубокий анализ выбранных папок. Он сразу ищет веса, изображения и видео. Второй шаг только показывает найденные результаты без повторного сканирования диска.")
 
     default_roots = "\n".join(_default_search_roots())
-    raw_roots = st.text_area(
-        "Где искать",
-        value=default_roots,
-        height=170,
-        help="Каждая папка с новой строки. Если указана родительская папка, вложенные дубли будут исключены на этапе анализа.",
-    )
+    raw_roots = st.text_area("Где искать", value=default_roots, height=170, help="Каждая папка с новой строки. Если указана родительская папка, вложенные дубли будут исключены на этапе анализа.")
     limit = st.number_input("Сколько кандидатов показывать на каждый тип", 1, 30, 10)
     raw_roots_list = [Path(line.strip()) for line in raw_roots.splitlines() if line.strip()]
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("1. Проанализировать выбранные папки", use_container_width=True):
+        if st.button("1. Глубоко проанализировать папки и найти файлы", use_container_width=True):
             st.session_state["asset_discovery_plan"] = run_long_task_with_progress(
                 func=lambda: _build_asset_discovery_plan(raw_roots_list, int(limit)),
-                title="Быстрый анализ папок",
-                description=(
-                    "Проверяется существование папок, вложенность, примерный объём и скорость обхода. "
-                    "После анализа можно будет запустить автопоиск по рассчитанному плану."
-                ),
-                estimated_seconds=max(10, min(120, len(raw_roots_list) * 12)),
-                progress_text="Анализ папок",
-                status_text="Идёт пробный обход выбранных папок...",
-                hint="Анализ ограничен по количеству файлов и нужен только для подготовки плана поиска.",
+                title="Глубокий анализ и автопоиск",
+                description="Выполняется полный обход выбранных папок без лимита количества файлов. Результаты будут сохранены в плане, поэтому повторный скан на втором шаге не нужен.",
+                estimated_seconds=None,
+                progress_text="Глубокий анализ",
+                status_text="Идёт полный обход выбранных папок: веса, изображения и видео ищутся одновременно...",
+                hint="Служебные папки вроде .venv, .git, __pycache__ пропускаются, чтобы анализ не уходил в мусорные каталоги.",
             )
+            st.session_state.pop("asset_discovery_results", None)
     with c2:
         if st.button("Сбросить план автопоиска", use_container_width=True):
             st.session_state.pop("asset_discovery_plan", None)
@@ -424,30 +336,19 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
     if plan:
         current_raw = [str(root) for root in raw_roots_list]
         if current_raw != plan.get("raw_roots") or int(limit) != int(plan.get("limit", limit)):
-            st.warning("Пути или лимит изменились после анализа. Сначала снова нажми **1. Проанализировать выбранные папки**.")
+            st.warning("Пути или лимит изменились после анализа. Сначала снова нажми **1. Глубоко проанализировать папки и найти файлы**.")
         _render_asset_plan(plan)
 
-    can_search = bool(plan) and [str(root) for root in raw_roots_list] == plan.get("raw_roots") and int(limit) == int(plan.get("limit", limit))
-    if st.button("2. Запустить автопоиск по этому плану", use_container_width=True, disabled=not can_search):
-        roots = [Path(path) for path in plan.get("roots", [])]
-        estimate = int(plan.get("estimated_seconds", 60))
-        st.session_state["asset_discovery_results"] = run_long_task_with_progress(
-            func=lambda: discover_assets(roots, limit=int(plan.get("limit", limit))),
-            title="Автопоиск файлов",
-            description=(
-                "Идёт поиск весов моделей, папок изображений и видеофайлов по заранее рассчитанному плану. "
-                "Поиск теперь выполняется одним проходом по каждой папке."
-            ),
-            estimated_seconds=estimate,
-            progress_text="Поиск файлов",
-            status_text="Идёт один проход по выбранным папкам: веса, изображения и видео ищутся одновременно...",
-            hint="Для очень больших папок поиск может идти дольше первичной оценки, но интерфейс больше не будет писать, что команда почти завершена.",
-        )
-        st.success("Поиск завершён")
+    can_show = bool(plan) and [str(root) for root in raw_roots_list] == plan.get("raw_roots") and int(limit) == int(plan.get("limit", limit))
+    if st.button("2. Показать найденные кандидаты", use_container_width=True, disabled=not can_show):
+        st.session_state["asset_discovery_results"] = plan.get("results", {})
+        st.success("Кандидаты загружены из готового плана без повторного сканирования")
 
-    results = st.session_state.get("asset_discovery_results")
-    if not results:
+    raw_results = st.session_state.get("asset_discovery_results")
+    if not raw_results:
         return
+
+    results = {key: _deserialize_candidates(value) for key, value in raw_results.items()}
 
     st.divider()
     st.write("Выбери найденные пути и нажми **Применить выбранные пути в config**.")
@@ -481,110 +382,44 @@ def page_setup(config: Dict[str, Any]) -> None:
     st.header("1. Первый запуск и установка")
     st.caption("Здесь видно, какой процесс запущен, какой шаг выполняется, таймер, примерное оставшееся время и живой лог команды.")
 
-    st.info(
-        "Обычный режим: Windows `.venv` нужна только для открытия панели, а рабочие зависимости ставятся в WSL `.venv_wsl`. "
-        "Пересоздавать среды каждый раз не нужно."
-    )
+    st.info("Обычный режим: Windows `.venv` нужна только для открытия панели, а рабочие зависимости ставятся в WSL `.venv_wsl`. Пересоздавать среды каждый раз не нужно.")
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Windows .venv для панели")
-
         if st.button("Создать/обновить config/shelfvision.yaml", use_container_width=True):
             path = save_config(config)
             st.success(f"Конфигурация сохранена: {rel_path(path)}")
-
         if st.button("Создать/починить Windows .venv для панели", use_container_width=True):
-            ok = run_steps_with_progress(
-                _windows_venv_steps(config, install_full_requirements=False),
-                title="Создание Windows .venv",
-                success_message="Windows .venv готова. Можно запускать Control Panel.",
-                failure_message="Не удалось подготовить Windows .venv",
-            )
-            if ok:
+            if run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=False), title="Создание Windows .venv", success_message="Windows .venv готова. Можно запускать Control Panel.", failure_message="Не удалось подготовить Windows .venv"):
                 st.balloons()
-
         if st.button("Пересоздать Windows .venv с нуля", use_container_width=True):
             venv_dir = resolve_path(config["setup"].get("venv_dir", ".venv"))
             with st.spinner(f"Удаляется {rel_path(venv_dir)}..."):
                 _reset_directory(venv_dir)
-            ok = run_steps_with_progress(
-                _windows_venv_steps(config, install_full_requirements=False),
-                title="Полная пересборка Windows .venv",
-                success_message="Windows .venv пересоздана.",
-                failure_message="Не удалось пересоздать Windows .venv",
-            )
-            if ok:
+            if run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=False), title="Полная пересборка Windows .venv", success_message="Windows .venv пересоздана.", failure_message="Не удалось пересоздать Windows .venv"):
                 st.balloons()
-
         if st.button("Установить ВСЕ зависимости в Windows .venv", use_container_width=True):
-            st.warning(
-                "Обычно для проекта используется WSL .venv_wsl. Установка всех зависимостей в Windows .venv нужна только для отдельного Windows-запуска."
-            )
-            run_steps_with_progress(
-                _windows_venv_steps(config, install_full_requirements=True)[1:],
-                title="Установка зависимостей в Windows .venv",
-                success_message="Зависимости установлены в Windows .venv.",
-                failure_message="Ошибка установки зависимостей в Windows .venv",
-            )
+            st.warning("Обычно для проекта используется WSL .venv_wsl. Установка всех зависимостей в Windows .venv нужна только для отдельного Windows-запуска.")
+            run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=True)[1:], title="Установка зависимостей в Windows .venv", success_message="Зависимости установлены в Windows .venv.", failure_message="Ошибка установки зависимостей в Windows .venv")
 
     with col2:
         st.subheader("WSL .venv_wsl для рабочих задач")
-        st.warning(
-            "Если WSL ещё не установлен, кнопка `wsl --install` может потребовать права администратора и перезагрузку."
-        )
-
+        st.warning("Если WSL ещё не установлен, кнопка `wsl --install` может потребовать права администратора и перезагрузку.")
         if st.button("Проверить WSL", use_container_width=True):
-            run_steps_with_progress(
-                [CommandStep("Проверка WSL", ["wsl", "--status"], ROOT, "Проверяется доступность WSL.", estimated_seconds=10)],
-                title="Проверка WSL",
-                success_message="WSL доступен.",
-                failure_message="WSL не отвечает или не установлен",
-            )
-
+            run_steps_with_progress([CommandStep("Проверка WSL", ["wsl", "--status"], ROOT, "Проверяется доступность WSL.", estimated_seconds=10)], title="Проверка WSL", success_message="WSL доступен.", failure_message="WSL не отвечает или не установлен")
         if st.button("Проверить зависимости в WSL .venv_wsl", use_container_width=True):
-            run_steps_with_progress(
-                _wsl_check_dependency_steps(config, strict=False),
-                title="Проверка зависимостей WSL .venv_wsl",
-                success_message="Проверка зависимостей завершена. Посмотри строки MISSING/VERSION в логе ниже.",
-                failure_message="Проверка зависимостей WSL завершилась с ошибкой",
-            )
-
+            run_steps_with_progress(_wsl_check_dependency_steps(config, strict=False), title="Проверка зависимостей WSL .venv_wsl", success_message="Проверка зависимостей завершена. Посмотри строки MISSING/VERSION в логе ниже.", failure_message="Проверка зависимостей WSL завершилась с ошибкой")
         if st.button("Доустановить недостающие зависимости в WSL .venv_wsl", use_container_width=True):
-            run_steps_with_progress(
-                _wsl_install_missing_steps(config),
-                title="Доустановка зависимостей WSL .venv_wsl",
-                success_message="Доустановка завершена, повторная проверка выполнена.",
-                failure_message="Ошибка доустановки зависимостей WSL .venv_wsl",
-            )
-
+            run_steps_with_progress(_wsl_install_missing_steps(config), title="Доустановка зависимостей WSL .venv_wsl", success_message="Доустановка завершена, повторная проверка выполнена.", failure_message="Ошибка доустановки зависимостей WSL .venv_wsl")
         if st.button("Запустить wsl --install", use_container_width=True):
-            run_steps_with_progress(
-                [CommandStep("Установка WSL", ["wsl", "--install"], ROOT, "Запускается установка WSL.", estimated_seconds=600)],
-                title="Установка WSL",
-                success_message="Команда wsl --install выполнена. Может потребоваться перезагрузка.",
-                failure_message="Ошибка выполнения wsl --install",
-            )
-
+            run_steps_with_progress([CommandStep("Установка WSL", ["wsl", "--install"], ROOT, "Запускается установка WSL.", estimated_seconds=600)], title="Установка WSL", success_message="Команда wsl --install выполнена. Может потребоваться перезагрузка.", failure_message="Ошибка выполнения wsl --install")
         if st.button("Создать WSL venv и установить зависимости", use_container_width=True):
-            ok = run_steps_with_progress(
-                _wsl_setup_steps(config),
-                title="Установка зависимостей через WSL",
-                success_message="WSL .venv_wsl готова. Рабочие задачи можно запускать через WSL runtime.",
-                failure_message="Ошибка установки зависимостей через WSL",
-            )
-            if ok:
+            if run_steps_with_progress(_wsl_setup_steps(config), title="Установка зависимостей через WSL", success_message="WSL .venv_wsl готова. Рабочие задачи можно запускать через WSL runtime.", failure_message="Ошибка установки зависимостей через WSL"):
                 st.balloons()
-
         if st.button("Пересоздать WSL .venv_wsl с нуля", use_container_width=True):
-            ok = run_steps_with_progress(
-                _wsl_reset_steps(config),
-                title="Полная пересборка WSL .venv_wsl",
-                success_message="WSL .venv_wsl пересоздана и зависимости установлены.",
-                failure_message="Ошибка пересборки WSL .venv_wsl",
-            )
-            if ok:
+            if run_steps_with_progress(_wsl_reset_steps(config), title="Полная пересборка WSL .venv_wsl", success_message="WSL .venv_wsl пересоздана и зависимости установлены.", failure_message="Ошибка пересборки WSL .venv_wsl"):
                 st.balloons()
 
     st.subheader("Проверка путей")
