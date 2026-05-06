@@ -169,6 +169,26 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
             value=bool(video.get("save_frames_for_identification", True)),
             help="Нужно для связки video_predictions.json → run_identification.py.",
         )
+        video["tracking_enabled"] = st.checkbox(
+            "Включить IoU tracking для видео",
+            value=bool(video.get("tracking_enabled", True)),
+            help="Добавляет track_id объектам между кадрами. Нужно для стабилизации SKU по видео.",
+        )
+        video["tracking_iou"] = st.slider(
+            "Tracking IoU threshold",
+            0.05,
+            0.95,
+            float(video.get("tracking_iou", 0.30)),
+            0.01,
+            help="Чем выше значение, тем строже объект связывается с существующим треком.",
+        )
+        video["tracking_max_missing"] = st.number_input(
+            "Tracking max missing frames",
+            0,
+            100,
+            int(video.get("tracking_max_missing", 5)),
+            help="Сколько обработанных кадров объект может отсутствовать, прежде чем трек будет закрыт.",
+        )
         video["codec"] = st.text_input("Кодек", value=str(video.get("codec", "mp4v")))
 
         st.subheader("Идентификация SKU")
@@ -185,6 +205,11 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         identification["use_masks"] = st.checkbox("Использовать masks для crop", value=bool(identification.get("use_masks", True)))
         identification["no_visualize"] = st.checkbox("Не сохранять визуализации", value=bool(identification.get("no_visualize", False)))
         identification["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 1000, int(identification.get("visualize_limit", 30)))
+        identification["stabilize_tracks"] = st.checkbox(
+            "Стабилизировать SKU по track_id",
+            value=bool(identification.get("stabilize_tracks", True)),
+            help="Использует track_ids из video_predictions.json и выбирает устойчивый SKU по нескольким кадрам.",
+        )
         identification["render_identified_video"] = st.checkbox(
             "Собрать видео с подписями SKU",
             value=bool(identification.get("render_identified_video", True)),
@@ -275,6 +300,10 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             str(video.get("sample_frames", 8)),
             "--codec",
             str(video.get("codec", "mp4v")),
+            "--tracking-iou",
+            str(video.get("tracking_iou", 0.30)),
+            "--tracking-max-missing",
+            str(video.get("tracking_max_missing", 5)),
         ]
         if bool(video.get("save_frames_for_identification", True)):
             args.append("--save-frames-for-identification")
@@ -282,6 +311,8 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             args.append("--no-save-video")
         if not bool(video.get("show_masks", True)):
             args.append("--no-masks")
+        if not bool(video.get("tracking_enabled", True)):
+            args.append("--no-tracking")
         device = str(runtime.get("device", "")).strip()
         if device:
             args.extend(["--device", device])
@@ -299,6 +330,7 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             identification["images_dir"] = str(video_out / "frames_for_identification")
             identification["video_summary"] = str(video_out / "video_summary.json")
             identification["render_identified_video"] = True
+            identification["stabilize_tracks"] = True
             save_config(config)
             st.success("В настройки идентификации подставлены video_predictions.json, frames_for_identification и video_summary.json")
     with c2:
@@ -333,6 +365,8 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
                 args.append("--use-masks")
             if bool(identification.get("no_visualize", False)):
                 args.append("--no-visualize")
+            if bool(identification.get("stabilize_tracks", True)):
+                args.append("--stabilize-tracks")
             if bool(identification.get("render_identified_video", False)):
                 args.append("--render-identified-video")
                 video_summary = str(identification.get("video_summary", "")).strip()
