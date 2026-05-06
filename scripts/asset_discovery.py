@@ -5,13 +5,14 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import DefaultDict, Dict, Iterable, List, Optional
+from typing import Callable, DefaultDict, Dict, Iterable, List, Optional
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 WEIGHT_EXTS = {".pt", ".pth", ".onnx"}
 MODEL_KINDS = ("yolo", "rtdetr", "frcnn")
+ProgressCallback = Callable[[Dict[str, object]], None]
 
 # Это не лимит поиска, а список служебных папок, которые почти никогда не нужны
 # для выбора весов/датасетов и сильно тормозят обход.
@@ -123,12 +124,6 @@ def _top_candidates(candidates: List[AssetCandidate], limit: int) -> List[AssetC
 
 
 def _iter_tree_unlimited(root: Path, excluded_dir_names: set[str] | None = None) -> Iterable[tuple[Path, str]]:
-    """Рекурсивный обход без искусственных лимитов по количеству файлов.
-
-    Возвращает пары (path, kind), где kind — file, dir или skipped_dir.
-    Используется os.scandir, чтобы служебные папки можно было отрезать до входа в них.
-    """
-
     excluded_dir_names = excluded_dir_names or DEFAULT_EXCLUDED_DIRS
     stack = [root]
     while stack:
@@ -152,12 +147,44 @@ def _iter_tree_unlimited(root: Path, excluded_dir_names: set[str] | None = None)
             continue
 
 
-def analyze_and_discover_assets(search_roots: List[Path], limit: int = 10) -> Dict[str, object]:
+def _emit_progress(
+    callback: ProgressCallback | None,
+    root: Path,
+    current_path: Path,
+    dirs_scanned: int,
+    files_scanned: int,
+    weight_files: int,
+    image_files: int,
+    image_dirs: int,
+    video_files: int,
+    skipped_dirs: int,
+) -> None:
+    if callback is None:
+        return
+    callback(
+        {
+            "current_root": str(root),
+            "current_path": str(current_path),
+            "dirs_scanned": dirs_scanned,
+            "files_scanned": files_scanned,
+            "weight_files": weight_files,
+            "image_files": image_files,
+            "image_dirs": image_dirs,
+            "video_files": video_files,
+            "skipped_dirs": skipped_dirs,
+        }
+    )
+
+
+def analyze_and_discover_assets(
+    search_roots: List[Path],
+    limit: int = 10,
+    progress_callback: ProgressCallback | None = None,
+) -> Dict[str, object]:
     """Глубокий анализ и автопоиск за один полный проход.
 
-    Эту функцию следует вызывать на первом этапе интерфейса. Она сразу возвращает
-    и статистику обхода, и найденные кандидаты. Второй этап интерфейса может
-    использовать готовые результаты без повторного сканирования диска.
+    Возвращает и статистику обхода, и найденные кандидаты. Второй этап
+    интерфейса может использовать готовые результаты без повторного сканирования.
     """
 
     started = time.perf_counter()
@@ -192,31 +219,56 @@ def analyze_and_discover_assets(search_roots: List[Path], limit: int = 10) -> Di
         video_files = 0
         skipped_dirs = 0
         root_image_dirs: set[Path] = set()
+        last_emit = time.perf_counter()
 
         for item, item_kind in _iter_tree_unlimited(root):
             if item_kind == "skipped_dir":
                 skipped_dirs += 1
-                continue
-            if item_kind == "dir":
+            elif item_kind == "dir":
                 dirs_scanned += 1
-                continue
-            if item_kind != "file":
-                continue
+            elif item_kind == "file":
+                files_scanned += 1
+                suffix = item.suffix.lower()
+                if suffix in WEIGHT_EXTS:
+                    weight_files += 1
+                    for kind in MODEL_KINDS:
+                        weight_candidates[kind].append(_score_weight(item, kind))
+                elif suffix in VIDEO_EXTS:
+                    video_files += 1
+                    video_candidates.append(_score_video(item))
+                elif suffix in IMAGE_EXTS:
+                    image_files += 1
+                    image_dir_counts[item.parent] += 1
+                    root_image_dirs.add(item.parent)
 
-            files_scanned += 1
-            suffix = item.suffix.lower()
-            if suffix in WEIGHT_EXTS:
-                weight_files += 1
-                for kind in MODEL_KINDS:
-                    weight_candidates[kind].append(_score_weight(item, kind))
-            elif suffix in VIDEO_EXTS:
-                video_files += 1
-                video_candidates.append(_score_video(item))
-            elif suffix in IMAGE_EXTS:
-                image_files += 1
-                image_dir_counts[item.parent] += 1
-                root_image_dirs.add(item.parent)
+            now = time.perf_counter()
+            if now - last_emit >= 0.5:
+                last_emit = now
+                _emit_progress(
+                    progress_callback,
+                    root,
+                    item,
+                    dirs_scanned,
+                    files_scanned,
+                    weight_files,
+                    image_files,
+                    len(root_image_dirs),
+                    video_files,
+                    skipped_dirs,
+                )
 
+        _emit_progress(
+            progress_callback,
+            root,
+            root,
+            dirs_scanned,
+            files_scanned,
+            weight_files,
+            image_files,
+            len(root_image_dirs),
+            video_files,
+            skipped_dirs,
+        )
         root_stats.append(
             DiscoveryRootStats(
                 root=str(root),
@@ -254,8 +306,6 @@ def analyze_and_discover_assets(search_roots: List[Path], limit: int = 10) -> Di
 
 
 def discover_assets(search_roots: List[Path], limit: int = 10) -> Dict[str, List[AssetCandidate]]:
-    """Простой API для других скриптов: возвращает только кандидатов."""
-
     return analyze_and_discover_assets(search_roots, limit=limit)["results"]  # type: ignore[return-value]
 
 
