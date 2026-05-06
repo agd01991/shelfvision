@@ -29,6 +29,9 @@ identification:
   use_masks: true
   no_visualize: false
   visualize_limit: 30
+  render_identified_video: true
+  video_summary: ""
+  identified_video_codec: mp4v
 
 weights:
   yolo: models/yolo/best.pt
@@ -61,6 +64,7 @@ density:
   limit: 20
 
 video:
+  model: yolo_seg
   input_path: data/video/test.mp4
   output_dir: results/video/yolo
   frame_skip: 3
