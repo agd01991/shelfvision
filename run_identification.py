@@ -6,6 +6,7 @@ from pathlib import Path
 from src.identification.matcher import run_sku_matching
 from src.identification.metrics import evaluate_with_ground_truth, save_identification_metrics
 from src.identification.report import save_identification_outputs
+from src.identification.video_renderer import render_identified_video
 from src.identification.visualization import visualize_identification_results
 
 
@@ -23,6 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-masks", action="store_true", help="Вырезать crop по mask, если маски есть")
     parser.add_argument("--no-visualize", action="store_true", help="Не сохранять визуализации с подписями SKU")
     parser.add_argument("--visualize-limit", type=int, default=30, help="Сколько изображений визуализировать")
+    parser.add_argument("--render-identified-video", action="store_true", help="Собрать identified_output_video.mp4 после идентификации видео")
+    parser.add_argument("--video-summary", default=None, help="video_summary.json от run_video_inference.py")
+    parser.add_argument("--identified-video-codec", default="mp4v", help="Кодек для identified_output_video.mp4")
     return parser.parse_args()
 
 
@@ -63,11 +67,30 @@ def main() -> None:
             limit=args.visualize_limit,
         )
 
+    video_outputs = {}
+    if args.render_identified_video:
+        video_summary = args.video_summary
+        if not video_summary:
+            candidate = Path(args.predictions).parent / "video_summary.json"
+            if candidate.exists():
+                video_summary = str(candidate)
+        if not video_summary:
+            raise SystemExit("Для сборки identified video укажите --video-summary или положите video_summary.json рядом с predictions")
+        video_outputs = render_identified_video(
+            video_predictions_json=args.predictions,
+            identification_results_json=out_dir / "identification_results.json",
+            video_summary_json=video_summary,
+            out_dir=out_dir,
+            codec=args.identified_video_codec,
+        )
+
     print("=== ShelfVision identification done ===")
     print(f"Results: {out_dir}")
     print(f"Objects: {metrics.get('total_objects', 0)}")
     print(f"Matched: {metrics.get('matched', 0)}")
     print(f"Unknown: {metrics.get('unknown', 0)}")
+    for name, path in video_outputs.items():
+        print(f"{name}: {path}")
 
 
 if __name__ == "__main__":
