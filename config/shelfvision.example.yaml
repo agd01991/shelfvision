@@ -17,6 +17,8 @@ segmentation:
 identification:
   # Большие crop-ы, визуализации и отчёты лучше хранить вне папки программы.
   # Для текущей ВКР используется отдельный диск/каталог:
+  predictions: results/inference/yolo_seg_batch/predictions.json
+  images_dir: data/yolo_cache/d2s_small_seg/images/test
   out_dir: "D:/1Diplom/shelfvision_results/identification"
   gallery_csv: "D:/1Diplom/sku_gallery/gallery.csv"
   gallery_dir: "D:/1Diplom/sku_gallery"
@@ -25,6 +27,7 @@ identification:
   top_k: 3
   padding: 0.05
   use_masks: true
+  no_visualize: false
   visualize_limit: 30
 
 weights:
@@ -66,6 +69,7 @@ video:
   sample_frames: 8
   show_masks: true
   codec: mp4v
+  save_frames_for_identification: true
 
 setup:
   # Windows/local virtual environment used to launch Streamlit Control Panel.
