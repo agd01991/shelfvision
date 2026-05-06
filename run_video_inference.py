@@ -25,6 +25,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Сохранять все обработанные кадры как изображения и делать video_predictions.json совместимым с run_identification.py",
     )
+    parser.add_argument("--no-tracking", action="store_true", help="Отключить простой IoU tracking")
+    parser.add_argument("--tracking-iou", type=float, default=0.30, help="IoU threshold для связывания объекта с track_id")
+    parser.add_argument("--tracking-max-missing", type=int, default=5, help="Сколько обработанных кадров трек может отсутствовать")
     return parser.parse_args()
 
 
@@ -48,6 +51,9 @@ def main() -> None:
         codec=args.codec,
         model_name="YOLO Video",
         save_frames_for_identification=args.save_frames_for_identification,
+        tracking_enabled=not args.no_tracking,
+        tracking_iou=args.tracking_iou,
+        tracking_max_missing=max(0, args.tracking_max_missing),
     )
 
     print("=== ShelfVision video inference ===")
