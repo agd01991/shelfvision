@@ -29,6 +29,7 @@ identification:
   use_masks: true
   no_visualize: false
   visualize_limit: 30
+  stabilize_tracks: true
   render_identified_video: true
   video_summary: ""
   identified_video_codec: mp4v
@@ -74,6 +75,9 @@ video:
   show_masks: true
   codec: mp4v
   save_frames_for_identification: true
+  tracking_enabled: true
+  tracking_iou: 0.3
+  tracking_max_missing: 5
 
 setup:
   # Windows/local virtual environment used to launch Streamlit Control Panel.
