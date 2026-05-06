@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from src.identification.matcher import run_sku_matching
+from src.identification.matcher import run_sku_matching, results_to_dataframe
 from src.identification.metrics import evaluate_with_ground_truth, save_identification_metrics
 from src.identification.report import save_identification_outputs
+from src.identification.track_stabilizer import save_track_summaries, stabilize_results_by_tracks
 from src.identification.video_renderer import render_identified_video
 from src.identification.visualization import visualize_identification_results
 
@@ -24,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-masks", action="store_true", help="Вырезать crop по mask, если маски есть")
     parser.add_argument("--no-visualize", action="store_true", help="Не сохранять визуализации с подписями SKU")
     parser.add_argument("--visualize-limit", type=int, default=30, help="Сколько изображений визуализировать")
+    parser.add_argument("--stabilize-tracks", action="store_true", help="Стабилизировать SKU по track_id из video_predictions.json")
     parser.add_argument("--render-identified-video", action="store_true", help="Собрать identified_output_video.mp4 после идентификации видео")
     parser.add_argument("--video-summary", default=None, help="video_summary.json от run_video_inference.py")
     parser.add_argument("--identified-video-codec", default="mp4v", help="Кодек для identified_output_video.mp4")
@@ -49,6 +51,13 @@ def main() -> None:
         top_k=args.top_k,
         padding_ratio=args.padding,
     )
+
+    track_summaries = []
+    if args.stabilize_tracks:
+        results, track_summaries = stabilize_results_by_tracks(results, video_predictions_json=args.predictions)
+        save_track_summaries(track_summaries, out_dir=out_dir)
+        # run_sku_matching saves an initial CSV before stabilization; overwrite it with stabilized values.
+        results_to_dataframe(results).to_csv(out_dir / "identification_results.csv", index=False)
 
     metrics = evaluate_with_ground_truth(results, gt_csv=args.gt_csv)
     save_identification_metrics(metrics, out_dir=out_dir)
@@ -89,6 +98,9 @@ def main() -> None:
     print(f"Objects: {metrics.get('total_objects', 0)}")
     print(f"Matched: {metrics.get('matched', 0)}")
     print(f"Unknown: {metrics.get('unknown', 0)}")
+    if args.stabilize_tracks:
+        print(f"Tracks: {len(track_summaries)}")
+        print(f"Track summary: {out_dir / 'track_sku_summary.json'}")
     for name, path in video_outputs.items():
         print(f"{name}: {path}")
 
