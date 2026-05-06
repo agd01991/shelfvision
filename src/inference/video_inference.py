@@ -5,12 +5,13 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 import cv2
 import numpy as np
 
 from .prediction import DetectionPrediction, ImagePrediction, save_predictions_json
+from .tracking import SimpleIoUTracker
 
 
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
@@ -49,6 +50,9 @@ class VideoSummary:
     total_processing_time: float
     predictions_json: Optional[str] = None
     frames_for_identification_dir: Optional[str] = None
+    tracking_enabled: bool = True
+    tracking_iou: float = 0.3
+    tracking_max_missing: int = 5
 
 
 def _class_name(names: Any, class_id: int) -> str:
@@ -143,6 +147,7 @@ def draw_video_prediction(
     prediction: ImagePrediction,
     show_masks: bool = True,
     show_footer: bool = True,
+    show_track_id: bool = True,
 ) -> np.ndarray:
     image = frame.copy()
     for detection in prediction.detections:
@@ -150,7 +155,8 @@ def draw_video_prediction(
         if show_masks and detection.mask:
             _draw_mask(image, detection.mask)
         cv2.rectangle(image, (x1, y1), (x2, y2), DEFAULT_BOX_COLOR, 2)
-        _draw_label(image, f"{detection.label} {detection.score:.2f}", x1, y1)
+        track_text = f" id={detection.track_id}" if show_track_id and detection.track_id is not None else ""
+        _draw_label(image, f"{detection.label}{track_text} {detection.score:.2f}", x1, y1)
 
     if show_footer:
         footer = (
@@ -203,6 +209,9 @@ def build_video_summary(
     total_processing_time: float,
     predictions_json: Optional[str | Path] = None,
     frames_for_identification_dir: Optional[str | Path] = None,
+    tracking_enabled: bool = True,
+    tracking_iou: float = 0.3,
+    tracking_max_missing: int = 5,
 ) -> VideoSummary:
     processed_frames = len(stats)
     return VideoSummary(
@@ -219,6 +228,9 @@ def build_video_summary(
         total_processing_time=total_processing_time,
         predictions_json=str(predictions_json) if predictions_json else None,
         frames_for_identification_dir=str(frames_for_identification_dir) if frames_for_identification_dir else None,
+        tracking_enabled=tracking_enabled,
+        tracking_iou=tracking_iou,
+        tracking_max_missing=tracking_max_missing,
     )
 
 
@@ -270,13 +282,11 @@ def process_yolo_video_file(
     model_name: str = "YOLO Video",
     save_frames_for_identification: bool = False,
     progress_callback: VideoProgressCallback | None = None,
+    tracking_enabled: bool = True,
+    tracking_iou: float = 0.3,
+    tracking_max_missing: int = 5,
 ) -> Dict[str, Path]:
-    """Processes a video file with YOLO/YOLO-Seg and saves video analytics.
-
-    If save_frames_for_identification=True, every processed source frame is saved
-    and video_predictions.json points to those frame images. This makes the file
-    directly compatible with run_identification.py.
-    """
+    """Processes a video file with YOLO/YOLO-Seg and saves video analytics."""
 
     from ultralytics import YOLO
 
@@ -293,6 +303,7 @@ def process_yolo_video_file(
         raise ValueError(f"Неподдерживаемое расширение видео: {input_video.suffix}")
 
     model = YOLO(str(model_path))
+    tracker = SimpleIoUTracker(iou_threshold=tracking_iou, max_missing=tracking_max_missing) if tracking_enabled else None
     capture = cv2.VideoCapture(str(input_video))
     if not capture.isOpened():
         raise FileNotFoundError(f"Не удалось открыть видео: {input_video}")
@@ -345,13 +356,7 @@ def process_yolo_video_file(
             frame_image_path = f"{input_video}#frame_{source_frame_id}"
 
         start_infer = time.perf_counter()
-        results = model.predict(
-            source=frame,
-            conf=conf,
-            imgsz=imgsz,
-            device=device,
-            verbose=False,
-        )
+        results = model.predict(source=frame, conf=conf, imgsz=imgsz, device=device, verbose=False)
         inference_time = time.perf_counter() - start_infer
 
         prediction = _result_to_prediction(
@@ -370,11 +375,16 @@ def process_yolo_video_file(
                 "imgsz": imgsz,
                 "weights": str(model_path),
                 "frame_skip": frame_skip,
+                "tracking_enabled": tracking_enabled,
+                "tracking_iou": tracking_iou,
+                "tracking_max_missing": tracking_max_missing,
             },
         )
+        if tracker is not None:
+            prediction.detections = tracker.update(prediction.detections)
         predictions.append(prediction)
 
-        drawn = draw_video_prediction(frame, prediction, show_masks=show_masks)
+        drawn = draw_video_prediction(frame, prediction, show_masks=show_masks, show_track_id=tracking_enabled)
         if writer is not None:
             writer.write(drawn)
 
@@ -403,14 +413,13 @@ def process_yolo_video_file(
         total_processing_time=total_processing_time,
         predictions_json=predictions_json,
         frames_for_identification_dir=identification_frames_dir,
+        tracking_enabled=tracking_enabled,
+        tracking_iou=tracking_iou,
+        tracking_max_missing=tracking_max_missing,
     )
     summary_json = save_video_summary_json(summary, out_dir / "video_summary.json")
 
-    outputs: Dict[str, Path] = {
-        "frame_stats_csv": stats_csv,
-        "summary_json": summary_json,
-        "predictions_json": predictions_json,
-    }
+    outputs: Dict[str, Path] = {"frame_stats_csv": stats_csv, "summary_json": summary_json, "predictions_json": predictions_json}
     if output_video_path is not None:
         outputs["output_video"] = output_video_path
     if save_sample_frames > 0:
