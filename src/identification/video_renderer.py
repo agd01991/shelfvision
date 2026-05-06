@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List
 
 import cv2
 
@@ -26,6 +26,7 @@ class IdentifiedVideoSummary:
     height: int
     matched_objects: int
     unknown_objects: int
+    tracked_objects: int
 
 
 def _draw_label(image, text: str, x: int, y: int) -> None:
@@ -46,8 +47,6 @@ def _load_identification_results(path: str | Path) -> List[IdentificationResult]
     raw = _read_json(path)
     results: List[IdentificationResult] = []
     for item in raw:
-        top_k = item.get("top_k", [])
-        # video rendering does not need full SkuCandidate instances, so keep top_k empty.
         results.append(
             IdentificationResult(
                 image_path=str(item.get("image_path", "")),
@@ -67,6 +66,11 @@ def _load_identification_results(path: str | Path) -> List[IdentificationResult]
                 sku_confidence=float(item.get("sku_confidence", 0.0)),
                 sku_status=str(item.get("sku_status", "unknown")),
                 top_k=[],
+                track_id=item.get("track_id"),
+                track_stabilized=bool(item.get("track_stabilized", False)),
+                track_frames_count=int(item.get("track_frames_count", 0) or 0),
+                track_matched_votes=int(item.get("track_matched_votes", 0) or 0),
+                track_unknown_votes=int(item.get("track_unknown_votes", 0) or 0),
             )
         )
     return results
@@ -94,20 +98,29 @@ def _output_fps(video_summary: Dict[str, Any], input_video: str | Path) -> float
     return max(1.0, fps / frame_skip)
 
 
-def _draw_identification(image, results: List[IdentificationResult]) -> tuple[int, int]:
+def _draw_identification(image, results: List[IdentificationResult]) -> tuple[int, int, int]:
     matched = 0
     unknown = 0
+    tracked = 0
     for item in results:
         color = BOX_COLOR_MATCHED if item.sku_status == "matched" else BOX_COLOR_UNKNOWN
         if item.sku_status == "matched":
             matched += 1
         else:
             unknown += 1
+        if item.track_id is not None:
+            tracked += 1
         x1, y1, x2, y2 = [int(round(v)) for v in (item.x1, item.y1, item.x2, item.y2)]
         cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        label = f"{item.sku_name} {item.sku_confidence:.2f}" if item.sku_status == "matched" else f"unknown {item.sku_confidence:.2f}"
+        track_prefix = f"T{item.track_id} " if item.track_id is not None else ""
+        stable_mark = "*" if item.track_stabilized else ""
+        label = (
+            f"{track_prefix}{item.sku_name}{stable_mark} {item.sku_confidence:.2f}"
+            if item.sku_status == "matched"
+            else f"{track_prefix}unknown {item.sku_confidence:.2f}"
+        )
         _draw_label(image, label, x1, y1)
-    return matched, unknown
+    return matched, unknown, tracked
 
 
 def render_identified_video(
@@ -145,6 +158,7 @@ def render_identified_video(
 
     matched_total = 0
     unknown_total = 0
+    tracked_total = 0
     frames_used = 0
 
     for frame_prediction in frames:
@@ -156,9 +170,10 @@ def render_identified_video(
             image = cv2.resize(image, (width, height))
 
         frame_results = grouped.get(str(frame_path), [])
-        matched, unknown = _draw_identification(image, frame_results)
+        matched, unknown, tracked = _draw_identification(image, frame_results)
         matched_total += matched
         unknown_total += unknown
+        tracked_total += tracked
         writer.write(image)
         frames_used += 1
 
@@ -173,11 +188,9 @@ def render_identified_video(
         height=height,
         matched_objects=matched_total,
         unknown_objects=unknown_total,
+        tracked_objects=tracked_total,
     )
     summary_path = out_dir / "identified_video_summary.json"
     summary_path.write_text(json.dumps(summary.__dict__, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    return {
-        "identified_video": output_video_path,
-        "identified_video_summary": summary_path,
-    }
+    return {"identified_video": output_video_path, "identified_video_summary": summary_path}
