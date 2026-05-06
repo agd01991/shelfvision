@@ -68,6 +68,18 @@ def render_command_result(result) -> None:
     st.code(result.stdout or "", language="text")
 
 
+def _video_weight_options(config: Dict[str, Any]) -> Dict[str, str]:
+    weights = config.get("weights", {})
+    return {
+        "yolo": str(weights.get("yolo", "")),
+        "yolo_seg": str(weights.get("yolo_seg", weights.get("yolo", ""))),
+    }
+
+
+def _video_weight_path(config: Dict[str, Any], video_model: str) -> str:
+    return _video_weight_options(config).get(video_model, config.get("weights", {}).get("yolo", ""))
+
+
 def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
     st.header("3. Настройки проекта")
 
@@ -91,6 +103,7 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         st.subheader("Веса")
         weights = config["weights"]
         weights["yolo"] = st.text_input("YOLO weights", value=str(weights.get("yolo", "")))
+        weights["yolo_seg"] = st.text_input("YOLO-Seg weights", value=str(weights.get("yolo_seg", "")))
         weights["rtdetr"] = st.text_input("RT-DETR weights", value=str(weights.get("rtdetr", "")))
         weights["frcnn"] = st.text_input("Faster R-CNN weights", value=str(weights.get("frcnn", "")))
 
@@ -138,6 +151,12 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
 
         st.subheader("Видео")
         video = config.setdefault("video", {})
+        video["model"] = st.selectbox(
+            "Модель для видео",
+            options=["yolo", "yolo_seg"],
+            index=0 if video.get("model", "yolo") == "yolo" else 1,
+            format_func=lambda x: "YOLO-Seg" if x == "yolo_seg" else "YOLO",
+        )
         video["input_path"] = st.text_input("Видеофайл", value=str(video.get("input_path", "data/video/test.mp4")))
         video["output_dir"] = st.text_input("Папка результатов видео", value=str(video.get("output_dir", "results/video/yolo")))
         video["frame_skip"] = st.number_input("Обрабатывать каждый N-й кадр", 1, 120, int(video.get("frame_skip", 3)))
@@ -145,7 +164,27 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         video["save_video"] = st.checkbox("Сохранять размеченное видео", value=bool(video.get("save_video", True)))
         video["sample_frames"] = st.number_input("Кадры-примеры", 0, 100, int(video.get("sample_frames", 8)))
         video["show_masks"] = st.checkbox("Показывать masks на видео", value=bool(video.get("show_masks", True)))
+        video["save_frames_for_identification"] = st.checkbox(
+            "Сохранять кадры для идентификации",
+            value=bool(video.get("save_frames_for_identification", True)),
+            help="Нужно для связки video_predictions.json → run_identification.py.",
+        )
         video["codec"] = st.text_input("Кодек", value=str(video.get("codec", "mp4v")))
+
+        st.subheader("Идентификация SKU")
+        identification = config.setdefault("identification", {})
+        identification["predictions"] = st.text_input("predictions.json", value=str(identification.get("predictions", "results/inference/yolo_seg_batch/predictions.json")))
+        identification["images_dir"] = st.text_input("images_dir для predictions", value=str(identification.get("images_dir", "data/yolo_cache/d2s_small_seg/images/test")))
+        identification["out_dir"] = st.text_input("Папка результатов идентификации", value=str(identification.get("out_dir", "D:/1Diplom/shelfvision_results/identification")))
+        identification["gallery_csv"] = st.text_input("SKU gallery.csv", value=str(identification.get("gallery_csv", "D:/1Diplom/sku_gallery/gallery.csv")))
+        identification["gallery_dir"] = st.text_input("SKU gallery dir", value=str(identification.get("gallery_dir", "D:/1Diplom/sku_gallery")))
+        identification["gt_csv"] = st.text_input("GT CSV, опционально", value=str(identification.get("gt_csv", "")))
+        identification["threshold"] = st.slider("SKU similarity threshold", 0.0, 1.0, float(identification.get("threshold", 0.65)), 0.01)
+        identification["top_k"] = st.number_input("Top-k кандидатов SKU", 1, 20, int(identification.get("top_k", 3)))
+        identification["padding"] = st.slider("Padding вокруг bbox", 0.0, 0.5, float(identification.get("padding", 0.05)), 0.01)
+        identification["use_masks"] = st.checkbox("Использовать masks для crop", value=bool(identification.get("use_masks", True)))
+        identification["no_visualize"] = st.checkbox("Не сохранять визуализации", value=bool(identification.get("no_visualize", False)))
+        identification["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 1000, int(identification.get("visualize_limit", 30)))
 
         submitted = st.form_submit_button("Сохранить настройки")
         if submitted:
@@ -204,13 +243,15 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
         render_command_result(result)
 
     st.subheader("Видеоинференс")
+    st.caption("При включённом сохранении кадров результат `video_predictions.json` можно сразу передать в идентификацию SKU.")
     if st.button("Обработать видео через выбранный runtime", use_container_width=True):
         video = config.get("video", {})
+        video_model = str(video.get("model", "yolo"))
         args = [
             "--model",
             "yolo",
             "--weights",
-            config["weights"]["yolo"],
+            _video_weight_path(config, video_model),
             "--video",
             video.get("input_path", "data/video/test.mp4"),
             "--out-dir",
@@ -228,6 +269,8 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             "--codec",
             str(video.get("codec", "mp4v")),
         ]
+        if bool(video.get("save_frames_for_identification", True)):
+            args.append("--save-frames-for-identification")
         if not bool(video.get("save_video", True)):
             args.append("--no-save-video")
         if not bool(video.get("show_masks", True)):
@@ -237,6 +280,53 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             args.extend(["--device", device])
         result = run_command(python_command(config, "run_video_inference.py", args))
         render_command_result(result)
+
+    st.subheader("Идентификация SKU")
+    st.caption("Можно запускать по обычному predictions.json или по video_predictions.json после обработки видео.")
+    identification = config.setdefault("identification", {})
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Подставить результаты последнего видео", use_container_width=True):
+            video_out = Path(config.get("video", {}).get("output_dir", "results/video/yolo"))
+            identification["predictions"] = str(video_out / "video_predictions.json")
+            identification["images_dir"] = str(video_out / "frames_for_identification")
+            save_config(config)
+            st.success("В настройки идентификации подставлены video_predictions.json и frames_for_identification")
+    with c2:
+        if st.button("Запустить идентификацию SKU", use_container_width=True):
+            args = [
+                "--predictions",
+                str(identification.get("predictions", "")),
+                "--out-dir",
+                str(identification.get("out_dir", "D:/1Diplom/shelfvision_results/identification")),
+                "--threshold",
+                str(identification.get("threshold", 0.65)),
+                "--top-k",
+                str(identification.get("top_k", 3)),
+                "--padding",
+                str(identification.get("padding", 0.05)),
+                "--visualize-limit",
+                str(identification.get("visualize_limit", 30)),
+            ]
+            images_dir = str(identification.get("images_dir", "")).strip()
+            if images_dir:
+                args.extend(["--images-dir", images_dir])
+            gallery_csv = str(identification.get("gallery_csv", "")).strip()
+            gallery_dir = str(identification.get("gallery_dir", "")).strip()
+            if gallery_csv:
+                args.extend(["--gallery-csv", gallery_csv])
+            if gallery_dir:
+                args.extend(["--gallery-dir", gallery_dir])
+            gt_csv = str(identification.get("gt_csv", "")).strip()
+            if gt_csv:
+                args.extend(["--gt-csv", gt_csv])
+            if bool(identification.get("use_masks", True)):
+                args.append("--use-masks")
+            if bool(identification.get("no_visualize", False)):
+                args.append("--no-visualize")
+
+            result = run_command(python_command(config, "run_identification.py", args))
+            render_command_result(result)
 
     st.subheader("Полный pipeline")
     if st.button("Запустить полный pipeline через выбранный runtime", use_container_width=True):
