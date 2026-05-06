@@ -30,6 +30,7 @@ def build_identified_predictions(
         labels = prediction.get("labels", []) or []
         class_ids = prediction.get("class_ids", []) or []
         masks = prediction.get("masks", []) or []
+        track_ids = prediction.get("track_ids", []) or []
 
         detections: List[Dict[str, Any]] = []
         for idx, box in enumerate(boxes, start=1):
@@ -42,6 +43,7 @@ def build_identified_predictions(
                 "label": _get_indexed(labels, array_index, "product"),
                 "class_id": _get_indexed(class_ids, array_index, 0),
                 "mask": _get_indexed(masks, array_index, None),
+                "track_id": _get_indexed(track_ids, array_index, None),
             }
             if matched:
                 detection.update(
@@ -52,6 +54,11 @@ def build_identified_predictions(
                         "sku_confidence": matched.sku_confidence,
                         "sku_status": matched.sku_status,
                         "sku_top_k": [candidate.__dict__ for candidate in matched.top_k],
+                        "track_id": matched.track_id,
+                        "track_stabilized": matched.track_stabilized,
+                        "track_frames_count": matched.track_frames_count,
+                        "track_matched_votes": matched.track_matched_votes,
+                        "track_unknown_votes": matched.track_unknown_votes,
                     }
                 )
             detections.append(detection)
@@ -60,6 +67,7 @@ def build_identified_predictions(
         enriched["detections"] = detections
         enriched["identified_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "matched")
         enriched["unknown_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "unknown")
+        enriched["tracked_objects_count"] = sum(1 for item in detections if item.get("track_id") is not None)
         identified.append(enriched)
     return identified
 
@@ -83,6 +91,8 @@ def save_identification_report(
     out_dir: str | Path,
 ) -> Path:
     out_dir = Path(out_dir)
+    stabilized_count = sum(1 for item in results if item.track_stabilized)
+    tracks_count = len({item.track_id for item in results if item.track_id is not None})
     lines = [
         "# ShelfVision: отчёт по SKU-идентификации",
         "",
@@ -94,6 +104,8 @@ def save_identification_report(
         f"- Доля matched: {metrics.get('matched_rate', 0):.4f}",
         f"- Доля unknown: {metrics.get('unknown_rate', 0):.4f}",
         f"- Средняя similarity: {metrics.get('avg_similarity', 0):.4f}",
+        f"- Треков в видео: {tracks_count}",
+        f"- Объектов со стабилизированным SKU по треку: {stabilized_count}",
     ]
     if "top1_accuracy" in metrics:
         lines.extend(
@@ -105,11 +117,12 @@ def save_identification_report(
         )
 
     lines.extend(["", "## Первые результаты", ""])
-    lines.append("| image | object | status | sku | confidence | crop |")
-    lines.append("|---|---:|---|---|---:|---|")
+    lines.append("| image | object | track | status | sku | confidence | crop |")
+    lines.append("|---|---:|---:|---|---|---:|---|")
     for item in results[:30]:
+        track = item.track_id if item.track_id is not None else ""
         lines.append(
-            f"| {item.image_name} | {item.object_id} | {item.sku_status} | {item.sku_name} | "
+            f"| {item.image_name} | {item.object_id} | {track} | {item.sku_status} | {item.sku_name} | "
             f"{item.sku_confidence:.4f} | `{item.crop_path}` |"
         )
 
