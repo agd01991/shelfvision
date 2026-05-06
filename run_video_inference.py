@@ -20,6 +20,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-frames", type=int, default=8, help="Сколько первых кадров сохранить как примеры")
     parser.add_argument("--no-masks", action="store_true", help="Не отрисовывать masks")
     parser.add_argument("--codec", default="mp4v", help="Кодек для сохранения видео")
+    parser.add_argument(
+        "--save-frames-for-identification",
+        action="store_true",
+        help="Сохранять все обработанные кадры как изображения и делать video_predictions.json совместимым с run_identification.py",
+    )
     return parser.parse_args()
 
 
@@ -42,6 +47,7 @@ def main() -> None:
         show_masks=not args.no_masks,
         codec=args.codec,
         model_name="YOLO Video",
+        save_frames_for_identification=args.save_frames_for_identification,
     )
 
     print("=== ShelfVision video inference ===")
