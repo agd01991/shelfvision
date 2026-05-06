@@ -5,12 +5,12 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
-from .prediction import DetectionPrediction, ImagePrediction
+from .prediction import DetectionPrediction, ImagePrediction, save_predictions_json
 
 
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
@@ -18,6 +18,7 @@ DEFAULT_BOX_COLOR = (0, 200, 0)
 DEFAULT_MASK_COLOR = (0, 160, 255)
 TEXT_COLOR = (255, 255, 255)
 TEXT_BG_COLOR = (0, 0, 0)
+VideoProgressCallback = Callable[[Dict[str, Any]], None]
 
 
 @dataclass
@@ -46,6 +47,8 @@ class VideoSummary:
     average_inference_time: float
     average_fps: float
     total_processing_time: float
+    predictions_json: Optional[str] = None
+    frames_for_identification_dir: Optional[str] = None
 
 
 def _class_name(names: Any, class_id: int) -> str:
@@ -141,8 +144,6 @@ def draw_video_prediction(
     show_masks: bool = True,
     show_footer: bool = True,
 ) -> np.ndarray:
-    """Draws detections on an already loaded video frame."""
-
     image = frame.copy()
     for detection in prediction.detections:
         x1, y1, x2, y2 = [int(round(v)) for v in detection.box]
@@ -200,6 +201,8 @@ def build_video_summary(
     source_frames: int,
     frame_skip: int,
     total_processing_time: float,
+    predictions_json: Optional[str | Path] = None,
+    frames_for_identification_dir: Optional[str | Path] = None,
 ) -> VideoSummary:
     processed_frames = len(stats)
     return VideoSummary(
@@ -214,6 +217,8 @@ def build_video_summary(
         average_inference_time=(sum(item.inference_time for item in stats) / processed_frames) if processed_frames else 0.0,
         average_fps=(sum(item.fps for item in stats) / processed_frames) if processed_frames else 0.0,
         total_processing_time=total_processing_time,
+        predictions_json=str(predictions_json) if predictions_json else None,
+        frames_for_identification_dir=str(frames_for_identification_dir) if frames_for_identification_dir else None,
     )
 
 
@@ -222,6 +227,31 @@ def save_video_summary_json(summary: VideoSummary, output_path: str | Path) -> P
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8")
     return output_path
+
+
+def _emit_video_progress(
+    progress_callback: VideoProgressCallback | None,
+    source_frame_id: int,
+    source_frames: int,
+    processed_frame_id: int,
+    objects_count: int,
+    inference_time: float,
+    started_at: float,
+) -> None:
+    if progress_callback is None:
+        return
+    elapsed = time.perf_counter() - started_at
+    progress_callback(
+        {
+            "source_frame_id": source_frame_id,
+            "source_frames": source_frames,
+            "processed_frames": processed_frame_id,
+            "objects_count": objects_count,
+            "last_inference_time": inference_time,
+            "elapsed_seconds": elapsed,
+            "avg_processing_fps": processed_frame_id / elapsed if elapsed > 0 else 0.0,
+        }
+    )
 
 
 def process_yolo_video_file(
@@ -238,10 +268,14 @@ def process_yolo_video_file(
     show_masks: bool = True,
     codec: str = "mp4v",
     model_name: str = "YOLO Video",
+    save_frames_for_identification: bool = False,
+    progress_callback: VideoProgressCallback | None = None,
 ) -> Dict[str, Path]:
     """Processes a video file with YOLO/YOLO-Seg and saves video analytics.
 
-    The model is loaded once, then reused for all selected frames.
+    If save_frames_for_identification=True, every processed source frame is saved
+    and video_predictions.json points to those frame images. This makes the file
+    directly compatible with run_identification.py.
     """
 
     from ultralytics import YOLO
@@ -275,9 +309,14 @@ def process_yolo_video_file(
         writer = cv2.VideoWriter(str(output_video_path), fourcc, source_fps / max(1, frame_skip), (source_width, source_height))
 
     stats: List[FrameStats] = []
+    predictions: List[ImagePrediction] = []
     sample_dir = out_dir / "sample_frames"
     if save_sample_frames > 0:
         sample_dir.mkdir(parents=True, exist_ok=True)
+
+    identification_frames_dir = out_dir / "frames_for_identification" if save_frames_for_identification else None
+    if identification_frames_dir is not None:
+        identification_frames_dir.mkdir(parents=True, exist_ok=True)
 
     processed_frame_id = 0
     source_frame_id = 0
@@ -296,6 +335,15 @@ def process_yolo_video_file(
             break
 
         timestamp_sec = source_frame_id / source_fps if source_fps else 0.0
+
+        frame_image_path: str
+        if identification_frames_dir is not None:
+            frame_path = identification_frames_dir / f"frame_{processed_frame_id:06d}_src_{source_frame_id:06d}.jpg"
+            cv2.imwrite(str(frame_path), frame)
+            frame_image_path = str(frame_path)
+        else:
+            frame_image_path = f"{input_video}#frame_{source_frame_id}"
+
         start_infer = time.perf_counter()
         results = model.predict(
             source=frame,
@@ -308,7 +356,7 @@ def process_yolo_video_file(
 
         prediction = _result_to_prediction(
             results[0],
-            image_path=f"{input_video}#frame_{source_frame_id}",
+            image_path=frame_image_path,
             model_name=model_name,
             inference_time=inference_time,
             frame_width=source_width,
@@ -321,8 +369,10 @@ def process_yolo_video_file(
                 "conf": conf,
                 "imgsz": imgsz,
                 "weights": str(model_path),
+                "frame_skip": frame_skip,
             },
         )
+        predictions.append(prediction)
 
         drawn = draw_video_prediction(frame, prediction, show_masks=show_masks)
         if writer is not None:
@@ -333,6 +383,7 @@ def process_yolo_video_file(
 
         stats.append(frame_stats_from_prediction(prediction, processed_frame_id, source_frame_id, timestamp_sec))
         processed_frame_id += 1
+        _emit_video_progress(progress_callback, source_frame_id, source_frames, processed_frame_id, prediction.objects_count, inference_time, start_total)
         source_frame_id += 1
 
     total_processing_time = time.perf_counter() - start_total
@@ -341,6 +392,7 @@ def process_yolo_video_file(
         writer.release()
 
     stats_csv = save_frame_stats_csv(stats, out_dir / "frame_stats.csv")
+    predictions_json = save_predictions_json(predictions, out_dir / "video_predictions.json")
     summary = build_video_summary(
         input_video=input_video,
         output_video=output_video_path,
@@ -349,15 +401,20 @@ def process_yolo_video_file(
         source_frames=source_frames,
         frame_skip=frame_skip,
         total_processing_time=total_processing_time,
+        predictions_json=predictions_json,
+        frames_for_identification_dir=identification_frames_dir,
     )
     summary_json = save_video_summary_json(summary, out_dir / "video_summary.json")
 
     outputs: Dict[str, Path] = {
         "frame_stats_csv": stats_csv,
         "summary_json": summary_json,
+        "predictions_json": predictions_json,
     }
     if output_video_path is not None:
         outputs["output_video"] = output_video_path
     if save_sample_frames > 0:
         outputs["sample_frames_dir"] = sample_dir
+    if identification_frames_dir is not None:
+        outputs["frames_for_identification_dir"] = identification_frames_dir
     return outputs
