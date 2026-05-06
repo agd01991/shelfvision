@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -15,7 +14,7 @@ import streamlit as st
 from asset_discovery import AssetCandidate, DiscoveryRootStats, analyze_and_discover_assets
 from control_panel import ROOT, check_path, rel_path, resolve_path, save_config, venv_python
 from estimate_dependencies import estimate_dependency_seconds
-from panel_progress import CommandStep, run_long_task_with_progress, run_steps_with_progress
+from panel_progress import CommandStep, run_long_task_with_callback, run_steps_with_progress
 
 
 def _windows_python_path(venv_dir: Path) -> Path:
@@ -101,36 +100,18 @@ def _windows_venv_steps(config: Dict[str, Any], install_full_requirements: bool 
     req = resolve_path(config["setup"].get("requirements", "requirements.txt"))
 
     steps = [
-        CommandStep(
-            title="Создание Windows .venv",
-            cmd=[sys.executable, "-m", "venv", str(venv_dir)],
-            cwd=ROOT,
-            description="Создаётся локальная Windows-среда. Она нужна для запуска Streamlit-панели.",
-            estimated_seconds=45,
-        ),
-        CommandStep(
-            title="Обновление pip",
-            cmd=[str(py), "-m", "pip", "install", "--upgrade", "pip"],
-            cwd=ROOT,
-            description="Обновляется pip внутри Windows .venv.",
-            estimated_seconds=45,
-        ),
-        CommandStep(
-            title="Установка минимальных пакетов панели",
-            cmd=[str(py), "-m", "pip", "install", "streamlit", "PyYAML", "pandas"],
-            cwd=ROOT,
-            description="Ставятся минимальные зависимости, чтобы открыть Control Panel.",
-            estimated_seconds=180,
-        ),
+        CommandStep("Создание Windows .venv", [sys.executable, "-m", "venv", str(venv_dir)], ROOT, "Создаётся локальная Windows-среда. Она нужна для запуска Streamlit-панели.", estimated_seconds=45),
+        CommandStep("Обновление pip", [str(py), "-m", "pip", "install", "--upgrade", "pip"], ROOT, "Обновляется pip внутри Windows .venv.", estimated_seconds=45),
+        CommandStep("Установка минимальных пакетов панели", [str(py), "-m", "pip", "install", "streamlit", "PyYAML", "pandas"], ROOT, "Ставятся минимальные зависимости, чтобы открыть Control Panel.", estimated_seconds=180),
     ]
 
     if install_full_requirements:
         steps.append(
             CommandStep(
-                title="Установка всех зависимостей requirements.txt в Windows .venv",
-                cmd=[str(py), "-m", "pip", "install", "-r", str(req)],
-                cwd=ROOT,
-                description="Ставятся все зависимости проекта в Windows .venv. ETA рассчитано автоматически по requirements.txt.",
+                "Установка всех зависимостей requirements.txt в Windows .venv",
+                [str(py), "-m", "pip", "install", "-r", str(req)],
+                ROOT,
+                "Ставятся все зависимости проекта в Windows .venv. ETA рассчитано автоматически по requirements.txt.",
                 estimated_seconds=_estimate_windows_dependency_seconds(req, assume_empty=not py.exists()),
             )
         )
@@ -141,10 +122,10 @@ def _wsl_setup_steps(config: Dict[str, Any]) -> List[CommandStep]:
     estimate = _estimate_wsl_dependency_seconds(config, assume_empty=True)
     return [
         CommandStep(
-            title="Создание WSL .venv_wsl и установка requirements.txt",
-            cmd=[sys.executable, "scripts/setup_wsl_env.py", "--venv-dir", config["setup"].get("venv_dir_wsl", ".venv_wsl"), "--requirements", config["setup"].get("requirements", "requirements.txt")],
-            cwd=ROOT,
-            description="Команда создаёт Linux-среду внутри WSL и устанавливает зависимости проекта. Примерное время рассчитано автоматически по списку пакетов requirements.txt.",
+            "Создание WSL .venv_wsl и установка requirements.txt",
+            [sys.executable, "scripts/setup_wsl_env.py", "--venv-dir", config["setup"].get("venv_dir_wsl", ".venv_wsl"), "--requirements", config["setup"].get("requirements", "requirements.txt")],
+            ROOT,
+            "Команда создаёт Linux-среду внутри WSL и устанавливает зависимости проекта. Примерное время рассчитано автоматически по списку пакетов requirements.txt.",
             estimated_seconds=estimate,
         )
     ]
@@ -195,18 +176,23 @@ def _render_candidate_select(label: str, candidates: List[AssetCandidate], key: 
     return selected
 
 
+def _recommended_search_roots() -> List[Path]:
+    roots = [
+        Path("D:/1Diplom/runs"),
+        Path("D:/1Diplom/models"),
+        Path("D:/1Diplom/data"),
+        ROOT / "models",
+        ROOT / "data",
+        ROOT / "runs",
+    ]
+    return [root for root in roots if root.exists()]
+
+
 def _default_search_roots() -> List[str]:
-    roots = [ROOT, ROOT / "models", ROOT / "data", Path("D:/1Diplom"), Path("D:/1Diplom/models"), Path("D:/1Diplom/data"), Path.home() / "Downloads", Path.home() / "Documents"]
-    unique: List[str] = []
-    seen = set()
-    for root in roots:
-        value = str(root)
-        normalized = value.lower().replace("\\", "/")
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        unique.append(value)
-    return unique
+    recommended = _recommended_search_roots()
+    if recommended:
+        return [str(root) for root in recommended]
+    return [str(ROOT), str(Path("D:/1Diplom")), str(Path.home() / "Downloads"), str(Path.home() / "Documents")]
 
 
 def _format_seconds(seconds: int | float) -> str:
@@ -256,13 +242,13 @@ def _stats_to_rows(stats: List[DiscoveryRootStats]) -> List[Dict[str, Any]]:
     ]
 
 
-def _build_asset_discovery_plan(raw_roots: List[Path], limit: int) -> Dict[str, Any]:
+def _build_asset_discovery_plan(raw_roots: List[Path], limit: int, emit=None) -> Dict[str, Any]:
     existing_input = [_normalize_root(root) for root in raw_roots if root.exists()]
     missing_input = [str(root) for root in raw_roots if not root.exists()]
     effective_roots = _dedupe_nested_roots(raw_roots)
     skipped_nested = len(existing_input) - len(effective_roots)
 
-    analysis = analyze_and_discover_assets(effective_roots, limit=limit)
+    analysis = analyze_and_discover_assets(effective_roots, limit=limit, progress_callback=emit)
     stats = analysis.get("stats", [])
     elapsed = float(analysis.get("elapsed_seconds", 0.0))
 
@@ -304,6 +290,12 @@ def _deserialize_candidates(items: List[Any]) -> List[AssetCandidate]:
     return result
 
 
+def _results_counts(raw_results: Dict[str, Any]) -> str:
+    if not raw_results:
+        return ""
+    return " · ".join(f"{key}: {len(value or [])}" for key, value in raw_results.items())
+
+
 def _render_asset_discovery(config: Dict[str, Any]) -> None:
     st.subheader("Автопоиск файлов")
     st.caption("Сначала выполняется глубокий анализ выбранных папок. Он сразу ищет веса, изображения и видео. Второй шаг только показывает найденные результаты без повторного сканирования диска.")
@@ -316,8 +308,8 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
     c1, c2 = st.columns(2)
     with c1:
         if st.button("1. Глубоко проанализировать папки и найти файлы", use_container_width=True):
-            st.session_state["asset_discovery_plan"] = run_long_task_with_progress(
-                func=lambda: _build_asset_discovery_plan(raw_roots_list, int(limit)),
+            st.session_state["asset_discovery_plan"] = run_long_task_with_callback(
+                func=lambda emit: _build_asset_discovery_plan(raw_roots_list, int(limit), emit=emit),
                 title="Глубокий анализ и автопоиск",
                 description="Выполняется полный обход выбранных папок без лимита количества файлов. Результаты будут сохранены в плане, поэтому повторный скан на втором шаге не нужен.",
                 estimated_seconds=None,
@@ -332,6 +324,10 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
             st.session_state.pop("asset_discovery_results", None)
             st.success("План и результаты автопоиска сброшены")
 
+    if st.button("Заполнить рекомендуемые папки", use_container_width=True):
+        st.session_state["recommended_roots_hint"] = "\n".join(str(root) for root in _recommended_search_roots())
+        st.info("Скопируй список ниже в поле «Где искать»:\n\n" + st.session_state["recommended_roots_hint"])
+
     plan = st.session_state.get("asset_discovery_plan")
     if plan:
         current_raw = [str(root) for root in raw_roots_list]
@@ -342,7 +338,7 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
     can_show = bool(plan) and [str(root) for root in raw_roots_list] == plan.get("raw_roots") and int(limit) == int(plan.get("limit", limit))
     if st.button("2. Показать найденные кандидаты", use_container_width=True, disabled=not can_show):
         st.session_state["asset_discovery_results"] = plan.get("results", {})
-        st.success("Кандидаты загружены из готового плана без повторного сканирования")
+        st.success("Кандидаты загружены из готового плана без повторного сканирования. " + _results_counts(st.session_state["asset_discovery_results"]))
 
     raw_results = st.session_state.get("asset_discovery_results")
     if not raw_results:
