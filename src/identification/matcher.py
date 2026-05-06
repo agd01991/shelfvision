@@ -40,6 +40,11 @@ class IdentificationResult:
     sku_confidence: float
     sku_status: str
     top_k: List[SkuCandidate]
+    track_id: Optional[int] = None
+    track_stabilized: bool = False
+    track_frames_count: int = 0
+    track_matched_votes: int = 0
+    track_unknown_votes: int = 0
 
 
 def _build_gallery_features(
@@ -112,9 +117,7 @@ def results_to_dataframe(results: List[IdentificationResult]) -> pd.DataFrame:
     rows: List[Dict[str, Any]] = []
     for item in results:
         row = result_to_dict(item)
-        row["top_k"] = " | ".join(
-            f"{cand.sku_id}:{cand.score:.4f}" for cand in item.top_k
-        )
+        row["top_k"] = " | ".join(f"{cand.sku_id}:{cand.score:.4f}" for cand in item.top_k)
         rows.append(row)
     return pd.DataFrame(rows)
 
