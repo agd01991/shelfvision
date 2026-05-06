@@ -6,12 +6,13 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, TypeVar
+from typing import Callable, Dict, List, Optional, TypeVar
 
 import streamlit as st
 
 
 T = TypeVar("T")
+ProgressEmit = Callable[[Dict[str, object]], None]
 
 
 @dataclass
@@ -58,9 +59,26 @@ def _progress_fraction(elapsed: float, estimated_seconds: Optional[int]) -> floa
     if elapsed <= estimated_seconds:
         return min(0.9, max(0.0, elapsed / estimated_seconds * 0.9))
 
-    # После превышения оценки не показываем, будто задача почти завершена.
-    # Держим живую анимацию в диапазоне 90-97%.
     return 0.9 + ((elapsed - estimated_seconds) % 20) / 20 * 0.07
+
+
+def _progress_details_text(update: Dict[str, object] | None, fallback: str) -> str:
+    if not update:
+        return fallback
+
+    current_root = update.get("current_root") or "—"
+    current_path = update.get("current_path") or "—"
+    return (
+        f"Текущая папка: {current_root}\n\n"
+        f"Текущий путь: {current_path}\n\n"
+        f"Просканировано папок: {update.get('dirs_scanned', 0)}\n"
+        f"Просканировано файлов: {update.get('files_scanned', 0)}\n"
+        f"Найдено весов: {update.get('weight_files', 0)}\n"
+        f"Найдено изображений: {update.get('image_files', 0)}\n"
+        f"Папок с изображениями: {update.get('image_dirs', 0)}\n"
+        f"Найдено видео: {update.get('video_files', 0)}\n"
+        f"Пропущено служебных папок: {update.get('skipped_dirs', 0)}"
+    )
 
 
 def _reader_thread(stdout, output_queue: "queue.Queue[str]") -> None:
@@ -99,9 +117,29 @@ def run_long_task_with_progress(
     status_text: str = "Операция выполняется...",
     hint: str = "Если операция идёт по большим папкам или зависит от сети, это может занять несколько минут.",
 ) -> T:
-    """Runs a long synchronous Python task in a worker thread and keeps Streamlit UI alive.
+    return run_long_task_with_callback(
+        func=lambda emit: func(),
+        title=title,
+        description=description,
+        estimated_seconds=estimated_seconds,
+        progress_text=progress_text,
+        status_text=status_text,
+        hint=hint,
+    )
 
-    Useful for tasks that do not stream stdout, for example local filesystem search.
+
+def run_long_task_with_callback(
+    func: Callable[[ProgressEmit], T],
+    title: str,
+    description: str = "",
+    estimated_seconds: Optional[int] = None,
+    progress_text: str = "Выполняется операция...",
+    status_text: str = "Операция выполняется...",
+    hint: str = "Если операция идёт по большим папкам или зависит от сети, это может занять несколько минут.",
+) -> T:
+    """Runs a long Python task in a worker thread and keeps Streamlit UI alive.
+
+    The task receives an emit(update_dict) callback and can publish live counters.
     """
 
     st.subheader(title)
@@ -111,20 +149,32 @@ def run_long_task_with_progress(
     progress = st.progress(0.0, text="Подготовка...")
     timer_placeholder = st.empty()
     status_placeholder = st.empty()
+    details_placeholder = st.empty()
 
     result_queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
+    update_queue: "queue.Queue[Dict[str, object]]" = queue.Queue()
+
+    def emit(update: Dict[str, object]) -> None:
+        update_queue.put(update)
 
     def target() -> None:
         try:
-            result_queue.put(("result", func()))
-        except Exception as exc:  # noqa: BLE001 - показываем ошибку в интерфейсе
+            result_queue.put(("result", func(emit)))
+        except Exception as exc:  # noqa: BLE001
             result_queue.put(("error", exc))
 
     start = time.perf_counter()
     worker = threading.Thread(target=target, daemon=True)
     worker.start()
+    latest_update: Dict[str, object] | None = None
 
     while worker.is_alive():
+        while True:
+            try:
+                latest_update = update_queue.get_nowait()
+            except queue.Empty:
+                break
+
         elapsed = time.perf_counter() - start
         progress.progress(
             _progress_fraction(elapsed, estimated_seconds),
@@ -132,12 +182,20 @@ def run_long_task_with_progress(
         )
         timer_placeholder.info(f"⏱ Прошло: **{_format_duration(elapsed)}** · {_eta_text(elapsed, estimated_seconds)}. {hint}")
         status_placeholder.info(status_text)
+        details_placeholder.code(_progress_details_text(latest_update, "Ожидание первых данных прогресса..."), language="text")
         time.sleep(1.0)
+
+    while True:
+        try:
+            latest_update = update_queue.get_nowait()
+        except queue.Empty:
+            break
 
     elapsed = time.perf_counter() - start
     kind, payload = result_queue.get()
     progress.progress(1.0, text=f"Готово за {_format_duration(elapsed)}")
     timer_placeholder.success(f"⏱ Общее время выполнения: **{_format_duration(elapsed)}**")
+    details_placeholder.code(_progress_details_text(latest_update, "Операция завершена."), language="text")
 
     if kind == "error":
         status_placeholder.error(f"Операция завершилась с ошибкой: {payload}")
