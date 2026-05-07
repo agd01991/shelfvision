@@ -1,0 +1,13 @@
+{
+  "mode": "noise",
+  "param": 10.0,
+  "weights": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+  "imgsz": 640,
+  "metrics": {
+    "AP": 0.302965179030994,
+    "AP50": 0.5386796474261175,
+    "AP75": 0.31461765610747866,
+    "AR100": 0.35287229341581966
+  },
+  "pred_json": "artifacts/article1_tiling_robustness/non_tiled/pred_noise_10p0.json"
+}

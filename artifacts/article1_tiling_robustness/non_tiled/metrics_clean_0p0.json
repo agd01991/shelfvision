@@ -1,0 +1,13 @@
+{
+  "mode": "clean",
+  "param": 0.0,
+  "weights": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+  "imgsz": 640,
+  "metrics": {
+    "AP": 0.31085194804095234,
+    "AP50": 0.5485037906300996,
+    "AP75": 0.326287642661627,
+    "AR100": 0.3625497127706584
+  },
+  "pred_json": "artifacts/article1_tiling_robustness/non_tiled/pred_clean_0p0.json"
+}

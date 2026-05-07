@@ -1,0 +1,13 @@
+{
+  "mode": "jpeg",
+  "param": 50.0,
+  "weights": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+  "imgsz": 640,
+  "metrics": {
+    "AP": 0.3087374785993559,
+    "AP50": 0.5400708638186952,
+    "AP75": 0.32254761458099074,
+    "AR100": 0.35963323022536453
+  },
+  "pred_json": "artifacts/article1_tiling_robustness/non_tiled/pred_jpeg_50p0.json"
+}

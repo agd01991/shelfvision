@@ -1,0 +1,13 @@
+{
+  "mode": "blur",
+  "param": 2.0,
+  "weights": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+  "imgsz": 640,
+  "metrics": {
+    "AP": 0.5257661604228322,
+    "AP50": 0.8726921225101401,
+    "AP75": 0.5730893145172383,
+    "AR100": 0.6255103166721836
+  },
+  "pred_json": "artifacts/article1_tiling_robustness/tiled/pred_blur_2p0.json"
+}

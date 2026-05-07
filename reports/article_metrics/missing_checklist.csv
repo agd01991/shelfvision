@@ -1,6 +1,6 @@
 ﻿article,item,status,what_to_do
 1,Характеристики non-tiled/tiled датасетов,ok,"Проверь dataset_summary.csv; если counts пустые, открой passport.json/annotations.json вручную."
-1,Парное сравнение tiled vs non-tiled на clean/degraded,missing,"Нужен файл reports/article_eval/article1_tiling_robustness.csv с колонками model,dataset_mode,corruption,AP50-95,AP50,AP75,AR100,ms_per_image."
+1,Парное сравнение tiled vs non-tiled на clean/degraded,ok,"Нужен файл reports/article_eval/article1_tiling_robustness.csv с колонками model,dataset_mode,corruption,AP50-95,AP50,AP75,AR100,ms_per_image."
 1/2,Текущая robustness-таблица по деградациям,ok,Используй current_robustness_with_delta.csv как временную таблицу; она не заменяет tiled/non-tiled и 3-model robustness.
 2,Clean-сравнение YOLO / RT-DETR / Faster R-CNN,ok,Используй article2_clean_models.csv.
 2,Robustness YOLO / RT-DETR / Faster R-CNN,missing,"Нужен файл reports/article_eval/article2_model_robustness.csv с колонками model,corruption,AP50-95,AP50,AP75,AR100,delta_AP50-95."

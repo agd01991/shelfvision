@@ -1,13 +1,13 @@
 paths:
-  images_dir: data/test/images
+  images_dir: D:/1Diplom/data/raw/d2s_full/images
   image: data/test/image_001.jpg
   gt_coco: data/test/annotations.json
   gt_yolo_labels: data/test/labels
   out_dir: results/control_panel
 weights:
-  yolo: models/yolo/best.pt
-  rtdetr: models/rtdetr/best.pt
-  frcnn: models/faster_rcnn/model_final.pth
+  yolo: D:/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt
+  rtdetr: D:/1Diplom/runs/detect/runs/dir1/dir1_rtdetr_l_img640/weights/best.pt
+  frcnn: D:/1Diplom/runs/detect/runs/dir1/dir1_rtdetr_l_img640/weights/best.pt
 runtime:
   conf: 0.25
   imgsz: 640
@@ -42,7 +42,7 @@ setup:
     url: ''
     output: data/downloads/test_data.zip
 video:
-  input_path: data/video/test.mp4
+  input_path: C:/Users/agd01/Documents/1NeoPixel/neopixel-3d-ru/frontNext/public/backgroundVideo.mp4
   output_dir: results/video/yolo
   frame_skip: 3
   max_frames: 0

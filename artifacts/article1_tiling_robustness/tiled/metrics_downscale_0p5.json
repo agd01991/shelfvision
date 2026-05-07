@@ -1,0 +1,13 @@
+{
+  "mode": "downscale",
+  "param": 0.5,
+  "weights": "/mnt/d/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt",
+  "imgsz": 640,
+  "metrics": {
+    "AP": 0.5370678313182565,
+    "AP50": 0.8878444370834178,
+    "AP75": 0.5937341705115966,
+    "AR100": 0.6338850270329913
+  },
+  "pred_json": "artifacts/article1_tiling_robustness/tiled/pred_downscale_0p5.json"
+}

@@ -1,0 +1,13 @@
+﻿model,dataset_mode,corruption,param,AP50-95,AP50,AP75,AR100,source_file,delta_AP50-95,delta_AP50,delta_AP75,delta_AR100
+YOLOv8s,non_tiled,clean,0.0,0.310852,0.548504,0.326288,0.36255,artifacts/article1_tiling_robustness/non_tiled/metrics_clean_0p0.json,0.0,0.0,0.0,0.0
+YOLOv8s,non_tiled,blur,2.0,0.307874,0.547252,0.32425,0.358595,artifacts/article1_tiling_robustness/non_tiled/metrics_blur_2p0.json,0.002978,0.001252,0.002038,0.003955
+YOLOv8s,non_tiled,noise,10.0,0.302965,0.53868,0.314618,0.352872,artifacts/article1_tiling_robustness/non_tiled/metrics_noise_10p0.json,0.007887,0.009824,0.01167,0.009677
+YOLOv8s,non_tiled,dark,0.6,0.307608,0.536708,0.322411,0.358418,artifacts/article1_tiling_robustness/non_tiled/metrics_dark_0p6.json,0.003244,0.011796,0.003876,0.004132
+YOLOv8s,non_tiled,jpeg,50.0,0.308737,0.540071,0.322548,0.359633,artifacts/article1_tiling_robustness/non_tiled/metrics_jpeg_50p0.json,0.002114,0.008433,0.00374,0.002916
+YOLOv8s,non_tiled,downscale,0.5,0.314362,0.549941,0.334506,0.365091,artifacts/article1_tiling_robustness/non_tiled/metrics_downscale_0p5.json,-0.00351,-0.001437,-0.008218,-0.002541
+YOLOv8s,tiled,clean,0.0,0.538129,0.888304,0.59477,0.634481,artifacts/article1_tiling_robustness/tiled/metrics_clean_0p0.json,0.0,0.0,0.0,0.0
+YOLOv8s,tiled,blur,2.0,0.525766,0.872692,0.573089,0.62551,artifacts/article1_tiling_robustness/tiled/metrics_blur_2p0.json,0.012363,0.015612,0.021681,0.008971
+YOLOv8s,tiled,noise,10.0,0.530958,0.874181,0.585716,0.626194,artifacts/article1_tiling_robustness/tiled/metrics_noise_10p0.json,0.007172,0.014123,0.009054,0.008286
+YOLOv8s,tiled,dark,0.6,0.536363,0.887635,0.589728,0.632649,artifacts/article1_tiling_robustness/tiled/metrics_dark_0p6.json,0.001766,0.000669,0.005042,0.001832
+YOLOv8s,tiled,jpeg,50.0,0.538365,0.887412,0.594905,0.634448,artifacts/article1_tiling_robustness/tiled/metrics_jpeg_50p0.json,-0.000236,0.000892,-0.000135,3.3e-05
+YOLOv8s,tiled,downscale,0.5,0.537068,0.887844,0.593734,0.633885,artifacts/article1_tiling_robustness/tiled/metrics_downscale_0p5.json,0.001062,0.000459,0.001036,0.000596
