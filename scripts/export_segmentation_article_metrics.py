@@ -9,14 +9,44 @@ import pandas as pd
 
 
 DEFAULT_SPLITS = {
-    "train": "data/raw/d2s_small/annotations_train.json",
-    "val": "data/raw/d2s_small/annotations_val.json",
-    "test": "data/raw/d2s_small/annotations_test.json",
+    "train": "data/coco_splits/d2s_small/train_fix.json",
+    "val": "data/coco_splits/d2s_small/val_fix.json",
+    "test": "data/coco_splits/d2s_small/test_fix.json",
+}
+
+SPLIT_CANDIDATES = {
+    "train": [
+        "data/coco_splits/d2s_small/train_fix.json",
+        "data/coco_splits/d2s_small/train.json",
+        "data/raw/d2s_small/annotations_train.json",
+    ],
+    "val": [
+        "data/coco_splits/d2s_small/val_fix.json",
+        "data/coco_splits/d2s_small/val.json",
+        "data/raw/d2s_small/annotations_val.json",
+    ],
+    "test": [
+        "data/coco_splits/d2s_small/test_fix.json",
+        "data/coco_splits/d2s_small/test.json",
+        "data/raw/d2s_small/annotations_test.json",
+    ],
 }
 
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def resolve_existing_path(path: str | Path, candidates: list[str] | None = None) -> Path:
+    p = Path(path)
+    if p.exists():
+        return p
+    for candidate in candidates or []:
+        candidate_path = Path(candidate)
+        if candidate_path.exists():
+            print(f"[PATH] {p} не найден, использую {candidate_path}")
+            return candidate_path
+    return p
 
 
 def safe_read_csv(path: Path) -> pd.DataFrame:
@@ -161,40 +191,40 @@ def make_missing_checklist(
         return "status" in df.columns and (df["status"].astype(str) == "ok").any()
 
     dataset_ok = "status" in dataset_stats.columns and (dataset_stats["status"].astype(str) == "ok").any()
-
-    rows = [
-        {
-            "block": "dataset_stats",
-            "status": "ok" if dataset_ok else "missing",
-            "what_to_do": "Проверить пути к COCO segmentation JSON train/val/test.",
-        },
-        {
-            "block": "yolo_seg_training_metrics",
-            "status": "ok" if ok(yolo_seg_last) else "missing",
-            "what_to_do": "Нужен reports/all_stats/D2S_YOLO_SEG_last.csv или новый запуск обучения YOLO-Seg.",
-        },
-        {
-            "block": "mask_evaluation_metrics",
-            "status": "ok" if ok(mask_summary) else "missing",
-            "what_to_do": "Запустить run_segmentation_evaluation.py после YOLO-Seg inference.",
-        },
-        {
-            "block": "bbox_vs_mask_crop_quality",
-            "status": "ok" if ok(crop_quality) else "missing",
-            "what_to_do": "Добавить/запустить scripts/compare_bbox_mask_crops.py.",
-        },
-        {
-            "block": "sku_bbox_preparation",
-            "status": "ok" if ok(sku_bbox) else "optional_missing",
-            "what_to_do": "Запустить run_identification.py без --use-masks, если есть SKU gallery.",
-        },
-        {
-            "block": "sku_mask_preparation",
-            "status": "ok" if ok(sku_mask) else "optional_missing",
-            "what_to_do": "Запустить run_identification.py с --use-masks, если есть SKU gallery.",
-        },
-    ]
-    return pd.DataFrame(rows)
+    return pd.DataFrame(
+        [
+            {
+                "block": "dataset_stats",
+                "status": "ok" if dataset_ok else "missing",
+                "what_to_do": "Проверить пути к COCO segmentation JSON train/val/test.",
+            },
+            {
+                "block": "yolo_seg_training_metrics",
+                "status": "ok" if ok(yolo_seg_last) else "missing",
+                "what_to_do": "Нужен reports/all_stats/D2S_YOLO_SEG_last.csv или новый запуск обучения YOLO-Seg.",
+            },
+            {
+                "block": "mask_evaluation_metrics",
+                "status": "ok" if ok(mask_summary) else "missing",
+                "what_to_do": "Запустить run_segmentation_evaluation.py после YOLO-Seg inference.",
+            },
+            {
+                "block": "bbox_vs_mask_crop_quality",
+                "status": "ok" if ok(crop_quality) else "missing",
+                "what_to_do": "Добавить/запустить scripts/compare_bbox_mask_crops.py.",
+            },
+            {
+                "block": "sku_bbox_preparation",
+                "status": "ok" if ok(sku_bbox) else "optional_missing",
+                "what_to_do": "Запустить run_identification.py без --use-masks, если есть SKU gallery.",
+            },
+            {
+                "block": "sku_mask_preparation",
+                "status": "ok" if ok(sku_mask) else "optional_missing",
+                "what_to_do": "Запустить run_identification.py с --use-masks, если есть SKU gallery.",
+            },
+        ]
+    )
 
 
 def write_markdown(out_dir: Path, tables: dict[str, pd.DataFrame]) -> None:
@@ -240,22 +270,10 @@ def main() -> None:
     parser.add_argument("--val-coco", default=DEFAULT_SPLITS["val"])
     parser.add_argument("--test-coco", default=DEFAULT_SPLITS["test"])
     parser.add_argument("--yolo-seg-last", default="reports/all_stats/D2S_YOLO_SEG_last.csv")
-    parser.add_argument(
-        "--mask-summary",
-        default="results/article_segmentation/yolo_seg_masks/segmentation_metrics_summary.csv",
-    )
-    parser.add_argument(
-        "--crop-quality-summary",
-        default="results/article_segmentation/crop_comparison/crop_quality_summary.csv",
-    )
-    parser.add_argument(
-        "--sku-bbox-metrics",
-        default="results/article_segmentation/sku_bbox/identification_metrics.csv",
-    )
-    parser.add_argument(
-        "--sku-mask-metrics",
-        default="results/article_segmentation/sku_mask/identification_metrics.csv",
-    )
+    parser.add_argument("--mask-summary", default="results/article_segmentation/yolo_seg_masks/segmentation_metrics_summary.csv")
+    parser.add_argument("--crop-quality-summary", default="results/article_segmentation/crop_comparison/crop_quality_summary.csv")
+    parser.add_argument("--sku-bbox-metrics", default="results/article_segmentation/sku_bbox/identification_metrics.csv")
+    parser.add_argument("--sku-mask-metrics", default="results/article_segmentation/sku_mask/identification_metrics.csv")
     parser.add_argument("--out-dir", default="reports/article_segmentation")
     args = parser.parse_args()
 
@@ -263,9 +281,9 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     split_paths = {
-        "train": Path(args.train_coco),
-        "val": Path(args.val_coco),
-        "test": Path(args.test_coco),
+        "train": resolve_existing_path(args.train_coco, SPLIT_CANDIDATES["train"]),
+        "val": resolve_existing_path(args.val_coco, SPLIT_CANDIDATES["val"]),
+        "test": resolve_existing_path(args.test_coco, SPLIT_CANDIDATES["test"]),
     }
     dataset_stats = make_dataset_stats(split_paths)
     yolo_seg_last = safe_read_csv(Path(args.yolo_seg_last))
