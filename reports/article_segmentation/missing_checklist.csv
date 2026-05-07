@@ -1,0 +1,7 @@
+﻿block,status,what_to_do
+dataset_stats,ok,Проверить пути к COCO segmentation JSON train/val/test.
+yolo_seg_training_metrics,ok,Нужен reports/all_stats/D2S_YOLO_SEG_last.csv или новый запуск обучения YOLO-Seg.
+mask_evaluation_metrics,ok,Запустить run_segmentation_evaluation.py после YOLO-Seg inference.
+bbox_vs_mask_crop_quality,ok,Добавить/запустить scripts/compare_bbox_mask_crops.py.
+sku_bbox_preparation,optional_missing,"Запустить run_identification.py без --use-masks, если есть SKU gallery."
+sku_mask_preparation,optional_missing,"Запустить run_identification.py с --use-masks, если есть SKU gallery."

@@ -1,0 +1,5 @@
+﻿split,status,source_file,images_count,annotations_count,segmentation_annotations_count,categories_count,avg_objects_per_image,min_objects_per_image,max_objects_per_image,avg_annotation_area,small_area_annotations_lt_32x32,medium_area_annotations_32x32_96x96,large_area_annotations_gt_96x96
+train,ok,data/coco_splits/d2s_small/train_fix.json,210,629,629,60,2.9952,1,13,143507.31,0,3,626
+val,ok,data/coco_splits/d2s_small/val_fix.json,45,94,94,60,2.0889,1,6,170278.89,0,1,93
+test,ok,data/coco_splits/d2s_small/test_fix.json,45,124,124,60,2.7556,1,12,145141.1,0,1,123
+total,ok,data/coco_splits/d2s_small/train_fix.json + data/coco_splits/d2s_small/val_fix.json + data/coco_splits/d2s_small/test_fix.json,300,847,847,60,2.8233,,,,0,5,842

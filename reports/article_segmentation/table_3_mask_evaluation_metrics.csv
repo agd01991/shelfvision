@@ -1,0 +1,2 @@
+﻿status,images_count,tp,fp,fn,mask_precision,mask_recall,mask_f1,mean_mask_iou,APmask50,APmask75,APmask50-95,iou_threshold,source_file
+ok,45,112,48,12,0.7,0.9032258064516128,0.7887323943661972,0.9336184382490818,0.7,0.7,0.6481250000000001,0.5,results/article_segmentation/yolo_seg_masks/segmentation_metrics_summary.csv

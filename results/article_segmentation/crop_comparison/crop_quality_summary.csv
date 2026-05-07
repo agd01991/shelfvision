@@ -1,0 +1,3 @@
+﻿status,method,objects_count,avg_crop_area_px,avg_object_area_px,avg_object_purity,avg_visual_background_ratio,avg_removed_visual_background_ratio,total_removed_background_pixels,interpretation
+ok,bbox_crop,160,288930.175,150251.7062,0.549965,0.450035,0.0,0,"Обычный crop по bounding box: внутри остаются фон, соседние товары, ценники и части полки."
+ok,mask_crop_white_bg,160,288930.175,150251.7062,1.0,0.0,0.450035,22188555,"Crop по mask: визуальный фон внутри bbox заменяется нейтральным белым фоном, объект остаётся основным содержимым crop."

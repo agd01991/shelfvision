@@ -1,0 +1,16 @@
+{
+  "predictions_json": "results/article_segmentation/yolo_seg_inference/predictions.json",
+  "images_dir": "data/yolo_cache/d2s_small_seg/images/test",
+  "out_dir": "results/article_segmentation/crop_comparison",
+  "min_confidence": 0.25,
+  "min_mask_area": 50,
+  "padding_ratio": 0.05,
+  "background": 255,
+  "examples_limit": 30,
+  "objects_with_masks": 160,
+  "outputs": {
+    "per_object": "results/article_segmentation/crop_comparison/crop_quality_per_object.csv",
+    "summary": "results/article_segmentation/crop_comparison/crop_quality_summary.csv",
+    "examples_dir": "results/article_segmentation/crop_comparison/examples"
+  }
+}
