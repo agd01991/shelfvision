@@ -24,6 +24,7 @@ from setup_pages import page_setup
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONFIG_PATH = "config/shelfvision.yaml"
 
 
 def use_wsl_runtime(config: Dict[str, Any]) -> bool:
@@ -89,6 +90,7 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         wbf = config.setdefault("wbf", {})
         density = config.setdefault("density", {})
         video = config.setdefault("video", {})
+        readiness = config.setdefault("readiness", {})
         sku_gallery = config.setdefault("sku_gallery", {})
         identification = config.setdefault("identification", {})
 
@@ -143,6 +145,9 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         density["cols"] = st.number_input("Cols", 1, 10, int(density.get("cols", 3)))
         density["limit"] = st.number_input("Visualize limit", 0, 1000, int(density.get("limit", 20)))
 
+        st.subheader("Диагностика готовности")
+        readiness["out_dir"] = st.text_input("Папка отчётов диагностики", value=str(readiness.get("out_dir", "D:/1Diplom/shelfvision_results/readiness")))
+
         st.subheader("Видео")
         video["model"] = st.selectbox("Модель для видео", ["yolo", "yolo_seg"], index=0 if video.get("model", "yolo_seg") == "yolo" else 1, format_func=lambda x: "YOLO-Seg" if x == "yolo_seg" else "YOLO")
         video["input_path"] = st.text_input("Видеофайл", value=str(video.get("input_path", "data/video/test.mp4")))
@@ -189,6 +194,11 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
             save_config(config)
             st.success("Настройки сохранены")
     return config
+
+
+def _build_readiness_args(config: Dict[str, Any]) -> List[str]:
+    readiness = config.setdefault("readiness", {})
+    return ["--config", CONFIG_PATH, "--out-dir", str(readiness.get("out_dir", "D:/1Diplom/shelfvision_results/readiness"))]
 
 
 def _build_gallery_args(config: Dict[str, Any]) -> List[str]:
@@ -282,6 +292,19 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
     with c3:
         if st.button("Открыть видеоинтерфейс", use_container_width=True):
             render_command_result(run_command(streamlit_command(config, "scripts/video_app.py")))
+
+    st.subheader("Диагностика")
+    st.caption("Быстрая проверка перед тяжёлым запуском: видео, веса, SKU-галерея, gallery.csv, папки вывода и WSL-среда.")
+    if st.button("Проверить готовность видео-идентификации", use_container_width=True):
+        save_config(config)
+        cmd = python_command(config, "run_readiness_check.py", _build_readiness_args(config))
+        _run_live_command(
+            title="Диагностика готовности",
+            cmd=cmd,
+            description="Проверяются пути, веса, видео, SKU-галерея, gallery.csv, папки вывода и совместимость с WSL.",
+            success="Диагностика завершена. Проверь readiness_report.md/json и readiness_checks.csv.",
+            failure="Ошибка диагностики готовности",
+        )
 
     st.subheader("Инференс одного изображения")
     selected_model = st.selectbox("Модель", list(MODEL_LABELS.keys()), format_func=lambda x: MODEL_LABELS[x])
