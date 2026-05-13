@@ -14,6 +14,9 @@ segmentation:
   dataset_yaml: data/yolo_cache/d2s_small_seg/dataset.yaml
   out_dir: results/full_pipeline_seg
 
+readiness:
+  out_dir: "D:/1Diplom/shelfvision_results/readiness"
+
 sku_gallery:
   gallery_dir: "D:/1Diplom/sku_gallery"
   output_csv: "D:/1Diplom/sku_gallery/gallery.csv"
