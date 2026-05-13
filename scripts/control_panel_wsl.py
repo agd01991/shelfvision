@@ -89,6 +89,7 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         wbf = config.setdefault("wbf", {})
         density = config.setdefault("density", {})
         video = config.setdefault("video", {})
+        sku_gallery = config.setdefault("sku_gallery", {})
         identification = config.setdefault("identification", {})
 
         st.subheader("Режим запуска")
@@ -158,12 +159,18 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         video["progress_every"] = st.number_input("Печатать прогресс каждые N кадров", 1, 1000, int(video.get("progress_every", 10)))
         video["codec"] = st.text_input("Кодек", value=str(video.get("codec", "mp4v")))
 
+        st.subheader("SKU-галерея")
+        sku_gallery["gallery_dir"] = st.text_input("Папка SKU-галереи", value=str(sku_gallery.get("gallery_dir", identification.get("gallery_dir", "D:/1Diplom/sku_gallery"))))
+        sku_gallery["output_csv"] = st.text_input("Куда сохранить gallery.csv", value=str(sku_gallery.get("output_csv", identification.get("gallery_csv", "D:/1Diplom/sku_gallery/gallery.csv"))))
+        sku_gallery["out_dir"] = st.text_input("Папка отчётов SKU-галереи", value=str(sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/sku_gallery")))
+        sku_gallery["min_images_per_sku"] = st.number_input("Минимум эталонов на SKU", 1, 100, int(sku_gallery.get("min_images_per_sku", 3)))
+
         st.subheader("Идентификация SKU")
         identification["predictions"] = st.text_input("predictions.json", value=str(identification.get("predictions", "results/inference/yolo_seg_batch/predictions.json")))
         identification["images_dir"] = st.text_input("images_dir для predictions", value=str(identification.get("images_dir", "data/yolo_cache/d2s_small_seg/images/test")))
         identification["out_dir"] = st.text_input("Папка результатов идентификации", value=str(identification.get("out_dir", "D:/1Diplom/shelfvision_results/identification")))
-        identification["gallery_csv"] = st.text_input("SKU gallery.csv", value=str(identification.get("gallery_csv", "D:/1Diplom/sku_gallery/gallery.csv")))
-        identification["gallery_dir"] = st.text_input("SKU gallery dir", value=str(identification.get("gallery_dir", "D:/1Diplom/sku_gallery")))
+        identification["gallery_csv"] = st.text_input("SKU gallery.csv", value=str(identification.get("gallery_csv", sku_gallery.get("output_csv", "D:/1Diplom/sku_gallery/gallery.csv"))))
+        identification["gallery_dir"] = st.text_input("SKU gallery dir", value=str(identification.get("gallery_dir", sku_gallery.get("gallery_dir", "D:/1Diplom/sku_gallery"))))
         identification["gt_csv"] = st.text_input("GT CSV, опционально", value=str(identification.get("gt_csv", "")))
         identification["threshold"] = st.slider("SKU similarity threshold", 0.0, 1.0, float(identification.get("threshold", 0.65)), 0.01)
         identification["top_k"] = st.number_input("Top-k кандидатов SKU", 1, 20, int(identification.get("top_k", 3)))
@@ -177,9 +184,21 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         identification["identified_video_codec"] = st.text_input("Кодек identified video", value=str(identification.get("identified_video_codec", "mp4v")))
 
         if st.form_submit_button("Сохранить настройки"):
+            identification["gallery_dir"] = str(sku_gallery.get("gallery_dir", identification.get("gallery_dir", "")))
+            identification["gallery_csv"] = str(sku_gallery.get("output_csv", identification.get("gallery_csv", "")))
             save_config(config)
             st.success("Настройки сохранены")
     return config
+
+
+def _build_gallery_args(config: Dict[str, Any]) -> List[str]:
+    sku_gallery = config.setdefault("sku_gallery", {})
+    return [
+        "--gallery-dir", str(sku_gallery.get("gallery_dir", "D:/1Diplom/sku_gallery")),
+        "--output-csv", str(sku_gallery.get("output_csv", "D:/1Diplom/sku_gallery/gallery.csv")),
+        "--out-dir", str(sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/sku_gallery")),
+        "--min-images-per-sku", str(sku_gallery.get("min_images_per_sku", 3)),
+    ]
 
 
 def _build_video_args(config: Dict[str, Any], out_base: Path) -> List[str]:
@@ -291,6 +310,23 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             success_message="Видео обработано. Проверь output_video.mp4, video_predictions.json, video_summary.json и frames_for_identification.",
             failure_message="Ошибка обработки видео",
         )
+
+    st.subheader("SKU-галерея")
+    st.caption("Проверяет эталонную базу товаров, создаёт gallery.csv и отчёты качества галереи.")
+    if st.button("Проверить SKU-галерею и создать gallery.csv", use_container_width=True):
+        cmd = python_command(config, "run_gallery_manager.py", _build_gallery_args(config))
+        _run_live_command(
+            title="SKU-галерея",
+            cmd=cmd,
+            description="Сканируется sku_gallery/<sku_id>/*.jpg, проверяются битые изображения, создаётся gallery.csv и отчёт по галерее.",
+            success="SKU-галерея проверена. Проверь gallery.csv, sku_gallery_report.md/json и csv-таблицы.",
+            failure="Ошибка проверки SKU-галереи",
+        )
+        sku_gallery = config.setdefault("sku_gallery", {})
+        identification = config.setdefault("identification", {})
+        identification["gallery_dir"] = str(sku_gallery.get("gallery_dir", identification.get("gallery_dir", "")))
+        identification["gallery_csv"] = str(sku_gallery.get("output_csv", identification.get("gallery_csv", "")))
+        save_config(config)
 
     st.subheader("Идентификация SKU")
     identification = config.setdefault("identification", {})
