@@ -14,6 +14,12 @@ segmentation:
   dataset_yaml: data/yolo_cache/d2s_small_seg/dataset.yaml
   out_dir: results/full_pipeline_seg
 
+sku_gallery:
+  gallery_dir: "D:/1Diplom/sku_gallery"
+  output_csv: "D:/1Diplom/sku_gallery/gallery.csv"
+  out_dir: "D:/1Diplom/shelfvision_results/sku_gallery"
+  min_images_per_sku: 3
+
 identification:
   # Большие crop-ы, визуализации и отчёты лучше хранить вне папки программы.
   # Для текущей ВКР используется отдельный диск/каталог:
@@ -78,6 +84,7 @@ video:
   tracking_enabled: true
   tracking_iou: 0.3
   tracking_max_missing: 5
+  progress_every: 10
 
 setup:
   # Windows/local virtual environment used to launch Streamlit Control Panel.
