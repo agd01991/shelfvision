@@ -38,6 +38,34 @@ demo_sku_gallery:
   prefix: sku_demo_
   keep_old_demo: false
 
+full_photo_identification:
+  images_dir: "D:/1Diplom/data/raw/d2s_full/images"
+  gallery_images_dir: ""
+  query_images_dir: ""
+  out_dir: "D:/1Diplom/shelfvision_results/full_photo_identification"
+  gallery_dir: "D:/1Diplom/sku_gallery_full"
+  gallery_csv: "D:/1Diplom/sku_gallery_full/gallery.csv"
+  model: yolo
+  limit: 100
+  gallery_count: 30
+  query_count: 70
+  gallery_limit: 0
+  query_limit: 0
+  max_sku: 50
+  min_score: 0.35
+  min_width: 20
+  min_height: 20
+  padding: 0.05
+  prefix: sku_demo_
+  keep_old_demo: false
+  threshold: 0.65
+  top_k: 3
+  visualize_limit: 100
+  resume: true
+  skip_existing: true
+  progress_every: 10
+  no_visualize_inference: false
+
 identification:
   # Большие crop-ы, визуализации и отчёты лучше хранить вне папки программы.
   # Для текущей ВКР используется отдельный диск/каталог:
