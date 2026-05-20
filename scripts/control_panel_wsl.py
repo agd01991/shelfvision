@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -25,6 +26,12 @@ from setup_pages import page_setup
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = "config/shelfvision.yaml"
+PHOTO_MODEL_LABELS = {
+    "yolo": "YOLO",
+    "yolo_seg": "YOLO-Seg",
+    "rtdetr": "RT-DETR-L",
+    "frcnn": "Faster R-CNN",
+}
 
 
 def use_wsl_runtime(config: Dict[str, Any]) -> bool:
@@ -55,11 +62,22 @@ def render_command_result(result) -> None:
     st.code(result.stdout or "", language="text")
 
 
+def _launch_background(cmd: List[str]) -> None:
+    subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def _video_weight_path(config: Dict[str, Any], video_model: str) -> str:
     weights = config.get("weights", {})
     if video_model == "yolo_seg":
         return str(weights.get("yolo_seg", weights.get("yolo", "")))
     return str(weights.get("yolo", ""))
+
+
+def _photo_weight_path(config: Dict[str, Any], model: str) -> str:
+    weights = config.get("weights", {})
+    if model == "yolo_seg":
+        return str(weights.get("yolo_seg", weights.get("yolo", "")))
+    return str(weights.get(model, weights.get("yolo", "")))
 
 
 def _run_live_command(title: str, cmd: List[str], description: str, success: str, failure: str) -> None:
@@ -92,7 +110,9 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         video = config.setdefault("video", {})
         readiness = config.setdefault("readiness", {})
         sku_gallery = config.setdefault("sku_gallery", {})
+        demo_sku_gallery = config.setdefault("demo_sku_gallery", {})
         identification = config.setdefault("identification", {})
+        presentation = config.setdefault("presentation_assets", {})
 
         st.subheader("Режим запуска")
         runtime["use_wsl_runtime"] = st.checkbox("Запускать задачи через WSL .venv_wsl", value=bool(runtime.get("use_wsl_runtime", True)))
@@ -170,6 +190,24 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         sku_gallery["out_dir"] = st.text_input("Папка отчётов SKU-галереи", value=str(sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/sku_gallery")))
         sku_gallery["min_images_per_sku"] = st.number_input("Минимум эталонов на SKU", 1, 100, int(sku_gallery.get("min_images_per_sku", 3)))
 
+        st.subheader("Demo SKU-галерея")
+        demo_sku_gallery["images_dir"] = st.text_input("Папка изображений для фото-идентификации", value=str(demo_sku_gallery.get("images_dir", paths.get("images_dir", "D:/1Diplom/data/raw/d2s_full/images"))))
+        demo_sku_gallery["out_dir"] = st.text_input("Папка результатов фото-идентификации", value=str(demo_sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification")))
+        demo_sku_gallery["gallery_dir"] = st.text_input("Demo gallery dir", value=str(demo_sku_gallery.get("gallery_dir", sku_gallery.get("gallery_dir", "D:/1Diplom/sku_gallery"))))
+        demo_sku_gallery["gallery_csv"] = st.text_input("Demo gallery.csv", value=str(demo_sku_gallery.get("gallery_csv", sku_gallery.get("output_csv", "D:/1Diplom/sku_gallery/gallery.csv"))))
+        demo_sku_gallery["model"] = st.selectbox("Модель для фото-идентификации", list(PHOTO_MODEL_LABELS.keys()), index=list(PHOTO_MODEL_LABELS.keys()).index(demo_sku_gallery.get("model", "yolo")) if demo_sku_gallery.get("model", "yolo") in PHOTO_MODEL_LABELS else 0, format_func=lambda x: PHOTO_MODEL_LABELS[x])
+        demo_sku_gallery["max_sku"] = st.number_input("Максимум demo SKU", 1, 500, int(demo_sku_gallery.get("max_sku", 30)))
+        demo_sku_gallery["min_score"] = st.slider("Минимальный score для эталона", 0.0, 1.0, float(demo_sku_gallery.get("min_score", 0.35)), 0.01)
+        demo_sku_gallery["min_width"] = st.number_input("Минимальная ширина crop", 1, 1000, int(demo_sku_gallery.get("min_width", 20)))
+        demo_sku_gallery["min_height"] = st.number_input("Минимальная высота crop", 1, 1000, int(demo_sku_gallery.get("min_height", 20)))
+        demo_sku_gallery["padding"] = st.slider("Padding crop", 0.0, 0.5, float(demo_sku_gallery.get("padding", 0.05)), 0.01)
+        demo_sku_gallery["threshold"] = st.slider("Порог SKU matching", 0.0, 1.0, float(demo_sku_gallery.get("threshold", identification.get("threshold", 0.65))), 0.01)
+        demo_sku_gallery["top_k"] = st.number_input("Top-k кандидатов", 1, 20, int(demo_sku_gallery.get("top_k", identification.get("top_k", 3))))
+        demo_sku_gallery["visualize_limit"] = st.number_input("Лимит визуализаций фото", 0, 1000, int(demo_sku_gallery.get("visualize_limit", 50)))
+        demo_sku_gallery["use_masks"] = st.checkbox("Использовать masks для demo crop", value=bool(demo_sku_gallery.get("use_masks", True)))
+        demo_sku_gallery["prefix"] = st.text_input("Префикс demo SKU", value=str(demo_sku_gallery.get("prefix", "sku_demo_")))
+        demo_sku_gallery["keep_old_demo"] = st.checkbox("Не удалять старые sku_demo_*", value=bool(demo_sku_gallery.get("keep_old_demo", False)))
+
         st.subheader("Идентификация SKU")
         identification["predictions"] = st.text_input("predictions.json", value=str(identification.get("predictions", "results/inference/yolo_seg_batch/predictions.json")))
         identification["images_dir"] = st.text_input("images_dir для predictions", value=str(identification.get("images_dir", "data/yolo_cache/d2s_small_seg/images/test")))
@@ -188,9 +226,18 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         identification["video_summary"] = st.text_input("video_summary.json, опционально", value=str(identification.get("video_summary", "")))
         identification["identified_video_codec"] = st.text_input("Кодек identified video", value=str(identification.get("identified_video_codec", "mp4v")))
 
+        st.subheader("Материалы презентации")
+        presentation["out_dir"] = st.text_input("Папка материалов презентации", value=str(presentation.get("out_dir", "D:/1Diplom/presentation_assets")))
+        presentation["results_root"] = st.text_input("Корень результатов", value=str(presentation.get("results_root", "D:/1Diplom/shelfvision_results")))
+        presentation["video_dir"] = st.text_input("Папка видео результатов", value=str(presentation.get("video_dir", video.get("output_dir", "results/video/yolo"))))
+        presentation["identification_dir"] = st.text_input("Папка результатов идентификации для слайдов", value=str(presentation.get("identification_dir", demo_sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification") + "/03_identification")))
+        presentation["video_frame"] = st.number_input("Кадр из видео для слайдов", 0, 100000, int(presentation.get("video_frame", 0)))
+
         if st.form_submit_button("Сохранить настройки"):
             identification["gallery_dir"] = str(sku_gallery.get("gallery_dir", identification.get("gallery_dir", "")))
             identification["gallery_csv"] = str(sku_gallery.get("output_csv", identification.get("gallery_csv", "")))
+            sku_gallery["gallery_dir"] = str(demo_sku_gallery.get("gallery_dir", sku_gallery.get("gallery_dir", "")))
+            sku_gallery["output_csv"] = str(demo_sku_gallery.get("gallery_csv", sku_gallery.get("output_csv", "")))
             save_config(config)
             st.success("Настройки сохранены")
     return config
@@ -211,12 +258,48 @@ def _build_gallery_args(config: Dict[str, Any]) -> List[str]:
     ]
 
 
+def _build_photo_identification_args(config: Dict[str, Any]) -> List[str]:
+    runtime = config.setdefault("runtime", {})
+    demo = config.setdefault("demo_sku_gallery", {})
+    model = str(demo.get("model", "yolo"))
+    args = [
+        "--model", model,
+        "--weights", _photo_weight_path(config, model),
+        "--images-dir", str(demo.get("images_dir", config.get("paths", {}).get("images_dir", ""))),
+        "--out-dir", str(demo.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification")),
+        "--gallery-dir", str(demo.get("gallery_dir", "D:/1Diplom/sku_gallery")),
+        "--gallery-csv", str(demo.get("gallery_csv", "D:/1Diplom/sku_gallery/gallery.csv")),
+        "--max-sku", str(demo.get("max_sku", 30)),
+        "--min-score", str(demo.get("min_score", 0.35)),
+        "--min-width", str(demo.get("min_width", 20)),
+        "--min-height", str(demo.get("min_height", 20)),
+        "--conf", str(runtime.get("conf", 0.25)),
+        "--imgsz", str(runtime.get("imgsz", 640)),
+        "--threshold", str(demo.get("threshold", config.get("identification", {}).get("threshold", 0.65))),
+        "--top-k", str(demo.get("top_k", config.get("identification", {}).get("top_k", 3))),
+        "--visualize-limit", str(demo.get("visualize_limit", 50)),
+        "--padding", str(demo.get("padding", 0.05)),
+        "--prefix", str(demo.get("prefix", "sku_demo_")),
+    ]
+    device = str(runtime.get("device", "")).strip()
+    if device:
+        args.extend(["--device", device])
+    if not bool(demo.get("use_masks", True)):
+        args.append("--bbox-only")
+    if bool(demo.get("keep_old_demo", False)):
+        args.append("--keep-old-demo")
+    gt_csv = str(demo.get("gt_csv", "")).strip()
+    if gt_csv:
+        args.extend(["--gt-csv", gt_csv])
+    return args
+
+
 def _build_video_args(config: Dict[str, Any], out_base: Path) -> List[str]:
     runtime = config["runtime"]
     video = config.get("video", {})
     video_model = str(video.get("model", "yolo_seg"))
     args = [
-        "--model", "yolo",
+        "--model", video_model,
         "--weights", _video_weight_path(config, video_model),
         "--video", str(video.get("input_path", "data/video/test.mp4")),
         "--out-dir", str(video.get("output_dir", str(out_base / "video"))),
@@ -273,6 +356,22 @@ def _build_identification_args(config: Dict[str, Any]) -> List[str]:
     return args
 
 
+def _build_presentation_assets_args(config: Dict[str, Any]) -> List[str]:
+    presentation = config.setdefault("presentation_assets", {})
+    demo = config.setdefault("demo_sku_gallery", {})
+    sku_gallery = config.setdefault("sku_gallery", {})
+    return [
+        "--project-root", ".",
+        "--out-dir", str(presentation.get("out_dir", "D:/1Diplom/presentation_assets")),
+        "--results-root", str(presentation.get("results_root", "D:/1Diplom/shelfvision_results")),
+        "--video-dir", str(presentation.get("video_dir", config.get("video", {}).get("output_dir", "results/video/yolo"))),
+        "--identification-dir", str(presentation.get("identification_dir", str(demo.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification")) + "/03_identification")),
+        "--sku-gallery-dir", str(demo.get("gallery_dir", sku_gallery.get("gallery_dir", "D:/1Diplom/sku_gallery"))),
+        "--sku-gallery-report-dir", str(sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/sku_gallery")),
+        "--video-frame", str(presentation.get("video_frame", 0)),
+    ]
+
+
 def page_actions_wsl(config: Dict[str, Any]) -> None:
     st.header("4. Запуск задач кнопками")
     st.info(f"Текущий режим запуска задач: **{'WSL .venv_wsl' if use_wsl_runtime(config) else 'Windows/local .venv'}**")
@@ -285,13 +384,16 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
     c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("Открыть интерфейс экспериментов", use_container_width=True):
-            render_command_result(run_command(streamlit_command(config, "scripts/interface_app.py")))
+            _launch_background(streamlit_command(config, "scripts/interface_app.py"))
+            st.success("Интерфейс экспериментов запускается в отдельном процессе.")
     with c2:
         if st.button("Открыть интерфейс инференса", use_container_width=True):
-            render_command_result(run_command(streamlit_command(config, "scripts/inference_app.py")))
+            _launch_background(streamlit_command(config, "scripts/inference_app.py"))
+            st.success("Интерфейс инференса запускается в отдельном процессе.")
     with c3:
         if st.button("Открыть видеоинтерфейс", use_container_width=True):
-            render_command_result(run_command(streamlit_command(config, "scripts/video_app.py")))
+            _launch_background(streamlit_command(config, "scripts/video_app.py"))
+            st.success("Видеоинтерфейс запускается в отдельном процессе.")
 
     st.subheader("Диагностика")
     st.caption("Быстрая проверка перед тяжёлым запуском: видео, веса, SKU-галерея, gallery.csv, папки вывода и WSL-среда.")
@@ -304,6 +406,19 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
             description="Проверяются пути, веса, видео, SKU-галерея, gallery.csv, папки вывода и совместимость с WSL.",
             success="Диагностика завершена. Проверь readiness_report.md/json и readiness_checks.csv.",
             failure="Ошибка диагностики готовности",
+        )
+
+    st.subheader("Идентификация по фото")
+    st.caption("Полный рабочий сценарий для защиты: изображения → инференс → demo SKU-галерея → gallery.csv → идентификация → visualized.")
+    if st.button("Запустить полную идентификацию по фото", use_container_width=True):
+        save_config(config)
+        cmd = python_command(config, "run_photo_identification_pipeline.py", _build_photo_identification_args(config))
+        _run_live_command(
+            title="Идентификация по фото",
+            cmd=cmd,
+            description="Запускается полный цикл: инференс по папке изображений, автоматическая demo SKU-галерея, matching и визуализация результатов.",
+            success="Фото-идентификация завершена. Проверь 01_inference, 02_demo_gallery и 03_identification/visualized.",
+            failure="Ошибка фото-идентификации",
         )
 
     st.subheader("Инференс одного изображения")
@@ -374,6 +489,18 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
                 success="Идентификация завершена. Проверь identification_results.json/csv, track_sku_summary.json и identified_output_video.mp4.",
                 failure="Ошибка идентификации SKU",
             )
+
+    st.subheader("Материалы для презентации")
+    if st.button("Собрать скрины и файлы по слайдам", use_container_width=True):
+        save_config(config)
+        cmd = python_command(config, "scripts/prepare_presentation_assets.py", _build_presentation_assets_args(config))
+        _run_live_command(
+            title="Материалы презентации",
+            cmd=cmd,
+            description="Файлы результатов раскладываются по папкам slide_01...slide_10 для вставки в Gamma/PowerPoint.",
+            success="Материалы презентации подготовлены. Проверь папку presentation_assets.",
+            failure="Ошибка подготовки материалов презентации",
+        )
 
     st.subheader("Полный pipeline")
     if st.button("Запустить полный pipeline через выбранный runtime", use_container_width=True):
