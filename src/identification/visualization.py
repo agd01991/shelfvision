@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -13,6 +14,19 @@ BOX_COLOR_MATCHED = (0, 180, 0)
 BOX_COLOR_UNKNOWN = (0, 0, 220)
 TEXT_COLOR = (255, 255, 255)
 TEXT_BG_COLOR = (0, 0, 0)
+DEMO_SKU_RE = re.compile(r"sku[_\s-]*demo[_\s-]*(\d+)", re.IGNORECASE)
+
+
+def _display_sku_name(item: IdentificationResult) -> str:
+    if item.sku_status != "matched":
+        return "unknown"
+    value = str(item.sku_id or item.sku_name or "").strip()
+    match = DEMO_SKU_RE.fullmatch(value.replace(" ", "_")) or DEMO_SKU_RE.fullmatch(str(item.sku_name).strip().replace(" ", "_"))
+    if match:
+        return f"SKU-{int(match.group(1)):03d}"
+    if value:
+        return value.replace("_", " ")
+    return str(item.sku_name or "SKU")
 
 
 def _draw_label(image, text: str, x: int, y: int) -> None:
@@ -51,7 +65,7 @@ def visualize_identification_results(
             color = BOX_COLOR_MATCHED if item.sku_status == "matched" else BOX_COLOR_UNKNOWN
             x1, y1, x2, y2 = [int(round(v)) for v in (item.x1, item.y1, item.x2, item.y2)]
             cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-            label = f"{item.sku_name} | {item.sku_confidence:.2f}"
+            label = f"{_display_sku_name(item)} | {item.sku_confidence:.2f}"
             _draw_label(image, label, x1, y1)
 
         output_path = out_dir / f"{Path(image_path).stem}_identified.jpg"
