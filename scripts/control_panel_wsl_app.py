@@ -16,6 +16,11 @@ from setup_pages import page_setup
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 TEXT_EXTS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
+APP_PORTS = {
+    "scripts/interface_app.py": 8502,
+    "scripts/inference_app.py": 8503,
+    "scripts/video_app.py": 8504,
+}
 
 
 def _as_path(raw: str | Path | None) -> Path | None:
@@ -190,28 +195,47 @@ def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
             st.caption("Показаны первые 300 файлов.")
 
 
-def _start_streamlit_app(script_path: str) -> None:
+def _streamlit_url(script_path: str) -> str:
+    port = APP_PORTS.get(script_path.replace("\\", "/"), 8501)
+    return f"http://localhost:{port}"
+
+
+def _start_streamlit_app(script_path: str) -> str:
+    port = APP_PORTS.get(script_path.replace("\\", "/"), 8501)
     subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", script_path],
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            script_path,
+            "--server.port",
+            str(port),
+            "--server.headless",
+            "true",
+        ],
         cwd=str(ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    return f"http://localhost:{port}"
 
 
 def page_interface_shortcuts() -> None:
     st.header("Быстрый запуск интерфейсов")
     st.caption("`run_interface.bat` запускает старый экспериментальный интерфейс: `python -m streamlit run scripts/interface_app.py`.")
 
+    app_script = "scripts/interface_app.py"
     if st.button(
         "Открыть интерфейс из run_interface.bat",
         use_container_width=True,
         key="shortcut_open_legacy_interface_app",
     ):
-        _start_streamlit_app("scripts/interface_app.py")
+        url = _start_streamlit_app(app_script)
         st.success("Интерфейс `scripts/interface_app.py` запускается в отдельном процессе.")
+        st.markdown(f"Открой: [{url}]({url})")
 
-    st.caption("Остальные интерфейсы ниже уже есть в основном блоке `Интерфейсы`.")
+    st.caption(f"Адрес этого интерфейса: `{_streamlit_url(app_script)}`. Остальные интерфейсы ниже уже есть в основном блоке `Интерфейсы`.")
 
 
 def page_actions_app(config: Dict[str, Any]) -> None:
