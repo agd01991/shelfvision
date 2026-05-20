@@ -27,6 +27,7 @@ CLI_SCRIPTS = [
     "run_demo_gallery_builder.py",
     "run_identification.py",
     "run_photo_identification_pipeline.py",
+    "run_full_photo_identification_pipeline.py",
     "run_readiness_check.py",
     "run_full_pipeline.py",
     "scripts/prepare_presentation_assets.py",
@@ -60,6 +61,7 @@ MODULES = [
     "src.diagnostics.readiness",
     "src.analytics.density",
     "src.reporting.mini_report",
+    "src.reporting.experiment_summary",
 ]
 
 
