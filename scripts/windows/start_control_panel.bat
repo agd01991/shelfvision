@@ -41,7 +41,7 @@ if errorlevel 1 (
 )
 
 echo [3/4] Installing minimal packages for control panel ...
-"%WIN_PY%" -m pip install streamlit PyYAML pandas
+"%WIN_PY%" -m pip install streamlit PyYAML pandas pillow
 if errorlevel 1 (
   echo Failed to install minimal packages.
   pause
@@ -60,6 +60,6 @@ echo.
 echo Starting ShelfVision Control Panel with WSL runtime support ...
 echo Windows .venv is used only for the panel.
 echo Work tasks can run through WSL .venv_wsl after scripts\windows\setup_wsl_env.bat.
-"%WIN_PY%" -m streamlit run scripts\control_panel_wsl.py
+"%WIN_PY%" -m streamlit run scripts\control_panel_wsl_app.py
 
 pause
