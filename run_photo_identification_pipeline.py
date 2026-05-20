@@ -10,6 +10,7 @@ from src.identification.matcher import run_sku_matching
 from src.identification.metrics import evaluate_with_ground_truth, save_identification_metrics
 from src.identification.report import save_identification_outputs
 from src.identification.visualization import visualize_identification_results
+from src.reporting.experiment_summary import save_photo_identification_experiment_summary
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,6 +80,32 @@ def _run_inference(args: argparse.Namespace, inference_dir: Path) -> Path:
     return prediction_file
 
 
+def _summary_params(args: argparse.Namespace) -> dict:
+    return {
+        "model": args.model,
+        "weights": args.weights,
+        "image": args.image or "",
+        "images_dir": args.images_dir or "",
+        "conf": args.conf,
+        "imgsz": args.imgsz,
+        "device": args.device or "",
+        "bbox_only": args.bbox_only,
+        "gallery_dir": args.gallery_dir,
+        "gallery_csv": args.gallery_csv,
+        "max_sku": args.max_sku,
+        "min_score": args.min_score,
+        "min_width": args.min_width,
+        "min_height": args.min_height,
+        "padding": args.padding,
+        "prefix": args.prefix,
+        "keep_old_demo": args.keep_old_demo,
+        "threshold": args.threshold,
+        "top_k": args.top_k,
+        "gt_csv": args.gt_csv or "",
+        "visualize_limit": args.visualize_limit,
+    }
+
+
 def main() -> None:
     args = parse_args()
     if not args.image and not args.images_dir:
@@ -138,6 +165,12 @@ def main() -> None:
         out_dir=identification_dir,
         limit=max(0, args.visualize_limit),
     )
+    summary_outputs = save_photo_identification_experiment_summary(
+        pipeline_out_dir=out_dir,
+        gallery_dir=args.gallery_dir,
+        gallery_csv=args.gallery_csv,
+        params=_summary_params(args),
+    )
 
     print("=== Done ===", flush=True)
     print(f"Pipeline output: {out_dir}", flush=True)
@@ -146,6 +179,8 @@ def main() -> None:
     print(f"Gallery CSV: {args.gallery_csv}", flush=True)
     for name, path in demo_outputs.items():
         print(f"Demo {name}: {path}", flush=True)
+    for name, path in summary_outputs.items():
+        print(f"Summary {name}: {path}", flush=True)
     print(f"Identification results: {identification_dir}", flush=True)
     print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
     print(f"Matched: {metrics.get('matched', 0)}", flush=True)
