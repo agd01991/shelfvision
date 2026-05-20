@@ -23,6 +23,21 @@ sku_gallery:
   out_dir: "D:/1Diplom/shelfvision_results/sku_gallery"
   min_images_per_sku: 3
 
+demo_sku_gallery:
+  predictions: results/video/yolo/video_predictions.json
+  images_dir: results/video/yolo/frames_for_identification
+  gallery_dir: "D:/1Diplom/sku_gallery"
+  gallery_csv: "D:/1Diplom/sku_gallery/gallery.csv"
+  out_dir: "D:/1Diplom/shelfvision_results/demo_sku_gallery"
+  max_sku: 30
+  min_score: 0.35
+  min_width: 20
+  min_height: 20
+  padding: 0.05
+  use_masks: true
+  prefix: sku_demo_
+  keep_old_demo: false
+
 identification:
   # Большие crop-ы, визуализации и отчёты лучше хранить вне папки программы.
   # Для текущей ВКР используется отдельный диск/каталог:
