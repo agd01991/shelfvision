@@ -9,33 +9,24 @@ from src.inference.video_inference import process_yolo_video_file
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ShelfVision video inference runner")
-    parser.add_argument("--model", choices=["yolo"], default="yolo", help="Модель для видеоинференса")
-    parser.add_argument("--weights", required=True, help="Путь к весам YOLO/YOLO-Seg")
-    parser.add_argument("--video", required=True, help="Путь к видеофайлу")
-    parser.add_argument("--out-dir", default="results/video/yolo", help="Папка для результатов")
+    parser.add_argument("--model", choices=["yolo", "yolo_seg"], default="yolo", help="Video model")
+    parser.add_argument("--weights", required=True, help="YOLO or YOLO-Seg weights path")
+    parser.add_argument("--video", required=True, help="Input video file")
+    parser.add_argument("--out-dir", default="results/video/yolo", help="Output directory")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
-    parser.add_argument("--imgsz", type=int, default=640, help="Размер изображения для модели")
-    parser.add_argument("--device", default=None, help="Устройство: 0, cpu, cuda:0")
-    parser.add_argument("--frame-skip", type=int, default=1, help="Обрабатывать каждый N-й кадр")
-    parser.add_argument("--max-frames", type=int, default=0, help="Максимум обработанных кадров, 0 — всё видео")
-    parser.add_argument("--no-save-video", action="store_true", help="Не сохранять итоговое видео")
-    parser.add_argument("--sample-frames", type=int, default=8, help="Сколько первых кадров сохранить как примеры")
-    parser.add_argument("--no-masks", action="store_true", help="Не отрисовывать masks")
-    parser.add_argument("--codec", default="mp4v", help="Кодек для сохранения видео")
-    parser.add_argument(
-        "--save-frames-for-identification",
-        action="store_true",
-        help="Сохранять все обработанные кадры как изображения и делать video_predictions.json совместимым с run_identification.py",
-    )
-    parser.add_argument("--no-tracking", action="store_true", help="Отключить простой IoU tracking")
-    parser.add_argument("--tracking-iou", type=float, default=0.30, help="IoU threshold для связывания объекта с track_id")
-    parser.add_argument("--tracking-max-missing", type=int, default=5, help="Сколько обработанных кадров трек может отсутствовать")
-    parser.add_argument(
-        "--progress-every",
-        type=int,
-        default=10,
-        help="Печатать прогресс каждые N обработанных кадров. 1 — каждый кадр.",
-    )
+    parser.add_argument("--imgsz", type=int, default=640, help="Image size")
+    parser.add_argument("--device", default=None, help="Device: 0, cpu, cuda:0")
+    parser.add_argument("--frame-skip", type=int, default=1, help="Process each N-th frame")
+    parser.add_argument("--max-frames", type=int, default=0, help="Max processed frames, 0 means full video")
+    parser.add_argument("--no-save-video", action="store_true", help="Do not save output video")
+    parser.add_argument("--sample-frames", type=int, default=8, help="How many sample frames to save")
+    parser.add_argument("--no-masks", action="store_true", help="Do not draw masks")
+    parser.add_argument("--codec", default="mp4v", help="Video codec")
+    parser.add_argument("--save-frames-for-identification", action="store_true", help="Save processed frames and compatible video_predictions.json")
+    parser.add_argument("--no-tracking", action="store_true", help="Disable simple IoU tracking")
+    parser.add_argument("--tracking-iou", type=float, default=0.30, help="IoU threshold for tracking")
+    parser.add_argument("--tracking-max-missing", type=int, default=5, help="Max missing processed frames for one track")
+    parser.add_argument("--progress-every", type=int, default=10, help="Print progress every N processed frames")
     return parser.parse_args()
 
 
@@ -101,10 +92,8 @@ def _build_progress_callback(progress_every: int, frame_skip: int, max_frames: i
 
 def main() -> None:
     args = parse_args()
-    if args.model != "yolo":
-        raise SystemExit("На первом этапе видеорежима поддерживается только YOLO.")
-
     print("=== ShelfVision video inference started ===", flush=True)
+    print(f"model: {args.model}", flush=True)
     print(f"video: {args.video}", flush=True)
     print(f"weights: {args.weights}", flush=True)
     print(f"out_dir: {args.out_dir}", flush=True)
@@ -124,7 +113,7 @@ def main() -> None:
         save_sample_frames=max(0, args.sample_frames),
         show_masks=not args.no_masks,
         codec=args.codec,
-        model_name="YOLO Video",
+        model_name="YOLO-Seg Video" if args.model == "yolo_seg" else "YOLO Video",
         save_frames_for_identification=args.save_frames_for_identification,
         tracking_enabled=not args.no_tracking,
         tracking_iou=args.tracking_iou,
