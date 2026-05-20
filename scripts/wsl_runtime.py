@@ -1,23 +1,53 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 from pathlib import Path
 from typing import List
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
 
 
 def quote_bash(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def windows_path_to_wsl(value: str) -> str:
+    """Convert Windows paths like D:/dir/file to /mnt/d/dir/file for WSL.
+
+    The function is intentionally conservative: it only converts strings that
+    start with a Windows drive prefix. Ordinary CLI values such as model names,
+    numbers and flags are kept unchanged.
+    """
+
+    normalized = value.replace("\\", "/")
+    match = WINDOWS_DRIVE_RE.match(normalized)
+    if not match:
+        return normalized
+    drive = match.group(1).lower()
+    rest = match.group(2)
+    return f"/mnt/{drive}/{rest}"
+
+
+def normalize_wsl_arg(arg: str) -> str:
+    if not isinstance(arg, str):
+        return str(arg)
+    return windows_path_to_wsl(arg)
+
+
+def normalize_wsl_venv_dir(venv_dir: str) -> str:
+    return windows_path_to_wsl(venv_dir)
+
+
 def run_wsl_python(venv_dir: str, python_args: List[str]) -> int:
-    venv_dir = venv_dir.replace("\\", "/")
-    normalized_args = [arg.replace("\\", "/") for arg in python_args]
+    venv_dir = normalize_wsl_venv_dir(venv_dir)
+    normalized_args = [normalize_wsl_arg(arg) for arg in python_args]
     args = " ".join(quote_bash(arg) for arg in normalized_args)
     command = f"cd \"$(wslpath '{ROOT}')\" && {quote_bash(f'{venv_dir}/bin/python')} {args}"
+    print("WSL command:", command, flush=True)
     result = subprocess.run(["wsl", "bash", "-lc", command], cwd=str(ROOT), text=True)
     return result.returncode
 
