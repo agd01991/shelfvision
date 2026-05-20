@@ -23,8 +23,13 @@ CLI_SCRIPTS = [
     "run_compare.py",
     "run_density.py",
     "run_mini_report.py",
+    "run_gallery_manager.py",
+    "run_demo_gallery_builder.py",
     "run_identification.py",
+    "run_photo_identification_pipeline.py",
+    "run_readiness_check.py",
     "run_full_pipeline.py",
+    "scripts/prepare_presentation_assets.py",
 ]
 
 
@@ -35,6 +40,7 @@ MODULES = [
     "src.inference.faster_rcnn_inference",
     "src.inference.ensemble_wbf",
     "src.inference.video_inference",
+    "src.inference.tracking",
     "src.visualization.draw_boxes",
     "src.evaluation.metrics",
     "src.evaluation.error_visualization",
@@ -42,11 +48,16 @@ MODULES = [
     "src.evaluation.compare_models",
     "src.identification.crop_extractor",
     "src.identification.sku_gallery",
+    "src.identification.gallery_manager",
+    "src.identification.demo_gallery_builder",
     "src.identification.feature_extractor",
     "src.identification.matcher",
     "src.identification.metrics",
     "src.identification.visualization",
     "src.identification.report",
+    "src.identification.track_stabilizer",
+    "src.identification.video_renderer",
+    "src.diagnostics.readiness",
     "src.analytics.density",
     "src.reporting.mini_report",
 ]
