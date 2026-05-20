@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 import yaml
@@ -11,6 +13,7 @@ from control_panel_wsl import page_actions_wsl, page_config_wsl
 from setup_pages import page_setup
 
 
+ROOT = Path(__file__).resolve().parents[1]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 TEXT_EXTS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
 
@@ -29,8 +32,7 @@ def _as_path(raw: str | Path | None) -> Path | None:
 
 def _rel_or_abs(path: Path) -> str:
     try:
-        root = Path(__file__).resolve().parents[1]
-        return str(path.relative_to(root)).replace("\\", "/")
+        return str(path.relative_to(ROOT)).replace("\\", "/")
     except Exception:
         return str(path).replace("\\", "/")
 
@@ -188,6 +190,36 @@ def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
             st.caption("Показаны первые 300 файлов.")
 
 
+def _start_streamlit_app(script_path: str) -> None:
+    subprocess.Popen(
+        [sys.executable, "-m", "streamlit", "run", script_path],
+        cwd=str(ROOT),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def page_interface_shortcuts() -> None:
+    st.header("Быстрый запуск интерфейсов")
+    st.caption("`run_interface.bat` запускает старый экспериментальный интерфейс: `python -m streamlit run scripts/interface_app.py`.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Открыть интерфейс из run_interface.bat", use_container_width=True):
+            _start_streamlit_app("scripts/interface_app.py")
+            st.success("Интерфейс `scripts/interface_app.py` запускается в отдельном процессе.")
+    with c2:
+        if st.button("Открыть интерфейс инференса", use_container_width=True):
+            _start_streamlit_app("scripts/inference_app.py")
+            st.success("Интерфейс `scripts/inference_app.py` запускается в отдельном процессе.")
+
+
+def page_actions_app(config: Dict[str, Any]) -> None:
+    page_interface_shortcuts()
+    st.divider()
+    page_actions_wsl(config)
+
+
 def page_results_wsl(config: Dict[str, Any]) -> None:
     st.header("5. Результаты")
     st.caption("Здесь показаны все основные папки результатов, а не только старый `results/control_panel`.")
@@ -232,7 +264,7 @@ def main() -> None:
     elif page == "Настройки":
         page_config_wsl(config)
     elif page == "Запуск задач":
-        page_actions_wsl(config)
+        page_actions_app(config)
     elif page == "Результаты":
         page_results_wsl(config)
     elif page == "config YAML":
