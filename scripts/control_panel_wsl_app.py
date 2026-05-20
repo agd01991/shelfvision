@@ -203,15 +203,15 @@ def page_interface_shortcuts() -> None:
     st.header("Быстрый запуск интерфейсов")
     st.caption("`run_interface.bat` запускает старый экспериментальный интерфейс: `python -m streamlit run scripts/interface_app.py`.")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Открыть интерфейс из run_interface.bat", use_container_width=True):
-            _start_streamlit_app("scripts/interface_app.py")
-            st.success("Интерфейс `scripts/interface_app.py` запускается в отдельном процессе.")
-    with c2:
-        if st.button("Открыть интерфейс инференса", use_container_width=True):
-            _start_streamlit_app("scripts/inference_app.py")
-            st.success("Интерфейс `scripts/inference_app.py` запускается в отдельном процессе.")
+    if st.button(
+        "Открыть интерфейс из run_interface.bat",
+        use_container_width=True,
+        key="shortcut_open_legacy_interface_app",
+    ):
+        _start_streamlit_app("scripts/interface_app.py")
+        st.success("Интерфейс `scripts/interface_app.py` запускается в отдельном процессе.")
+
+    st.caption("Остальные интерфейсы ниже уже есть в основном блоке `Интерфейсы`.")
 
 
 def page_actions_app(config: Dict[str, Any]) -> None:
