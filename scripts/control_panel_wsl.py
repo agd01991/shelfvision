@@ -32,6 +32,11 @@ PHOTO_MODEL_LABELS = {
     "rtdetr": "RT-DETR-L",
     "frcnn": "Faster R-CNN",
 }
+STREAMLIT_PORTS = {
+    "scripts/interface_app.py": 8502,
+    "scripts/inference_app.py": 8503,
+    "scripts/video_app.py": 8504,
+}
 
 
 def use_wsl_runtime(config: Dict[str, Any]) -> bool:
@@ -48,10 +53,23 @@ def python_command(config: Dict[str, Any], script: str, args: List[str]) -> List
     return [str(venv_python(config)), script, *args]
 
 
+def streamlit_port(app_script: str) -> int:
+    return int(STREAMLIT_PORTS.get(app_script.replace("\\", "/"), 0) or 0)
+
+
+def streamlit_url(app_script: str) -> str:
+    port = streamlit_port(app_script)
+    return f"http://localhost:{port}" if port else "http://localhost:8501"
+
+
 def streamlit_command(config: Dict[str, Any], app_script: str) -> List[str]:
+    extra_args: List[str] = ["streamlit", "run", app_script]
+    port = streamlit_port(app_script)
+    if port:
+        extra_args.extend(["--server.port", str(port), "--server.headless", "true"])
     if use_wsl_runtime(config):
-        return python_command(config, "-m", ["streamlit", "run", app_script])
-    return [str(venv_python(config)), "-m", "streamlit", "run", app_script]
+        return python_command(config, "-m", extra_args)
+    return [str(venv_python(config)), "-m", *extra_args]
 
 
 def render_command_result(result) -> None:
@@ -383,17 +401,23 @@ def page_actions_wsl(config: Dict[str, Any]) -> None:
     st.subheader("Интерфейсы")
     c1, c2, c3 = st.columns(3)
     with c1:
+        app_script = "scripts/interface_app.py"
         if st.button("Открыть интерфейс экспериментов", use_container_width=True):
-            _launch_background(streamlit_command(config, "scripts/interface_app.py"))
+            _launch_background(streamlit_command(config, app_script))
             st.success("Интерфейс экспериментов запускается в отдельном процессе.")
+            st.markdown(f"Открой: [{streamlit_url(app_script)}]({streamlit_url(app_script)})")
     with c2:
+        app_script = "scripts/inference_app.py"
         if st.button("Открыть интерфейс инференса", use_container_width=True):
-            _launch_background(streamlit_command(config, "scripts/inference_app.py"))
+            _launch_background(streamlit_command(config, app_script))
             st.success("Интерфейс инференса запускается в отдельном процессе.")
+            st.markdown(f"Открой: [{streamlit_url(app_script)}]({streamlit_url(app_script)})")
     with c3:
+        app_script = "scripts/video_app.py"
         if st.button("Открыть видеоинтерфейс", use_container_width=True):
-            _launch_background(streamlit_command(config, "scripts/video_app.py"))
+            _launch_background(streamlit_command(config, app_script))
             st.success("Видеоинтерфейс запускается в отдельном процессе.")
+            st.markdown(f"Открой: [{streamlit_url(app_script)}]({streamlit_url(app_script)})")
 
     st.subheader("Диагностика")
     st.caption("Быстрая проверка перед тяжёлым запуском: видео, веса, SKU-галерея, gallery.csv, папки вывода и WSL-среда.")
