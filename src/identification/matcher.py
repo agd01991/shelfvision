@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -45,6 +47,21 @@ class IdentificationResult:
     track_frames_count: int = 0
     track_matched_votes: int = 0
     track_unknown_votes: int = 0
+
+
+def _progress(stage: str, processed: int, total: int, started: float, **extra: object) -> None:
+    elapsed = time.perf_counter() - started
+    speed = processed / max(elapsed, 1e-9) if processed else 0.0
+    eta = (total - processed) / max(speed, 1e-9) if speed > 0 and total > processed else 0.0
+    payload: Dict[str, object] = {
+        "stage": stage,
+        "processed": processed,
+        "total": total,
+        "elapsed_seconds": elapsed,
+        "eta_seconds": eta,
+    }
+    payload.update(extra)
+    print(f"PROGRESS_JSON {json.dumps(payload, ensure_ascii=False)}", flush=True)
 
 
 def _build_gallery_features(
@@ -132,10 +149,13 @@ def run_sku_matching(
     threshold: float = 0.65,
     top_k: int = 3,
     padding_ratio: float = 0.05,
+    progress_every: int = 10,
 ) -> List[IdentificationResult]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    stage_started = time.perf_counter()
+    _progress("extract_query_crops", 0, 1, stage_started)
     crops = extract_crops_from_predictions_file(
         predictions_json=predictions_json,
         images_dir=images_dir,
@@ -143,20 +163,39 @@ def run_sku_matching(
         use_masks=use_masks,
         padding_ratio=padding_ratio,
     )
+    _progress("extract_query_crops", 1, 1, stage_started, objects=len(crops))
+
     gallery_items = load_gallery(gallery_csv=gallery_csv, gallery_dir=gallery_dir)
     extractor = VisualFeatureExtractor()
+    gallery_started = time.perf_counter()
+    _progress("gallery_features", 0, len(gallery_items), gallery_started)
     gallery_features = _build_gallery_features(gallery_items, extractor)
+    _progress("gallery_features", len(gallery_items), len(gallery_items), gallery_started, features=len(gallery_features))
 
-    results = [
-        _match_one_crop(
+    results: List[IdentificationResult] = []
+    total = len(crops)
+    started = time.perf_counter()
+    _progress("identify", 0, total, started, objects=0)
+    for index, crop in enumerate(crops, start=1):
+        result = _match_one_crop(
             crop=crop,
             gallery_features=gallery_features,
             extractor=extractor,
             threshold=threshold,
             top_k=top_k,
         )
-        for crop in crops
-    ]
+        results.append(result)
+        if index == 1 or index % max(1, progress_every) == 0 or index == total:
+            matched = sum(1 for item in results if item.sku_status == "matched")
+            _progress(
+                "identify",
+                index,
+                total,
+                started,
+                objects=index,
+                matched=matched,
+                unknown=index - matched,
+            )
 
     results_to_dataframe(results).to_csv(out_dir / "identification_results.csv", index=False)
     return results
