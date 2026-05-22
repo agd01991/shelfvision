@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
-import shutil
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, List, Sequence
 
 import pandas as pd
 
@@ -16,6 +14,7 @@ from src.identification.demo_gallery_builder import build_demo_sku_gallery_from_
 from src.identification.matcher import run_sku_matching
 from src.identification.metrics import evaluate_with_ground_truth, save_identification_metrics
 from src.identification.report import save_identification_outputs
+from src.identification.threshold_analysis import save_threshold_analysis
 from src.identification.visualization import visualize_identification_results
 from src.inference.prediction import ImagePrediction, save_predictions_json
 from src.visualization.draw_boxes import draw_prediction
@@ -52,6 +51,7 @@ class FullExperimentSummary:
     gallery_csv: str
     identification_results_csv: str
     visualized_dir: str
+    threshold_analysis_csv: str
     params: Dict[str, str | int | float | bool]
 
 
@@ -86,6 +86,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--keep-old-demo", action="store_true")
 
     parser.add_argument("--threshold", type=float, default=0.65)
+    parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--gt-csv", default=None)
     parser.add_argument("--visualize-limit", type=int, default=100)
@@ -95,6 +96,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument("--no-visualize-inference", action="store_true", help="Do not save detection visualizations for gallery/query inference")
     return parser.parse_args()
+
+
+def _parse_thresholds(raw: str) -> List[float]:
+    values: List[float] = []
+    for chunk in str(raw).split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        values.append(float(chunk))
+    return values or [0.65]
 
 
 def _format_eta(seconds: float) -> str:
@@ -178,6 +189,8 @@ def _load_partial(partial_jsonl: Path) -> Dict[str, ImagePrediction]:
             masks = raw.get("masks", []) or []
             track_ids = raw.get("track_ids", []) or []
             for i, box in enumerate(boxes):
+                from src.inference.prediction import DetectionPrediction
+
                 detections.append(
                     DetectionPrediction(
                         box=box,
@@ -207,12 +220,7 @@ def _save_progress(progress_json: Path, payload: Dict[str, object]) -> None:
     progress_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _run_split_inference(
-    split_name: str,
-    images: Sequence[Path],
-    args: argparse.Namespace,
-    out_dir: Path,
-) -> Path:
+def _run_split_inference(split_name: str, images: Sequence[Path], args: argparse.Namespace, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     predictions_json = out_dir / "predictions.json"
     partial_jsonl = out_dir / "predictions_partial.jsonl"
@@ -231,7 +239,7 @@ def _run_split_inference(
 
     print(f"PHOTO_PROGRESS split={split_name} total={total} resume_loaded={processed_before}", flush=True)
     with partial_jsonl.open("a", encoding="utf-8") as partial:
-        for idx, image_path in enumerate(images, start=1):
+        for image_path in images:
             key = str(image_path)
             if key in predictions_by_path:
                 continue
@@ -263,17 +271,7 @@ def _run_split_inference(
                     f"objects={objects} elapsed={_format_eta(elapsed)} eta={_format_eta(eta)}",
                     flush=True,
                 )
-            _save_progress(
-                progress_json,
-                {
-                    "split": split_name,
-                    "processed": done,
-                    "total": total,
-                    "objects": sum(item.objects_count for item in predictions_by_path.values()),
-                    "elapsed_seconds": elapsed,
-                    "eta_seconds": eta,
-                },
-            )
+            _save_progress(progress_json, {"split": split_name, "processed": done, "total": total})
 
     ordered = [predictions_by_path[str(path)] for path in images if str(path) in predictions_by_path]
     save_predictions_json(ordered, predictions_json)
@@ -299,6 +297,7 @@ def _save_full_summary(
     identification_dir: Path,
     metrics: Dict[str, object],
     elapsed_seconds: float,
+    threshold_outputs: Dict[str, Path],
 ) -> Dict[str, Path]:
     reports_dir = out_dir / "05_reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -322,6 +321,7 @@ def _save_full_summary(
         gallery_csv=str(args.gallery_csv),
         identification_results_csv=str(identification_dir / "identification_results.csv"),
         visualized_dir=str(identification_dir / "visualized"),
+        threshold_analysis_csv=str(threshold_outputs.get("threshold_analysis_csv", "")),
         params={
             "model": args.model,
             "weights": args.weights,
@@ -331,6 +331,7 @@ def _save_full_summary(
             "conf": args.conf,
             "imgsz": args.imgsz,
             "threshold": args.threshold,
+            "thresholds": args.thresholds,
             "top_k": args.top_k,
             "max_sku": args.max_sku,
             "min_score": args.min_score,
@@ -371,6 +372,7 @@ def _save_full_summary(
         f"- Query predictions: `{summary.query_predictions_json}`",
         f"- Gallery CSV: `{summary.gallery_csv}`",
         f"- Identification CSV: `{summary.identification_results_csv}`",
+        f"- Threshold analysis: `{summary.threshold_analysis_csv}`",
         f"- Visualized: `{summary.visualized_dir}`",
         "",
         "## Формулировка для ВКР",
@@ -394,6 +396,7 @@ def main() -> None:
     demo_dir = out_dir / "02_demo_gallery"
     query_inference_dir = out_dir / "03_query_inference"
     identification_dir = out_dir / "04_identification"
+    reports_dir = out_dir / "05_reports"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== ShelfVision full photo identification pipeline ===", flush=True)
@@ -451,6 +454,7 @@ def main() -> None:
         out_dir=identification_dir,
         limit=max(0, args.visualize_limit),
     )
+    threshold_outputs = save_threshold_analysis(results, out_dir=reports_dir, thresholds=_parse_thresholds(args.thresholds))
 
     print("Step 5/5: save full experiment report", flush=True)
     summary_outputs = _save_full_summary(
@@ -464,13 +468,14 @@ def main() -> None:
         identification_dir=identification_dir,
         metrics=metrics,
         elapsed_seconds=time.perf_counter() - started,
+        threshold_outputs=threshold_outputs,
     )
 
     print("=== Done ===", flush=True)
     print(f"Output: {out_dir}", flush=True)
     print(f"Gallery CSV: {args.gallery_csv}", flush=True)
     print(f"Identification results: {identification_dir}", flush=True)
-    for name, path in summary_outputs.items():
+    for name, path in {**threshold_outputs, **summary_outputs}.items():
         print(f"Report {name}: {path}", flush=True)
     print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
     print(f"Matched: {metrics.get('matched', 0)}", flush=True)
