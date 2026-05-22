@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import queue
+import re
 import subprocess
 import threading
 import time
@@ -35,6 +37,27 @@ def _format_duration(seconds: float) -> str:
     if hours:
         return f"{hours:02d}:{minutes:02d}:{sec:02d}"
     return f"{minutes:02d}:{sec:02d}"
+
+
+def _duration_to_seconds(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    parts = text.split(":")
+    try:
+        if len(parts) == 2:
+            minutes, seconds = parts
+            return int(minutes) * 60 + int(seconds)
+        if len(parts) == 3:
+            hours, minutes, seconds = parts
+            return int(hours) * 3600 + int(minutes) * 60 + int(seconds)
+        return float(text)
+    except ValueError:
+        return None
 
 
 def _eta_text(elapsed: float, estimated_seconds: Optional[int]) -> str:
@@ -89,6 +112,150 @@ def _reader_thread(stdout, output_queue: "queue.Queue[str]") -> None:
         output_queue.put("__STREAM_CLOSED__")
 
 
+def _parse_key_value_progress(payload: str) -> Dict[str, object]:
+    update: Dict[str, object] = {}
+    for key, value in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)", payload):
+        if "/" in value and key in {"processed", "downloaded"}:
+            done_raw, total_raw = value.split("/", 1)
+            try:
+                update[key] = int(done_raw)
+                update["total"] = int(total_raw)
+            except ValueError:
+                update[key] = value
+            continue
+        try:
+            if "." in value:
+                update[key] = float(value)
+            else:
+                update[key] = int(value)
+        except ValueError:
+            update[key] = value
+    return update
+
+
+def _parse_progress_line(line: str) -> Optional[Dict[str, object]]:
+    """Extracts structured progress from command stdout.
+
+    Supported formats:
+    - PROGRESS_JSON {"stage":"query", "processed":10, "total":20, "eta_seconds":4}
+    - PHOTO_PROGRESS split=query processed=10/20 objects=13 elapsed=00:07 eta=00:04
+    - DOWNLOAD_PROGRESS downloaded=1048576/2097152 speed_bps=123456 eta=00:08
+    """
+
+    stripped = line.strip()
+    if stripped.startswith("PROGRESS_JSON"):
+        raw = stripped.removeprefix("PROGRESS_JSON").strip()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            payload.setdefault("kind", "json")
+            return payload
+        return None
+
+    for prefix in ("PHOTO_PROGRESS", "DOWNLOAD_PROGRESS", "SCAN_PROGRESS", "SETUP_PROGRESS"):
+        if stripped.startswith(prefix):
+            update = _parse_key_value_progress(stripped.removeprefix(prefix).strip())
+            update["kind"] = prefix.lower()
+            if prefix == "PHOTO_PROGRESS" and "split" in update:
+                update["stage"] = str(update.get("split"))
+            return update
+    return None
+
+
+def _progress_from_update(update: Dict[str, object] | None) -> Optional[float]:
+    if not update:
+        return None
+    if "progress" in update:
+        try:
+            progress = float(update["progress"])
+            return max(0.0, min(1.0, progress))
+        except (TypeError, ValueError):
+            return None
+
+    processed = update.get("processed")
+    if processed is None:
+        processed = update.get("downloaded")
+    total = update.get("total")
+    if processed is None or total is None:
+        if update.get("reused_existing"):
+            return 1.0
+        return None
+    try:
+        done = float(processed)
+        total_value = float(total)
+    except (TypeError, ValueError):
+        return None
+    if total_value <= 0:
+        return None
+    return max(0.0, min(1.0, done / total_value))
+
+
+def _eta_from_update(update: Dict[str, object] | None, local_elapsed: float) -> str:
+    if not update:
+        return "оставшееся время: оценивается по ходу выполнения"
+
+    for key in ("eta_seconds", "eta"):
+        if key in update:
+            seconds = _duration_to_seconds(update.get(key))
+            if seconds is not None:
+                return f"примерно осталось: {_format_duration(seconds)}"
+
+    processed = update.get("processed") or update.get("downloaded")
+    total = update.get("total")
+    elapsed = _duration_to_seconds(update.get("elapsed_seconds"))
+    if elapsed is None:
+        elapsed = _duration_to_seconds(update.get("elapsed"))
+    if elapsed is None:
+        elapsed = local_elapsed
+
+    try:
+        done = float(processed) if processed is not None else 0.0
+        total_value = float(total) if total is not None else 0.0
+    except (TypeError, ValueError):
+        return "оставшееся время: оценивается по ходу выполнения"
+
+    if done <= 0 or total_value <= 0 or done >= total_value:
+        return "оставшееся время: оценивается по ходу выполнения"
+    speed = done / max(elapsed, 1e-9)
+    eta = (total_value - done) / max(speed, 1e-9)
+    return f"примерно осталось: {_format_duration(eta)}"
+
+
+def _progress_status_text(step_title: str, update: Dict[str, object] | None, elapsed: float, estimated_seconds: Optional[int]) -> tuple[float, str]:
+    progress = _progress_from_update(update)
+    if progress is None:
+        fraction = _progress_fraction(elapsed, estimated_seconds)
+        return fraction, f"{step_title}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, estimated_seconds)}"
+
+    stage = update.get("stage") or update.get("split") or update.get("kind") or "этап"
+    processed = update.get("processed") or update.get("downloaded")
+    total = update.get("total")
+    objects = update.get("objects")
+    parts = [f"{step_title}: {stage}"]
+    if processed is not None and total is not None:
+        parts.append(f"{processed}/{total}")
+        parts.append(f"{progress * 100:.1f}%")
+    if objects is not None:
+        parts.append(f"объектов: {objects}")
+    parts.append(_eta_from_update(update, elapsed))
+    return progress, " · ".join(parts)
+
+
+def _progress_hint_text(update: Dict[str, object] | None, elapsed: float, estimated_seconds: Optional[int]) -> str:
+    if not update:
+        return _eta_text(elapsed, estimated_seconds)
+    progress = _progress_from_update(update)
+    if progress is not None:
+        processed = update.get("processed") or update.get("downloaded")
+        total = update.get("total")
+        stage = update.get("stage") or update.get("split") or "текущий этап"
+        if processed is not None and total is not None:
+            return f"{stage}: {processed}/{total} ({progress * 100:.1f}%), {_eta_from_update(update, elapsed)}"
+    return _eta_from_update(update, elapsed)
+
+
 def _render_live_state(
     timer_placeholder,
     log_placeholder,
@@ -98,9 +265,10 @@ def _render_live_state(
     process_alive: bool,
     max_log_lines: int,
     hint: str,
+    progress_update: Dict[str, object] | None = None,
 ) -> None:
     elapsed = time.perf_counter() - start
-    eta = _eta_text(elapsed, estimated_seconds)
+    eta = _progress_hint_text(progress_update, elapsed, estimated_seconds)
     timer_placeholder.info(f"⏱ Прошло: **{_format_duration(elapsed)}** · {eta}. {hint}")
     visible = "\n".join(log_lines[-max_log_lines:])
     if not visible and process_alive:
@@ -176,11 +344,9 @@ def run_long_task_with_callback(
                 break
 
         elapsed = time.perf_counter() - start
-        progress.progress(
-            _progress_fraction(elapsed, estimated_seconds),
-            text=f"{progress_text}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, estimated_seconds)}",
-        )
-        timer_placeholder.info(f"⏱ Прошло: **{_format_duration(elapsed)}** · {_eta_text(elapsed, estimated_seconds)}. {hint}")
+        fraction, text = _progress_status_text(progress_text, latest_update, elapsed, estimated_seconds)
+        progress.progress(fraction, text=text)
+        timer_placeholder.info(f"⏱ Прошло: **{_format_duration(elapsed)}** · {_progress_hint_text(latest_update, elapsed, estimated_seconds)}. {hint}")
         status_placeholder.info(status_text)
         details_placeholder.code(_progress_details_text(latest_update, "Ожидание первых данных прогресса..."), language="text")
         time.sleep(1.0)
@@ -220,6 +386,7 @@ def run_command_with_live_log(
     log_lines: List[str] = []
     start = time.perf_counter()
     output_queue: "queue.Queue[str]" = queue.Queue()
+    latest_progress_update: Dict[str, object] | None = None
 
     try:
         process = subprocess.Popen(
@@ -255,16 +422,17 @@ def run_command_with_live_log(
                 continue
             if line:
                 log_lines.append(line)
+                progress_update = _parse_progress_line(line)
+                if progress_update is not None:
+                    latest_progress_update = progress_update
                 changed = True
 
         now = time.perf_counter()
         elapsed = now - start
         if changed or now - last_render >= 1.0:
             last_render = now
-            step_progress_placeholder.progress(
-                _progress_fraction(elapsed, step.estimated_seconds),
-                text=f"{step.title}: прошло {_format_duration(elapsed)}, {_eta_text(elapsed, step.estimated_seconds)}",
-            )
+            fraction, text = _progress_status_text(step.title, latest_progress_update, elapsed, step.estimated_seconds)
+            step_progress_placeholder.progress(fraction, text=text)
             _render_live_state(
                 timer_placeholder=timer_placeholder,
                 log_placeholder=log_placeholder,
@@ -274,6 +442,7 @@ def run_command_with_live_log(
                 process_alive=process.poll() is None,
                 max_log_lines=max_log_lines,
                 hint="Если лог не меняется несколько минут, это всё ещё может быть нормальной установкой тяжёлых пакетов.",
+                progress_update=latest_progress_update,
             )
 
         time.sleep(0.2)
