@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+import pandas as pd
 import streamlit as st
 
 from control_panel import save_config
@@ -17,6 +19,7 @@ PHOTO_MODEL_LABELS = {
     "rtdetr": "RT-DETR-L",
     "frcnn": "Faster R-CNN",
 }
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _photo_weight_path(config: Dict[str, Any], model: str) -> str:
@@ -33,6 +36,38 @@ def _shuffle_implied_by_paths(full: Dict[str, Any]) -> bool:
         str(full.get("gallery_csv", "")),
     ]
     return any("shuffle" in path.lower() or "seed" in path.lower() for path in paths)
+
+
+def _safe_path(raw: str | Path) -> Path:
+    return Path(str(raw).strip().strip('"'))
+
+
+def _read_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _read_text(path: Path, max_chars: int = 20_000) -> str:
+    if not path.exists():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    if len(text) > max_chars:
+        return text[:max_chars] + "\n\n...текст сокращён для отображения в панели..."
+    return text
+
+
+def _existing_images(path: Path, limit: int) -> List[Path]:
+    if not path.exists():
+        return []
+    images = [p for p in sorted(path.iterdir()) if p.is_file() and p.suffix.lower() in IMAGE_EXTS]
+    return images[: max(0, limit)]
 
 
 def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
@@ -154,6 +189,118 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             st.success("Настройки полного эксперимента сохранены.")
 
 
+def _render_summary_cards(summary: Dict[str, Any]) -> None:
+    if not summary:
+        st.warning("Сводка full_experiment_summary.json пока не найдена. Сначала запусти полный эксперимент.")
+        return
+
+    st.markdown("#### Сводка эксперимента")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Gallery images", int(summary.get("gallery_images_count", 0) or 0))
+    c2.metric("Query images", int(summary.get("query_images_count", 0) or 0))
+    c3.metric("Query objects", int(summary.get("query_objects_count", 0) or 0))
+    c4.metric("Demo SKU", int(summary.get("created_demo_sku_count", 0) or 0))
+
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Matched", int(summary.get("matched", 0) or 0))
+    c6.metric("Unknown", int(summary.get("unknown", 0) or 0))
+    c7.metric("Matched rate", f"{float(summary.get('matched_rate', 0.0) or 0.0):.4f}")
+    c8.metric("Avg similarity", f"{float(summary.get('avg_similarity', 0.0) or 0.0):.4f}")
+
+    st.caption("Matched rate — это доля сопоставленных объектов с demo SKU-галереей, а не accuracy по реальным SKU-классам.")
+
+
+def _render_csv_table(path: Path, title: str, max_rows: int = 300) -> None:
+    if not path.exists():
+        st.info(f"Файл не найден: `{path}`")
+        return
+    try:
+        df = pd.read_csv(path)
+    except Exception as exc:
+        st.warning(f"Не удалось прочитать `{path}`: {exc}")
+        return
+    st.markdown(f"#### {title}")
+    st.dataframe(df.head(max_rows), use_container_width=True, hide_index=True)
+    st.caption(f"Файл: `{path}`")
+
+
+def _render_visualized_examples(visualized_dir: Path) -> None:
+    st.markdown("#### Примеры визуализации идентификации")
+    if not visualized_dir.exists():
+        st.info(f"Папка visualized пока не найдена: `{visualized_dir}`")
+        return
+
+    limit = st.slider("Сколько примеров показать", 1, 24, 8, key="full_photo_visualized_preview_limit")
+    images = _existing_images(visualized_dir, limit)
+    if not images:
+        st.info("В папке visualized нет изображений для предпросмотра.")
+        return
+
+    cols = st.columns(2)
+    for index, image_path in enumerate(images):
+        with cols[index % 2]:
+            st.image(str(image_path), caption=image_path.name, use_container_width=True)
+
+
+def _render_full_photo_results(config: Dict[str, Any]) -> None:
+    full = config.setdefault("full_photo_identification", {})
+    out_dir = _safe_path(str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")))
+
+    with st.expander("Результаты последнего полного эксперимента", expanded=True):
+        st.caption(f"Папка результатов: `{out_dir}`")
+        reports_dir = out_dir / "05_reports"
+        demo_dir = out_dir / "02_demo_gallery"
+        identification_dir = out_dir / "04_identification"
+        visualized_dir = identification_dir / "visualized"
+
+        summary_json = reports_dir / "full_experiment_summary.json"
+        summary_md = reports_dir / "full_experiment_summary.md"
+        threshold_csv = reports_dir / "threshold_analysis.csv"
+        threshold_md = reports_dir / "threshold_analysis.md"
+        threshold_plot_png = reports_dir / "threshold_analysis_plot.png"
+        demo_report_md = demo_dir / "demo_sku_gallery_report.md"
+        demo_items_csv = demo_dir / "demo_sku_gallery_items.csv"
+        identification_csv = identification_dir / "identification_results.csv"
+
+        summary = _read_json(summary_json)
+        _render_summary_cards(summary)
+
+        tabs = st.tabs(["Threshold", "Demo gallery", "Identification", "Visualized", "Markdown reports"])
+        with tabs[0]:
+            if threshold_plot_png.exists():
+                st.image(str(threshold_plot_png), caption="Threshold analysis", use_container_width=True)
+            else:
+                st.info(f"График threshold analysis пока не найден: `{threshold_plot_png}`")
+            _render_csv_table(threshold_csv, "Таблица threshold analysis")
+
+        with tabs[1]:
+            demo_report = _read_text(demo_report_md)
+            if demo_report:
+                st.markdown(demo_report)
+            else:
+                st.info(f"Отчёт demo gallery пока не найден: `{demo_report_md}`")
+            _render_csv_table(demo_items_csv, "Demo SKU refs", max_rows=500)
+
+        with tabs[2]:
+            _render_csv_table(identification_csv, "Результаты идентификации", max_rows=500)
+
+        with tabs[3]:
+            _render_visualized_examples(visualized_dir)
+
+        with tabs[4]:
+            for title, path in [
+                ("Full experiment summary", summary_md),
+                ("Threshold analysis", threshold_md),
+                ("Demo SKU gallery report", demo_report_md),
+            ]:
+                with st.expander(title, expanded=False):
+                    text = _read_text(path)
+                    if text:
+                        st.markdown(text)
+                    else:
+                        st.info(f"Файл не найден: `{path}`")
+
+
 def page_full_photo_identification(config: Dict[str, Any]) -> None:
     st.subheader("Полная фото-идентификация gallery/query")
     st.caption("Полноценный сценарий для ВКР: часть изображений формирует demo SKU-галерею, а другая часть используется как query для независимой идентификации.")
@@ -165,9 +312,9 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
             save_config(config)
             cmd = python_command(config, "run_full_photo_identification_pipeline.py", _build_full_photo_args(config))
             run_steps_with_progress(
-                [CommandStep(title="Полная фото-идентификация gallery/query", cmd=cmd, cwd=ROOT, description="Идёт split на gallery/query, инференс, сборка demo SKU-галереи и идентификация query-объектов. В логе должны появляться строки PHOTO_PROGRESS.", estimated_seconds=None)],
+                [CommandStep(title="Полная фото-идентификация gallery/query", cmd=cmd, cwd=ROOT, description="Идёт split на gallery/query, инференс, сборка demo SKU-галереи и идентификация query-объектов. В логе должны появляться строки PHOTO_PROGRESS и PROGRESS_JSON.", estimated_seconds=None)],
                 title="Полная фото-идентификация",
-                success_message="Полный эксперимент завершён. Проверь 00_manifest, 04_identification и 05_reports/full_experiment_summary.md.",
+                success_message="Полный эксперимент завершён. Ниже можно посмотреть summary, threshold-график, таблицы и визуализации.",
                 failure_message="Ошибка полного эксперимента фото-идентификации",
             )
     with c2:
@@ -175,3 +322,5 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
         out_dir = str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification"))
         st.info(f"Результаты будут сохранены в: `{out_dir}`")
         st.caption(f"Режим запуска: {'WSL .venv_wsl' if use_wsl_runtime(config) else 'Windows/local .venv'}")
+
+    _render_full_photo_results(config)
