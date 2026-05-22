@@ -137,6 +137,33 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
     return args
 
 
+def _build_existing_photo_args(config: Dict[str, Any]) -> List[str]:
+    full = config.setdefault("full_photo_identification", {})
+    args: List[str] = [
+        "--out-dir", str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")),
+        "--gallery-dir", str(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")),
+        "--gallery-csv", str(full.get("gallery_csv", "D:/1Diplom/sku_gallery_full/gallery.csv")),
+        "--threshold", str(full.get("threshold", 0.65)),
+        "--thresholds", str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
+        "--top-k", str(full.get("top_k", 3)),
+        "--padding", str(full.get("padding", 0.05)),
+        "--visualize-limit", str(full.get("visualize_limit", 100)),
+        "--progress-every", str(full.get("progress_every", 10)),
+    ]
+    query_predictions_json = str(full.get("query_predictions_json", "")).strip()
+    if query_predictions_json:
+        args.extend(["--query-predictions-json", query_predictions_json])
+    gt_csv = str(full.get("gt_csv", "")).strip()
+    if gt_csv:
+        args.extend(["--gt-csv", gt_csv])
+    cache_dir = str(full.get("feature_cache_dir", "")).strip()
+    if cache_dir:
+        args.extend(["--cache-dir", cache_dir])
+    if bool(full.get("bbox_only", False)):
+        args.append("--bbox-only")
+    return args
+
+
 def _render_full_photo_settings(config: Dict[str, Any]) -> None:
     full = config.setdefault("full_photo_identification", {})
     with st.expander("Настройки полного эксперимента", expanded=False):
@@ -183,6 +210,20 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             full["keep_old_demo"] = st.checkbox("Не удалять старые sku_demo_*", value=bool(full.get("keep_old_demo", False)), key="full_photo_keep_old")
             full["bbox_only"] = st.checkbox("Не использовать masks", value=bool(full.get("bbox_only", False)), key="full_photo_bbox_only")
             full["no_visualize_inference"] = st.checkbox("Не сохранять визуализации инференса", value=bool(full.get("no_visualize_inference", False)), key="full_photo_no_visualize_inference")
+
+        with st.expander("Дополнительно для быстрого пересчёта идентификации", expanded=False):
+            full["query_predictions_json"] = st.text_input(
+                "Query predictions.json, опционально",
+                value=str(full.get("query_predictions_json", "")),
+                key="full_photo_query_predictions_json",
+                help="Если пусто, будет использован <out_dir>/03_query_inference/predictions.json",
+            )
+            full["feature_cache_dir"] = st.text_input(
+                "Feature cache dir, опционально",
+                value=str(full.get("feature_cache_dir", "")),
+                key="full_photo_feature_cache_dir",
+                help="Если пусто, будет использован <out_dir>/04_identification/feature_cache",
+            )
 
         if st.button("Сохранить настройки полного эксперимента", use_container_width=True, key="save_full_photo_settings"):
             save_config(config)
@@ -261,6 +302,7 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
         demo_report_md = demo_dir / "demo_sku_gallery_report.md"
         demo_items_csv = demo_dir / "demo_sku_gallery_items.csv"
         identification_csv = identification_dir / "identification_results.csv"
+        existing_summary_md = reports_dir / "existing_identification_summary.md"
 
         summary = _read_json(summary_json)
         _render_summary_cards(summary)
@@ -290,6 +332,7 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
         with tabs[4]:
             for title, path in [
                 ("Full experiment summary", summary_md),
+                ("Existing identification rerun", existing_summary_md),
                 ("Threshold analysis", threshold_md),
                 ("Demo SKU gallery report", demo_report_md),
             ]:
@@ -308,7 +351,7 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Тест full pipeline на текущем limit", use_container_width=True, key="run_full_photo_identification"):
+        if st.button("Запустить полный pipeline", use_container_width=True, key="run_full_photo_identification"):
             save_config(config)
             cmd = python_command(config, "run_full_photo_identification_pipeline.py", _build_full_photo_args(config))
             run_steps_with_progress(
@@ -317,10 +360,20 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
                 success_message="Полный эксперимент завершён. Ниже можно посмотреть summary, threshold-график, таблицы и визуализации.",
                 failure_message="Ошибка полного эксперимента фото-идентификации",
             )
+        if st.button("Быстро пересчитать только идентификацию", use_container_width=True, key="rerun_existing_photo_identification"):
+            save_config(config)
+            cmd = python_command(config, "run_existing_photo_identification.py", _build_existing_photo_args(config))
+            run_steps_with_progress(
+                [CommandStep(title="Быстрый пересчёт идентификации", cmd=cmd, cwd=ROOT, description="Переиспользуются существующие query predictions.json, gallery.csv и feature cache. YOLO-инференс заново не запускается.", estimated_seconds=None)],
+                title="Быстрый пересчёт идентификации",
+                success_message="Идентификация и threshold analysis пересчитаны. Ниже можно посмотреть обновлённые таблицы, графики и визуализации.",
+                failure_message="Ошибка быстрого пересчёта идентификации",
+            )
     with c2:
         full = config.setdefault("full_photo_identification", {})
         out_dir = str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification"))
         st.info(f"Результаты будут сохранены в: `{out_dir}`")
         st.caption(f"Режим запуска: {'WSL .venv_wsl' if use_wsl_runtime(config) else 'Windows/local .venv'}")
+        st.caption("Для изменения `threshold`, `thresholds`, `top_k` и визуализаций можно использовать быстрый пересчёт. Для изменения `dedup_threshold`, `max_refs_per_sku` или `max_sku` нужен полный pipeline.")
 
     _render_full_photo_results(config)
