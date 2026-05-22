@@ -26,6 +26,15 @@ def _photo_weight_path(config: Dict[str, Any], model: str) -> str:
     return str(weights.get(model, weights.get("yolo", "")))
 
 
+def _shuffle_implied_by_paths(full: Dict[str, Any]) -> bool:
+    paths = [
+        str(full.get("out_dir", "")),
+        str(full.get("gallery_dir", "")),
+        str(full.get("gallery_csv", "")),
+    ]
+    return any("shuffle" in path.lower() or "seed" in path.lower() for path in paths)
+
+
 def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
     runtime = config.setdefault("runtime", {})
     full = config.setdefault("full_photo_identification", {})
@@ -70,9 +79,12 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
     gt_csv = str(full.get("gt_csv", "")).strip()
     if gt_csv:
         args.extend(["--gt-csv", gt_csv])
-    if bool(full.get("shuffle", False)):
+
+    shuffle_enabled = bool(full.get("shuffle", False)) or _shuffle_implied_by_paths(full)
+    if shuffle_enabled:
         args.append("--shuffle")
         args.extend(["--seed", str(full.get("seed", 42))])
+
     if bool(full.get("bbox_only", False)):
         args.append("--bbox-only")
     if bool(full.get("keep_old_demo", False)):
@@ -153,13 +165,16 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             full["min_score"] = st.slider("Min score для gallery crop", 0.0, 1.0, float(full.get("min_score", 0.35)), 0.01, key="full_photo_min_score")
             full["min_width"] = st.number_input("Min crop width", 1, 5000, int(full.get("min_width", 20)), key="full_photo_min_width")
             full["min_height"] = st.number_input("Min crop height", 1, 5000, int(full.get("min_height", 20)), key="full_photo_min_height")
+            implied_shuffle = _shuffle_implied_by_paths(full)
             full["shuffle"] = st.checkbox(
                 "Случайная воспроизводимая выборка",
-                value=bool(full.get("shuffle", False)),
+                value=bool(full.get("shuffle", False)) or implied_shuffle,
                 key="full_photo_shuffle",
                 help="Перемешивает список изображений перед split gallery/query. Для ВКР лучше включать и фиксировать seed.",
             )
             full["seed"] = st.number_input("Seed для случайной выборки", 0, 1_000_000, int(full.get("seed", 42)), key="full_photo_seed")
+            if implied_shuffle and not bool(full.get("shuffle", False)):
+                st.warning("В названии папок есть `shuffle/seed`, поэтому команда будет запущена с `--shuffle --seed`, даже если настройка не была сохранена ранее.")
         with c4:
             full["padding"] = st.slider("Crop padding", 0.0, 0.5, float(full.get("padding", 0.05)), 0.01, key="full_photo_padding")
             full["prefix"] = st.text_input("SKU prefix", value=str(full.get("prefix", "sku_demo_")), key="full_photo_prefix")
