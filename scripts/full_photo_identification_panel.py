@@ -59,6 +59,8 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
         "--min-height", str(full.get("min_height", 20)),
         "--padding", str(full.get("padding", 0.05)),
         "--prefix", str(full.get("prefix", "sku_demo_")),
+        "--dedup-threshold", str(full.get("dedup_threshold", 0.86)),
+        "--max-refs-per-sku", str(full.get("max_refs_per_sku", 3)),
         "--threshold", str(full.get("threshold", 0.65)),
         "--thresholds", str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
         "--top-k", str(full.get("top_k", 3)),
@@ -85,6 +87,8 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
         args.append("--shuffle")
         args.extend(["--seed", str(full.get("seed", 42))])
 
+    if not bool(full.get("deduplicate_gallery", True)):
+        args.append("--no-deduplicate-gallery")
     if bool(full.get("bbox_only", False)):
         args.append("--bbox-only")
     if bool(full.get("keep_old_demo", False)):
@@ -103,57 +107,22 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
     with st.expander("Настройки полного эксперимента", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            full["images_dir"] = st.text_input(
-                "Полная папка изображений",
-                value=str(full.get("images_dir", "D:/1Diplom/data/raw/d2s_full/images")),
-                key="full_photo_images_dir",
-            )
-            full["gallery_images_dir"] = st.text_input(
-                "Отдельная gallery-папка, опционально",
-                value=str(full.get("gallery_images_dir", "")),
-                key="full_photo_gallery_images_dir",
-            )
-            full["query_images_dir"] = st.text_input(
-                "Отдельная query-папка, опционально",
-                value=str(full.get("query_images_dir", "")),
-                key="full_photo_query_images_dir",
-            )
-            full["out_dir"] = st.text_input(
-                "Папка результатов полного эксперимента",
-                value=str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")),
-                key="full_photo_out_dir",
-            )
-            full["gallery_dir"] = st.text_input(
-                "Папка full SKU-галереи",
-                value=str(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")),
-                key="full_photo_gallery_dir",
-            )
-            full["gallery_csv"] = st.text_input(
-                "Full gallery.csv",
-                value=str(full.get("gallery_csv", "D:/1Diplom/sku_gallery_full/gallery.csv")),
-                key="full_photo_gallery_csv",
-            )
+            full["images_dir"] = st.text_input("Полная папка изображений", value=str(full.get("images_dir", "D:/1Diplom/data/raw/d2s_full/images")), key="full_photo_images_dir")
+            full["gallery_images_dir"] = st.text_input("Отдельная gallery-папка, опционально", value=str(full.get("gallery_images_dir", "")), key="full_photo_gallery_images_dir")
+            full["query_images_dir"] = st.text_input("Отдельная query-папка, опционально", value=str(full.get("query_images_dir", "")), key="full_photo_query_images_dir")
+            full["out_dir"] = st.text_input("Папка результатов полного эксперимента", value=str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")), key="full_photo_out_dir")
+            full["gallery_dir"] = st.text_input("Папка full SKU-галереи", value=str(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")), key="full_photo_gallery_dir")
+            full["gallery_csv"] = st.text_input("Full gallery.csv", value=str(full.get("gallery_csv", "D:/1Diplom/sku_gallery_full/gallery.csv")), key="full_photo_gallery_csv")
             model_options = list(PHOTO_MODEL_LABELS.keys())
             current_model = str(full.get("model", "yolo"))
-            full["model"] = st.selectbox(
-                "Модель полного эксперимента",
-                model_options,
-                index=model_options.index(current_model) if current_model in model_options else 0,
-                format_func=lambda x: PHOTO_MODEL_LABELS[x],
-                key="full_photo_model",
-            )
+            full["model"] = st.selectbox("Модель полного эксперимента", model_options, index=model_options.index(current_model) if current_model in model_options else 0, format_func=lambda x: PHOTO_MODEL_LABELS[x], key="full_photo_model")
         with c2:
             full["limit"] = st.number_input("Общий limit, 0 — все", 0, 1_000_000, int(full.get("limit", 100)), key="full_photo_limit")
             full["gallery_count"] = st.number_input("Gallery images", 1, 1_000_000, int(full.get("gallery_count", 30)), key="full_photo_gallery_count")
             full["query_count"] = st.number_input("Query images, 0 — все оставшиеся", 0, 1_000_000, int(full.get("query_count", 70)), key="full_photo_query_count")
             full["max_sku"] = st.number_input("Максимум demo SKU", 1, 10_000, int(full.get("max_sku", 50)), key="full_photo_max_sku")
             full["threshold"] = st.slider("Порог SKU matching", 0.0, 1.0, float(full.get("threshold", 0.65)), 0.01, key="full_photo_threshold")
-            full["thresholds"] = st.text_input(
-                "Пороги для threshold analysis",
-                value=str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
-                key="full_photo_thresholds",
-                help="Через запятую. Эти значения попадут в 05_reports/threshold_analysis.csv и .md",
-            )
+            full["thresholds"] = st.text_input("Пороги для threshold analysis", value=str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")), key="full_photo_thresholds", help="Через запятую. Эти значения попадут в 05_reports/threshold_analysis.csv и .md")
             full["top_k"] = st.number_input("Top-k", 1, 50, int(full.get("top_k", 3)), key="full_photo_top_k")
             full["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 10_000, int(full.get("visualize_limit", 100)), key="full_photo_visualize_limit")
             full["progress_every"] = st.number_input("Прогресс каждые N фото", 1, 10_000, int(full.get("progress_every", 10)), key="full_photo_progress_every")
@@ -166,16 +135,14 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             full["min_width"] = st.number_input("Min crop width", 1, 5000, int(full.get("min_width", 20)), key="full_photo_min_width")
             full["min_height"] = st.number_input("Min crop height", 1, 5000, int(full.get("min_height", 20)), key="full_photo_min_height")
             implied_shuffle = _shuffle_implied_by_paths(full)
-            full["shuffle"] = st.checkbox(
-                "Случайная воспроизводимая выборка",
-                value=bool(full.get("shuffle", False)) or implied_shuffle,
-                key="full_photo_shuffle",
-                help="Перемешивает список изображений перед split gallery/query. Для ВКР лучше включать и фиксировать seed.",
-            )
+            full["shuffle"] = st.checkbox("Случайная воспроизводимая выборка", value=bool(full.get("shuffle", False)) or implied_shuffle, key="full_photo_shuffle", help="Перемешивает список изображений перед split gallery/query. Для ВКР лучше включать и фиксировать seed.")
             full["seed"] = st.number_input("Seed для случайной выборки", 0, 1_000_000, int(full.get("seed", 42)), key="full_photo_seed")
             if implied_shuffle and not bool(full.get("shuffle", False)):
                 st.warning("В названии папок есть `shuffle/seed`, поэтому команда будет запущена с `--shuffle --seed`, даже если настройка не была сохранена ранее.")
         with c4:
+            full["deduplicate_gallery"] = st.checkbox("Объединять похожие crop-ы в один demo SKU", value=bool(full.get("deduplicate_gallery", True)), key="full_photo_deduplicate_gallery", help="Уменьшает случаи, когда один реальный товар получает разные SKU-XXX.")
+            full["dedup_threshold"] = st.slider("Порог объединения crop-ов в gallery", 0.0, 1.0, float(full.get("dedup_threshold", 0.86)), 0.01, key="full_photo_dedup_threshold")
+            full["max_refs_per_sku"] = st.number_input("Максимум эталонов на один demo SKU", 1, 20, int(full.get("max_refs_per_sku", 3)), key="full_photo_max_refs_per_sku")
             full["padding"] = st.slider("Crop padding", 0.0, 0.5, float(full.get("padding", 0.05)), 0.01, key="full_photo_padding")
             full["prefix"] = st.text_input("SKU prefix", value=str(full.get("prefix", "sku_demo_")), key="full_photo_prefix")
             full["keep_old_demo"] = st.checkbox("Не удалять старые sku_demo_*", value=bool(full.get("keep_old_demo", False)), key="full_photo_keep_old")
@@ -189,10 +156,7 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
 
 def page_full_photo_identification(config: Dict[str, Any]) -> None:
     st.subheader("Полная фото-идентификация gallery/query")
-    st.caption(
-        "Полноценный сценарий для ВКР: часть изображений формирует demo SKU-галерею, "
-        "а другая часть используется как query для независимой идентификации."
-    )
+    st.caption("Полноценный сценарий для ВКР: часть изображений формирует demo SKU-галерею, а другая часть используется как query для независимой идентификации.")
     _render_full_photo_settings(config)
 
     c1, c2 = st.columns(2)
@@ -201,15 +165,7 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
             save_config(config)
             cmd = python_command(config, "run_full_photo_identification_pipeline.py", _build_full_photo_args(config))
             run_steps_with_progress(
-                [
-                    CommandStep(
-                        title="Полная фото-идентификация gallery/query",
-                        cmd=cmd,
-                        cwd=ROOT,
-                        description="Идёт split на gallery/query, инференс, сборка demo SKU-галереи и идентификация query-объектов. В логе должны появляться строки PHOTO_PROGRESS.",
-                        estimated_seconds=None,
-                    )
-                ],
+                [CommandStep(title="Полная фото-идентификация gallery/query", cmd=cmd, cwd=ROOT, description="Идёт split на gallery/query, инференс, сборка demo SKU-галереи и идентификация query-объектов. В логе должны появляться строки PHOTO_PROGRESS.", estimated_seconds=None)],
                 title="Полная фото-идентификация",
                 success_message="Полный эксперимент завершён. Проверь 00_manifest, 04_identification и 05_reports/full_experiment_summary.md.",
                 failure_message="Ошибка полного эксперимента фото-идентификации",
