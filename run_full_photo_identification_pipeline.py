@@ -17,6 +17,7 @@ from src.identification.metrics import evaluate_with_ground_truth, save_identifi
 from src.identification.report import save_identification_outputs
 from src.identification.threshold_analysis import save_threshold_analysis
 from src.identification.visualization import visualize_identification_results
+from src.identification.vkr_report import generate_vkr_experiment_report
 from src.inference.prediction import ImagePrediction, save_predictions_json
 from src.visualization.draw_boxes import draw_prediction
 
@@ -520,6 +521,7 @@ def main() -> None:
         threshold=args.threshold,
         top_k=args.top_k,
         padding_ratio=args.padding,
+        progress_every=args.progress_every,
     )
     metrics = evaluate_with_ground_truth(results, gt_csv=args.gt_csv)
     save_identification_metrics(metrics, out_dir=identification_dir)
@@ -551,12 +553,13 @@ def main() -> None:
         elapsed_seconds=time.perf_counter() - started,
         threshold_outputs=threshold_outputs,
     )
+    vkr_outputs = generate_vkr_experiment_report(out_dir)
 
     print("=== Done ===", flush=True)
     print(f"Output: {out_dir}", flush=True)
     print(f"Gallery CSV: {args.gallery_csv}", flush=True)
     print(f"Identification results: {identification_dir}", flush=True)
-    for name, path in {**threshold_outputs, **summary_outputs}.items():
+    for name, path in {**threshold_outputs, **summary_outputs, **vkr_outputs}.items():
         print(f"Report {name}: {path}", flush=True)
     print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
     print(f"Matched: {metrics.get('matched', 0)}", flush=True)
