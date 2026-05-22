@@ -87,6 +87,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--padding", type=float, default=0.05)
     parser.add_argument("--prefix", default="sku_demo_")
     parser.add_argument("--keep-old-demo", action="store_true")
+    parser.add_argument("--no-deduplicate-gallery", action="store_true", help="Disable merging visually similar demo gallery crops into one SKU")
+    parser.add_argument("--dedup-threshold", type=float, default=0.86, help="Similarity threshold for merging crops into one demo SKU")
+    parser.add_argument("--max-refs-per-sku", type=int, default=3, help="Maximum reference images per demo SKU after deduplication")
 
     parser.add_argument("--threshold", type=float, default=0.65)
     parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")
@@ -245,6 +248,8 @@ def _load_partial(partial_jsonl: Path) -> Dict[str, ImagePrediction]:
             masks = raw.get("masks", []) or []
             track_ids = raw.get("track_ids", []) or []
             for i, box in enumerate(boxes):
+                from src.inference.prediction import DetectionPrediction
+
                 detections.append(
                     DetectionPrediction(
                         box=box,
@@ -406,6 +411,9 @@ def _save_full_summary(
             "min_width": args.min_width,
             "min_height": args.min_height,
             "padding": args.padding,
+            "deduplicate_gallery": not args.no_deduplicate_gallery,
+            "dedup_threshold": args.dedup_threshold,
+            "max_refs_per_sku": args.max_refs_per_sku,
             "resume": args.resume,
             "skip_existing": args.skip_existing,
         },
@@ -493,6 +501,9 @@ def main() -> None:
         padding_ratio=args.padding,
         prefix=args.prefix,
         clear_old_demo=not args.keep_old_demo,
+        deduplicate=not args.no_deduplicate_gallery,
+        dedup_threshold=args.dedup_threshold,
+        max_refs_per_sku=args.max_refs_per_sku,
     )
 
     print("Step 3/5: query inference", flush=True)
