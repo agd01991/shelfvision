@@ -51,6 +51,7 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
         "--padding", str(full.get("padding", 0.05)),
         "--prefix", str(full.get("prefix", "sku_demo_")),
         "--threshold", str(full.get("threshold", 0.65)),
+        "--thresholds", str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
         "--top-k", str(full.get("top_k", 3)),
         "--visualize-limit", str(full.get("visualize_limit", 100)),
         "--progress-every", str(full.get("progress_every", 10)),
@@ -69,6 +70,9 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
     gt_csv = str(full.get("gt_csv", "")).strip()
     if gt_csv:
         args.extend(["--gt-csv", gt_csv])
+    if bool(full.get("shuffle", False)):
+        args.append("--shuffle")
+        args.extend(["--seed", str(full.get("seed", 42))])
     if bool(full.get("bbox_only", False)):
         args.append("--bbox-only")
     if bool(full.get("keep_old_demo", False)):
@@ -132,6 +136,12 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             full["query_count"] = st.number_input("Query images, 0 — все оставшиеся", 0, 1_000_000, int(full.get("query_count", 70)), key="full_photo_query_count")
             full["max_sku"] = st.number_input("Максимум demo SKU", 1, 10_000, int(full.get("max_sku", 50)), key="full_photo_max_sku")
             full["threshold"] = st.slider("Порог SKU matching", 0.0, 1.0, float(full.get("threshold", 0.65)), 0.01, key="full_photo_threshold")
+            full["thresholds"] = st.text_input(
+                "Пороги для threshold analysis",
+                value=str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
+                key="full_photo_thresholds",
+                help="Через запятую. Эти значения попадут в 05_reports/threshold_analysis.csv и .md",
+            )
             full["top_k"] = st.number_input("Top-k", 1, 50, int(full.get("top_k", 3)), key="full_photo_top_k")
             full["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 10_000, int(full.get("visualize_limit", 100)), key="full_photo_visualize_limit")
             full["progress_every"] = st.number_input("Прогресс каждые N фото", 1, 10_000, int(full.get("progress_every", 10)), key="full_photo_progress_every")
@@ -143,6 +153,13 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             full["min_score"] = st.slider("Min score для gallery crop", 0.0, 1.0, float(full.get("min_score", 0.35)), 0.01, key="full_photo_min_score")
             full["min_width"] = st.number_input("Min crop width", 1, 5000, int(full.get("min_width", 20)), key="full_photo_min_width")
             full["min_height"] = st.number_input("Min crop height", 1, 5000, int(full.get("min_height", 20)), key="full_photo_min_height")
+            full["shuffle"] = st.checkbox(
+                "Случайная воспроизводимая выборка",
+                value=bool(full.get("shuffle", False)),
+                key="full_photo_shuffle",
+                help="Перемешивает список изображений перед split gallery/query. Для ВКР лучше включать и фиксировать seed.",
+            )
+            full["seed"] = st.number_input("Seed для случайной выборки", 0, 1_000_000, int(full.get("seed", 42)), key="full_photo_seed")
         with c4:
             full["padding"] = st.slider("Crop padding", 0.0, 0.5, float(full.get("padding", 0.05)), 0.01, key="full_photo_padding")
             full["prefix"] = st.text_input("SKU prefix", value=str(full.get("prefix", "sku_demo_")), key="full_photo_prefix")
