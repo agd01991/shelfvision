@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from .crop_extractor import CropRecord, extract_crops_from_predictions_file
+from .feature_cache import VisualFeatureCache
 from .feature_extractor import VisualFeatureExtractor, cosine_similarity
 from .sku_gallery import SkuGalleryItem, load_gallery
 
@@ -66,14 +67,23 @@ def _progress(stage: str, processed: int, total: int, started: float, **extra: o
 
 def _build_gallery_features(
     items: List[SkuGalleryItem],
-    extractor: VisualFeatureExtractor,
+    cache: VisualFeatureCache,
+    progress_every: int = 10,
 ) -> List[tuple[SkuGalleryItem, np.ndarray]]:
     features: List[tuple[SkuGalleryItem, np.ndarray]] = []
-    for item in items:
+    total = len(items)
+    started = time.perf_counter()
+    _progress("gallery_features", 0, total, started)
+
+    for index, item in enumerate(items, start=1):
         try:
-            features.append((item, extractor.extract_from_path(item.image_path)))
+            features.append((item, cache.get_or_extract(item.image_path)))
         except FileNotFoundError:
-            continue
+            pass
+
+        if index == 1 or index % max(1, progress_every) == 0 or index == total:
+            _progress("gallery_features", index, total, started, features=len(features))
+
     if not features:
         raise FileNotFoundError("Не найдено ни одного доступного изображения в SKU-галерее")
     return features
@@ -82,11 +92,11 @@ def _build_gallery_features(
 def _match_one_crop(
     crop: CropRecord,
     gallery_features: List[tuple[SkuGalleryItem, np.ndarray]],
-    extractor: VisualFeatureExtractor,
+    cache: VisualFeatureCache,
     threshold: float,
     top_k: int,
 ) -> IdentificationResult:
-    crop_feature = extractor.extract_from_path(crop.crop_path)
+    crop_feature = cache.get_or_extract(crop.crop_path)
     candidates: List[SkuCandidate] = []
     for item, gallery_feature in gallery_features:
         score = cosine_similarity(crop_feature, gallery_feature)
@@ -150,6 +160,7 @@ def run_sku_matching(
     top_k: int = 3,
     padding_ratio: float = 0.05,
     progress_every: int = 10,
+    cache_dir: str | Path | None = None,
 ) -> List[IdentificationResult]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -167,20 +178,18 @@ def run_sku_matching(
 
     gallery_items = load_gallery(gallery_csv=gallery_csv, gallery_dir=gallery_dir)
     extractor = VisualFeatureExtractor()
-    gallery_started = time.perf_counter()
-    _progress("gallery_features", 0, len(gallery_items), gallery_started)
-    gallery_features = _build_gallery_features(gallery_items, extractor)
-    _progress("gallery_features", len(gallery_items), len(gallery_items), gallery_started, features=len(gallery_features))
+    cache = VisualFeatureCache(cache_dir or (out_dir / "feature_cache"), extractor)
+    gallery_features = _build_gallery_features(gallery_items, cache, progress_every=progress_every)
 
     results: List[IdentificationResult] = []
     total = len(crops)
     started = time.perf_counter()
-    _progress("identify", 0, total, started, objects=0)
+    _progress("identify", 0, total, started, objects=0, cache_dir=str(cache.cache_dir))
     for index, crop in enumerate(crops, start=1):
         result = _match_one_crop(
             crop=crop,
             gallery_features=gallery_features,
-            extractor=extractor,
+            cache=cache,
             threshold=threshold,
             top_k=top_k,
         )
@@ -195,6 +204,7 @@ def run_sku_matching(
                 objects=index,
                 matched=matched,
                 unknown=index - matched,
+                cache_dir=str(cache.cache_dir),
             )
 
     results_to_dataframe(results).to_csv(out_dir / "identification_results.csv", index=False)
