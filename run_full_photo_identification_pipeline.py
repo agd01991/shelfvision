@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -71,6 +72,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--query-count", type=int, default=0, help="How many images go to query split. 0 means all remaining")
     parser.add_argument("--gallery-limit", type=int, default=0, help="Limit explicit gallery-images-dir. 0 means all")
     parser.add_argument("--query-limit", type=int, default=0, help="Limit explicit query-images-dir. 0 means all")
+    parser.add_argument("--shuffle", action="store_true", help="Shuffle images before gallery/query split")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for --shuffle")
 
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--imgsz", type=int, default=640)
@@ -92,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--visualize-limit", type=int, default=100)
 
     parser.add_argument("--resume", action="store_true", help="Reuse partial predictions JSONL if present")
-    parser.add_argument("--skip-existing", action="store_true", help="Reuse final predictions.json for a split if present")
+    parser.add_argument("--skip-existing", action="store_true", help="Reuse final predictions.json for a split only if it matches current split images")
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument("--no-visualize-inference", action="store_true", help="Do not save detection visualizations for gallery/query inference")
     return parser.parse_args()
@@ -127,17 +130,25 @@ def _list_images(images_dir: str | Path, limit: int = 0) -> List[Path]:
     return files
 
 
+def _maybe_shuffle(images: List[Path], args: argparse.Namespace) -> List[Path]:
+    if not bool(getattr(args, "shuffle", False)):
+        return images
+    shuffled = list(images)
+    random.Random(int(getattr(args, "seed", 42))).shuffle(shuffled)
+    return shuffled
+
+
 def _split_images(args: argparse.Namespace) -> tuple[List[Path], List[Path]]:
     if args.gallery_images_dir or args.query_images_dir:
         if not args.gallery_images_dir or not args.query_images_dir:
             raise SystemExit("Specify both --gallery-images-dir and --query-images-dir, or only --images-dir")
-        gallery = _list_images(args.gallery_images_dir, args.gallery_limit)
-        query = _list_images(args.query_images_dir, args.query_limit)
+        gallery = _maybe_shuffle(_list_images(args.gallery_images_dir, args.gallery_limit), args)
+        query = _maybe_shuffle(_list_images(args.query_images_dir, args.query_limit), args)
         return gallery, query
 
     if not args.images_dir:
         raise SystemExit("Specify --images-dir or both --gallery-images-dir and --query-images-dir")
-    all_images = _list_images(args.images_dir, args.limit)
+    all_images = _maybe_shuffle(_list_images(args.images_dir, args.limit), args)
     if not all_images:
         raise SystemExit("No images found")
     gallery_count = max(1, min(args.gallery_count, len(all_images)))
@@ -169,6 +180,51 @@ def _save_manifest(out_dir: Path, gallery: Sequence[Path], query: Sequence[Path]
     return {"all_images": all_csv, "gallery_images": gallery_csv, "query_images": query_csv}
 
 
+def _prediction_records(raw: object) -> List[dict]:
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict)]
+    if isinstance(raw, dict):
+        for key in ("predictions", "items", "images"):
+            value = raw.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _prediction_image_paths(predictions_json: Path) -> List[str]:
+    try:
+        raw = json.loads(predictions_json.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    paths: List[str] = []
+    for item in _prediction_records(raw):
+        value = item.get("image_path") or item.get("path") or item.get("file") or item.get("filename")
+        if value:
+            paths.append(str(value))
+    return paths
+
+
+def _can_reuse_predictions(predictions_json: Path, images: Sequence[Path]) -> bool:
+    expected = [str(path) for path in images]
+    existing = _prediction_image_paths(predictions_json)
+    if len(existing) != len(expected):
+        print(
+            "PHOTO_PROGRESS "
+            f"reuse_mismatch={predictions_json} reason=count "
+            f"existing={len(existing)} expected={len(expected)}",
+            flush=True,
+        )
+        return False
+    if set(existing) != set(expected):
+        print(
+            "PHOTO_PROGRESS "
+            f"reuse_mismatch={predictions_json} reason=image_set_changed",
+            flush=True,
+        )
+        return False
+    return True
+
+
 def _load_partial(partial_jsonl: Path) -> Dict[str, ImagePrediction]:
     loaded: Dict[str, ImagePrediction] = {}
     if not partial_jsonl.exists():
@@ -189,8 +245,6 @@ def _load_partial(partial_jsonl: Path) -> Dict[str, ImagePrediction]:
             masks = raw.get("masks", []) or []
             track_ids = raw.get("track_ids", []) or []
             for i, box in enumerate(boxes):
-                from src.inference.prediction import DetectionPrediction
-
                 detections.append(
                     DetectionPrediction(
                         box=box,
@@ -227,12 +281,14 @@ def _run_split_inference(split_name: str, images: Sequence[Path], args: argparse
     progress_json = out_dir / "progress.json"
     visualized_dir = out_dir / "visualized"
 
-    if args.skip_existing and predictions_json.exists():
+    if args.skip_existing and predictions_json.exists() and _can_reuse_predictions(predictions_json, images):
         print(f"PHOTO_PROGRESS split={split_name} reused_existing={predictions_json}", flush=True)
         return predictions_json
 
     predict_image, _, model_name = get_predictors(args.model)
+    expected_paths = {str(path) for path in images}
     predictions_by_path = _load_partial(partial_jsonl) if args.resume else {}
+    predictions_by_path = {path: pred for path, pred in predictions_by_path.items() if path in expected_paths}
     processed_before = len(predictions_by_path)
     total = len(images)
     start_time = time.perf_counter()
@@ -271,7 +327,17 @@ def _run_split_inference(split_name: str, images: Sequence[Path], args: argparse
                     f"objects={objects} elapsed={_format_eta(elapsed)} eta={_format_eta(eta)}",
                     flush=True,
                 )
-            _save_progress(progress_json, {"split": split_name, "processed": done, "total": total})
+            _save_progress(
+                progress_json,
+                {
+                    "split": split_name,
+                    "processed": done,
+                    "total": total,
+                    "objects": sum(item.objects_count for item in predictions_by_path.values()),
+                    "elapsed_seconds": elapsed,
+                    "eta_seconds": eta,
+                },
+            )
 
     ordered = [predictions_by_path[str(path)] for path in images if str(path) in predictions_by_path]
     save_predictions_json(ordered, predictions_json)
@@ -328,6 +394,8 @@ def _save_full_summary(
             "limit": args.limit,
             "gallery_count": args.gallery_count,
             "query_count": args.query_count,
+            "shuffle": args.shuffle,
+            "seed": args.seed,
             "conf": args.conf,
             "imgsz": args.imgsz,
             "threshold": args.threshold,
@@ -404,6 +472,8 @@ def main() -> None:
     manifests = _save_manifest(out_dir, gallery_images, query_images)
     print(f"Manifest saved: {manifests['all_images']}", flush=True)
     print(f"Gallery images: {len(gallery_images)} | Query images: {len(query_images)}", flush=True)
+    if args.shuffle:
+        print(f"Shuffle enabled: seed={args.seed}", flush=True)
 
     print("Step 1/5: gallery inference", flush=True)
     gallery_predictions_json = _run_split_inference("gallery", gallery_images, args, gallery_inference_dir)
