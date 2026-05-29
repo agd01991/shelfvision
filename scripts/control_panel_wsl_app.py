@@ -11,6 +11,7 @@ import yaml
 from control_panel import ensure_config_exists, load_config, page_downloads, save_config
 from control_panel_wsl import page_actions_wsl, page_config_wsl
 from full_photo_identification_panel import page_full_photo_identification
+from night_experiments_panel import page_night_experiments_reports
 from setup_pages import page_setup
 
 
@@ -47,6 +48,7 @@ def _candidate_dirs(config: Dict[str, Any]) -> List[Tuple[str, Path | None, str]
     paths = config.get("paths", {})
     demo = config.get("demo_sku_gallery", {})
     full = config.get("full_photo_identification", {})
+    night = config.get("night_experiments", {})
     identification = config.get("identification", {})
     video = config.get("video", {})
     readiness = config.get("readiness", {})
@@ -57,6 +59,7 @@ def _candidate_dirs(config: Dict[str, Any]) -> List[Tuple[str, Path | None, str]
         ("Основные результаты / старый pipeline", _as_path(paths.get("out_dir", "results/control_panel")), "paths.out_dir"),
         ("Фото-идентификация", _as_path(demo.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification")), "demo_sku_gallery.out_dir"),
         ("Полная фото-идентификация gallery/query", _as_path(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")), "full_photo_identification.out_dir"),
+        ("Серия экспериментов SKU110K", _as_path(night.get("out_dir") or night.get("results_root", "")), "night_experiments.results_root / night_experiments.out_dir"),
         ("Идентификация SKU", _as_path(identification.get("out_dir", "D:/1Diplom/shelfvision_results/identification")), "identification.out_dir"),
         ("Видео", _as_path(video.get("output_dir", "results/video/yolo")), "video.output_dir"),
         ("Диагностика готовности", _as_path(readiness.get("out_dir", "D:/1Diplom/shelfvision_results/readiness")), "readiness.out_dir"),
@@ -77,6 +80,13 @@ def _list_files(root: Path, limit: int = 300) -> List[Path]:
 
 def _find_key_files(root: Path) -> List[Path]:
     names = [
+        "night_experiments_detailed_report.md",
+        "vkr_night_experiments_section.md",
+        "night_experiments_ranked.csv",
+        "night_experiments_parameter_impact.csv",
+        "night_experiments_best_config.json",
+        "night_experiments_summary.md",
+        "night_experiments_summary.csv",
         "full_experiment_summary.md",
         "full_experiment_summary.csv",
         "full_experiment_summary.json",
@@ -192,7 +202,7 @@ def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
     if key_files:
         st.write("Ключевые файлы:")
         for path in key_files[:30]:
-            with st.expander(_rel_or_abs(path), expanded=path.name in {"full_experiment_summary.md", "experiment_summary.md"}):
+            with st.expander(_rel_or_abs(path), expanded=path.name in {"full_experiment_summary.md", "experiment_summary.md", "night_experiments_detailed_report.md", "vkr_night_experiments_section.md"}):
                 if path.suffix.lower() == ".md":
                     _render_markdown_preview(path)
                 elif path.suffix.lower() in TEXT_EXTS:
@@ -255,6 +265,8 @@ def page_actions_app(config: Dict[str, Any]) -> None:
     st.divider()
     page_full_photo_identification(config)
     st.divider()
+    page_night_experiments_reports(config)
+    st.divider()
     page_actions_wsl(config)
 
 
@@ -267,6 +279,8 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
     missing = [(title, path, key) for title, path, key in candidates if path is None or not path.exists()]
 
     st.success(f"Найдено рабочих папок: {len(existing)} из {len(candidates)}")
+
+    st.info("Подробный просмотр серии экспериментов SKU110K теперь находится в разделе `Запуск задач` → `Отчёты по серии экспериментов SKU110K`.")
 
     selected_titles = st.multiselect(
         "Какие разделы показать",
