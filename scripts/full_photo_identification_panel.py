@@ -19,6 +19,10 @@ PHOTO_MODEL_LABELS = {
     "rtdetr": "RT-DETR-L",
     "frcnn": "Faster R-CNN",
 }
+GALLERY_BUILD_MODE_LABELS = {
+    "greedy": "Greedy deduplication",
+    "cluster": "Clustered provisional SKU",
+}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
@@ -74,6 +78,7 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
     runtime = config.setdefault("runtime", {})
     full = config.setdefault("full_photo_identification", {})
     model = str(full.get("model", "yolo"))
+    gallery_build_mode = str(full.get("gallery_build_mode", "greedy"))
 
     args: List[str] = [
         "--model", model,
@@ -96,6 +101,12 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
         "--prefix", str(full.get("prefix", "sku_demo_")),
         "--dedup-threshold", str(full.get("dedup_threshold", 0.86)),
         "--max-refs-per-sku", str(full.get("max_refs_per_sku", 3)),
+        "--gallery-build-mode", gallery_build_mode,
+        "--cluster-merge-threshold", str(full.get("cluster_merge_threshold", 0.82)),
+        "--cluster-strong-merge-threshold", str(full.get("cluster_strong_merge_threshold", 0.88)),
+        "--cluster-min-similarity", str(full.get("cluster_min_similarity", 0.72)),
+        "--cluster-pair-report-threshold", str(full.get("cluster_pair_report_threshold", 0.75)),
+        "--cluster-max-candidates", str(full.get("cluster_max_candidates", 0)),
         "--threshold", str(full.get("threshold", 0.65)),
         "--thresholds", str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
         "--top-k", str(full.get("top_k", 3)),
@@ -122,7 +133,7 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
         args.append("--shuffle")
         args.extend(["--seed", str(full.get("seed", 42))])
 
-    if not bool(full.get("deduplicate_gallery", True)):
+    if gallery_build_mode == "greedy" and not bool(full.get("deduplicate_gallery", True)):
         args.append("--no-deduplicate-gallery")
     if bool(full.get("bbox_only", False)):
         args.append("--bbox-only")
@@ -202,14 +213,37 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             if implied_shuffle and not bool(full.get("shuffle", False)):
                 st.warning("В названии папок есть `shuffle/seed`, поэтому команда будет запущена с `--shuffle --seed`, даже если настройка не была сохранена ранее.")
         with c4:
-            full["deduplicate_gallery"] = st.checkbox("Объединять похожие crop-ы в один demo SKU", value=bool(full.get("deduplicate_gallery", True)), key="full_photo_deduplicate_gallery", help="Уменьшает случаи, когда один реальный товар получает разные SKU-XXX.")
+            mode_options = list(GALLERY_BUILD_MODE_LABELS.keys())
+            current_mode = str(full.get("gallery_build_mode", "greedy"))
+            full["gallery_build_mode"] = st.selectbox(
+                "Режим формирования demo SKU-галереи",
+                mode_options,
+                index=mode_options.index(current_mode) if current_mode in mode_options else 0,
+                format_func=lambda x: GALLERY_BUILD_MODE_LABELS[x],
+                key="full_photo_gallery_build_mode",
+                help="greedy — старый быстрый режим; cluster — сначала создаёт provisional SKU, считает похожесть и затем объединяет похожие crop-ы.",
+            )
+            full["deduplicate_gallery"] = st.checkbox("Объединять похожие crop-ы в один demo SKU", value=bool(full.get("deduplicate_gallery", True)), key="full_photo_deduplicate_gallery", help="Используется в greedy-режиме. В cluster-режиме объединение включено всегда.")
             full["dedup_threshold"] = st.slider("Порог объединения crop-ов в gallery", 0.0, 1.0, float(full.get("dedup_threshold", 0.86)), 0.01, key="full_photo_dedup_threshold")
-            full["max_refs_per_sku"] = st.number_input("Максимум эталонов на один demo SKU", 1, 20, int(full.get("max_refs_per_sku", 3)), key="full_photo_max_refs_per_sku")
+            full["max_refs_per_sku"] = st.number_input("Максимум эталонов на один demo SKU", 1, 50, int(full.get("max_refs_per_sku", 3)), key="full_photo_max_refs_per_sku")
             full["padding"] = st.slider("Crop padding", 0.0, 0.5, float(full.get("padding", 0.05)), 0.01, key="full_photo_padding")
             full["prefix"] = st.text_input("SKU prefix", value=str(full.get("prefix", "sku_demo_")), key="full_photo_prefix")
             full["keep_old_demo"] = st.checkbox("Не удалять старые sku_demo_*", value=bool(full.get("keep_old_demo", False)), key="full_photo_keep_old")
             full["bbox_only"] = st.checkbox("Не использовать masks", value=bool(full.get("bbox_only", False)), key="full_photo_bbox_only")
             full["no_visualize_inference"] = st.checkbox("Не сохранять визуализации инференса", value=bool(full.get("no_visualize_inference", False)), key="full_photo_no_visualize_inference")
+
+        with st.expander("Clustered gallery: параметры объединения provisional SKU", expanded=False):
+            st.caption("Эти настройки используются только при режиме `Clustered provisional SKU`.")
+            cc1, cc2, cc3 = st.columns(3)
+            with cc1:
+                full["cluster_merge_threshold"] = st.slider("Merge threshold", 0.0, 1.0, float(full.get("cluster_merge_threshold", 0.82)), 0.01, key="full_photo_cluster_merge_threshold")
+                full["cluster_strong_merge_threshold"] = st.slider("Strong merge threshold", 0.0, 1.0, float(full.get("cluster_strong_merge_threshold", 0.88)), 0.01, key="full_photo_cluster_strong_merge_threshold")
+            with cc2:
+                full["cluster_min_similarity"] = st.slider("Min cluster similarity", 0.0, 1.0, float(full.get("cluster_min_similarity", 0.72)), 0.01, key="full_photo_cluster_min_similarity")
+                full["cluster_pair_report_threshold"] = st.slider("Pair report threshold", 0.0, 1.0, float(full.get("cluster_pair_report_threshold", 0.75)), 0.01, key="full_photo_cluster_pair_report_threshold")
+            with cc3:
+                full["cluster_max_candidates"] = st.number_input("Max provisional candidates, 0 — auto", 0, 100_000, int(full.get("cluster_max_candidates", 0)), key="full_photo_cluster_max_candidates")
+                st.info("Для SKU110K удобно начать с auto или 1500–2500. Чем больше кандидатов, тем тяжелее pairwise similarity.")
 
         with st.expander("Дополнительно для быстрого пересчёта идентификации", expanded=False):
             full["query_predictions_json"] = st.text_input(
@@ -283,6 +317,22 @@ def _render_visualized_examples(visualized_dir: Path) -> None:
             st.image(str(image_path), caption=image_path.name, use_container_width=True)
 
 
+def _render_contact_sheets(contact_sheets_dir: Path) -> None:
+    st.markdown("#### Contact sheets финальных SKU")
+    if not contact_sheets_dir.exists():
+        st.info(f"Папка contact sheets не найдена: `{contact_sheets_dir}`")
+        return
+    limit = st.slider("Сколько SKU contact sheets показать", 1, 24, 8, key="full_photo_contact_sheet_limit")
+    images = _existing_images(contact_sheets_dir, limit)
+    if not images:
+        st.info("Contact sheets пока не созданы.")
+        return
+    cols = st.columns(2)
+    for index, image_path in enumerate(images):
+        with cols[index % 2]:
+            st.image(str(image_path), caption=image_path.name, use_container_width=True)
+
+
 def _render_full_photo_results(config: Dict[str, Any]) -> None:
     full = config.setdefault("full_photo_identification", {})
     out_dir = _safe_path(str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")))
@@ -303,11 +353,18 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
         demo_items_csv = demo_dir / "demo_sku_gallery_items.csv"
         identification_csv = identification_dir / "identification_results.csv"
         existing_summary_md = reports_dir / "existing_identification_summary.md"
+        provisional_csv = demo_dir / "provisional_sku_items.csv"
+        similarity_pairs_csv = demo_dir / "sku_similarity_pairs.csv"
+        merge_decisions_csv = demo_dir / "sku_merge_decisions.csv"
+        clusters_csv = demo_dir / "sku_clusters.csv"
+        cluster_summary_csv = demo_dir / "sku_cluster_summary.csv"
+        cluster_report_md = demo_dir / "sku_merge_report.md"
+        contact_sheets_dir = demo_dir / "cluster_contact_sheets"
 
         summary = _read_json(summary_json)
         _render_summary_cards(summary)
 
-        tabs = st.tabs(["Threshold", "Demo gallery", "Identification", "Visualized", "Markdown reports"])
+        tabs = st.tabs(["Threshold", "Demo gallery", "Cluster merge", "Identification", "Visualized", "Markdown reports"])
         with tabs[0]:
             if threshold_plot_png.exists():
                 st.image(str(threshold_plot_png), caption="Threshold analysis", use_container_width=True)
@@ -324,17 +381,32 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
             _render_csv_table(demo_items_csv, "Demo SKU refs", max_rows=500)
 
         with tabs[2]:
-            _render_csv_table(identification_csv, "Результаты идентификации", max_rows=500)
+            st.caption("Эта вкладка заполняется при режиме `Clustered provisional SKU`.")
+            cluster_report = _read_text(cluster_report_md)
+            if cluster_report:
+                st.markdown(cluster_report)
+            else:
+                st.info(f"Cluster report пока не найден: `{cluster_report_md}`")
+            _render_csv_table(provisional_csv, "Provisional SKU items", max_rows=500)
+            _render_csv_table(cluster_summary_csv, "Cluster summary", max_rows=500)
+            _render_csv_table(similarity_pairs_csv, "Similarity pairs", max_rows=500)
+            _render_csv_table(merge_decisions_csv, "Merge decisions", max_rows=500)
+            _render_csv_table(clusters_csv, "Final clusters", max_rows=500)
+            _render_contact_sheets(contact_sheets_dir)
 
         with tabs[3]:
-            _render_visualized_examples(visualized_dir)
+            _render_csv_table(identification_csv, "Результаты идентификации", max_rows=500)
 
         with tabs[4]:
+            _render_visualized_examples(visualized_dir)
+
+        with tabs[5]:
             for title, path in [
                 ("Full experiment summary", summary_md),
                 ("Existing identification rerun", existing_summary_md),
                 ("Threshold analysis", threshold_md),
                 ("Demo SKU gallery report", demo_report_md),
+                ("Cluster merge report", cluster_report_md),
             ]:
                 with st.expander(title, expanded=False):
                     text = _read_text(path)
@@ -374,6 +446,6 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
         out_dir = str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification"))
         st.info(f"Результаты будут сохранены в: `{out_dir}`")
         st.caption(f"Режим запуска: {'WSL .venv_wsl' if use_wsl_runtime(config) else 'Windows/local .venv'}")
-        st.caption("Для изменения `threshold`, `thresholds`, `top_k` и визуализаций можно использовать быстрый пересчёт. Для изменения `dedup_threshold`, `max_refs_per_sku` или `max_sku` нужен полный pipeline.")
+        st.caption("Для изменения `threshold`, `thresholds`, `top_k` и визуализаций можно использовать быстрый пересчёт. Для изменения `dedup_threshold`, `max_refs_per_sku`, `max_sku` или режима gallery build нужен полный pipeline.")
 
     _render_full_photo_results(config)
