@@ -11,6 +11,7 @@ from typing import Dict, List, Sequence
 import pandas as pd
 
 from run_inference import get_predictors, save_summary_csv
+from src.identification.clustered_gallery_builder import build_clustered_demo_sku_gallery_from_predictions
 from src.identification.demo_gallery_builder import build_demo_sku_gallery_from_predictions
 from src.identification.matcher import run_sku_matching
 from src.identification.metrics import evaluate_with_ground_truth, save_identification_metrics
@@ -89,8 +90,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefix", default="sku_demo_")
     parser.add_argument("--keep-old-demo", action="store_true")
     parser.add_argument("--no-deduplicate-gallery", action="store_true", help="Disable merging visually similar demo gallery crops into one SKU")
-    parser.add_argument("--dedup-threshold", type=float, default=0.86, help="Similarity threshold for merging crops into one demo SKU")
+    parser.add_argument("--dedup-threshold", type=float, default=0.86, help="Similarity threshold for greedy merging crops into one demo SKU")
     parser.add_argument("--max-refs-per-sku", type=int, default=3, help="Maximum reference images per demo SKU after deduplication")
+
+    parser.add_argument("--gallery-build-mode", choices=["greedy", "cluster"], default="greedy")
+    parser.add_argument("--cluster-merge-threshold", type=float, default=0.82, help="Cluster gallery: centroid/pair threshold for merging provisional SKU candidates")
+    parser.add_argument("--cluster-strong-merge-threshold", type=float, default=0.88, help="Cluster gallery: strong single-pair threshold")
+    parser.add_argument("--cluster-min-similarity", type=float, default=0.72, help="Cluster gallery: minimum consistency similarity inside merged clusters")
+    parser.add_argument("--cluster-pair-report-threshold", type=float, default=0.75, help="Cluster gallery: save pairwise similarities above this value")
+    parser.add_argument("--cluster-max-candidates", type=int, default=0, help="Cluster gallery: maximum provisional candidates. 0 means auto")
 
     parser.add_argument("--threshold", type=float, default=0.65)
     parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")
@@ -249,8 +257,6 @@ def _load_partial(partial_jsonl: Path) -> Dict[str, ImagePrediction]:
             masks = raw.get("masks", []) or []
             track_ids = raw.get("track_ids", []) or []
             for i, box in enumerate(boxes):
-                from src.inference.prediction import DetectionPrediction
-
                 detections.append(
                     DetectionPrediction(
                         box=box,
@@ -358,6 +364,52 @@ def _read_demo_summary(demo_dir: Path) -> Dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _build_demo_gallery(args: argparse.Namespace, gallery_predictions_json: Path, demo_dir: Path) -> Dict[str, Path]:
+    if args.gallery_build_mode == "cluster":
+        print("GALLERY_BUILD mode=cluster provisional_candidates=true", flush=True)
+        return build_clustered_demo_sku_gallery_from_predictions(
+            predictions_json=gallery_predictions_json,
+            images_dir=None,
+            gallery_dir=args.gallery_dir,
+            gallery_csv=args.gallery_csv,
+            out_dir=demo_dir,
+            max_sku=max(1, args.max_sku),
+            min_score=args.min_score,
+            min_width=max(1, args.min_width),
+            min_height=max(1, args.min_height),
+            use_masks=not args.bbox_only,
+            padding_ratio=args.padding,
+            prefix=args.prefix,
+            clear_old_demo=not args.keep_old_demo,
+            merge_threshold=args.cluster_merge_threshold,
+            strong_merge_threshold=args.cluster_strong_merge_threshold,
+            min_cluster_similarity=args.cluster_min_similarity,
+            pair_report_threshold=args.cluster_pair_report_threshold,
+            max_candidates=args.cluster_max_candidates,
+            max_refs_per_sku=args.max_refs_per_sku,
+        )
+
+    print("GALLERY_BUILD mode=greedy", flush=True)
+    return build_demo_sku_gallery_from_predictions(
+        predictions_json=gallery_predictions_json,
+        images_dir=None,
+        gallery_dir=args.gallery_dir,
+        gallery_csv=args.gallery_csv,
+        out_dir=demo_dir,
+        max_sku=max(1, args.max_sku),
+        min_score=args.min_score,
+        min_width=max(1, args.min_width),
+        min_height=max(1, args.min_height),
+        use_masks=not args.bbox_only,
+        padding_ratio=args.padding,
+        prefix=args.prefix,
+        clear_old_demo=not args.keep_old_demo,
+        deduplicate=not args.no_deduplicate_gallery,
+        dedup_threshold=args.dedup_threshold,
+        max_refs_per_sku=args.max_refs_per_sku,
+    )
+
+
 def _save_full_summary(
     args: argparse.Namespace,
     out_dir: Path,
@@ -415,6 +467,12 @@ def _save_full_summary(
             "deduplicate_gallery": not args.no_deduplicate_gallery,
             "dedup_threshold": args.dedup_threshold,
             "max_refs_per_sku": args.max_refs_per_sku,
+            "gallery_build_mode": args.gallery_build_mode,
+            "cluster_merge_threshold": args.cluster_merge_threshold,
+            "cluster_strong_merge_threshold": args.cluster_strong_merge_threshold,
+            "cluster_min_similarity": args.cluster_min_similarity,
+            "cluster_pair_report_threshold": args.cluster_pair_report_threshold,
+            "cluster_max_candidates": args.cluster_max_candidates,
             "resume": args.resume,
             "skip_existing": args.skip_existing,
         },
@@ -488,24 +546,7 @@ def main() -> None:
     gallery_predictions_json = _run_split_inference("gallery", gallery_images, args, gallery_inference_dir)
 
     print("Step 2/5: build demo SKU gallery from gallery split", flush=True)
-    build_demo_sku_gallery_from_predictions(
-        predictions_json=gallery_predictions_json,
-        images_dir=None,
-        gallery_dir=args.gallery_dir,
-        gallery_csv=args.gallery_csv,
-        out_dir=demo_dir,
-        max_sku=max(1, args.max_sku),
-        min_score=args.min_score,
-        min_width=max(1, args.min_width),
-        min_height=max(1, args.min_height),
-        use_masks=not args.bbox_only,
-        padding_ratio=args.padding,
-        prefix=args.prefix,
-        clear_old_demo=not args.keep_old_demo,
-        deduplicate=not args.no_deduplicate_gallery,
-        dedup_threshold=args.dedup_threshold,
-        max_refs_per_sku=args.max_refs_per_sku,
-    )
+    _build_demo_gallery(args=args, gallery_predictions_json=gallery_predictions_json, demo_dir=demo_dir)
 
     print("Step 3/5: query inference", flush=True)
     query_predictions_json = _run_split_inference("query", query_images, args, query_inference_dir)
