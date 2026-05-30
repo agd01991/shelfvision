@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from control_panel import save_config
-from control_panel_wsl import python_command, use_wsl_runtime
+from control_panel_wsl import python_command
 from panel_progress import CommandStep, run_steps_with_progress
 
 
@@ -39,6 +39,37 @@ def _read_text(path: Path, max_chars: int = 40_000) -> str:
     if len(text) > max_chars:
         return text[:max_chars] + "\n\n...текст сокращён для отображения в панели..."
     return text
+
+
+def _read_csv(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _to_float(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return 0
+
+
+def _format_rate(value: Any) -> str:
+    return f"{_to_float(value):.4f}"
+
+
+def _format_percent(value: Any) -> str:
+    return f"{_to_float(value) * 100:.2f}%"
 
 
 def _render_csv_table(path: Path, title: str, max_rows: int = 500) -> None:
@@ -160,6 +191,169 @@ def _render_best_config(best_json: Path) -> None:
             st.write(f"gallery_refs: `{rec.get('gallery_refs', '')}`")
 
 
+def _best_row(df: pd.DataFrame) -> pd.Series | None:
+    if df.empty:
+        return None
+    sortable = df.copy()
+    for col in ["matched_rate", "avg_similarity", "gallery_refs"]:
+        if col in sortable.columns:
+            sortable[col] = pd.to_numeric(sortable[col], errors="coerce").fillna(0.0)
+    return sortable.sort_values(["matched_rate", "avg_similarity", "gallery_refs"], ascending=False).iloc[0]
+
+
+def _render_result_card(title: str, row: pd.Series | None) -> None:
+    st.markdown(f"#### {title}")
+    if row is None:
+        st.info("Нет данных.")
+        return
+    st.metric("matched_rate", _format_rate(row.get("matched_rate", 0.0)), help=_format_percent(row.get("matched_rate", 0.0)))
+    st.caption(f"**{row.get('experiment', '')}**")
+    st.write(f"unknown_rate: `{_format_rate(row.get('unknown_rate', 0.0))}`")
+    st.write(f"avg_similarity: `{_format_rate(row.get('avg_similarity', 0.0))}`")
+    st.write(f"gallery_refs: `{_to_int(row.get('gallery_refs', 0))}`")
+    st.write(f"demo_sku: `{_to_int(row.get('created_demo_sku', 0))}`")
+
+
+def _render_cluster_contact_sheets(experiment_dir: Path, key_prefix: str) -> None:
+    sheets_dir = experiment_dir / "02_demo_gallery" / "cluster_contact_sheets"
+    if not sheets_dir.exists():
+        st.info(f"Contact sheets не найдены: `{sheets_dir}`")
+        return
+
+    limit = st.slider("Сколько contact sheets показать", 1, 30, 10, key=f"{key_prefix}_contact_sheets_limit")
+    images = _existing_images(sheets_dir, limit=limit)
+    if not images:
+        st.info("В contact_sheets нет изображений.")
+        return
+
+    cols = st.columns(2)
+    for index, image in enumerate(images):
+        with cols[index % 2]:
+            st.image(str(image), caption=image.name, use_container_width=True)
+
+
+def _render_cluster_tables(experiment_dir: Path) -> None:
+    demo_dir = experiment_dir / "02_demo_gallery"
+    _render_csv_table(demo_dir / "sku_cluster_summary.csv", "Cluster summary", max_rows=300)
+    _render_csv_table(demo_dir / "sku_similarity_pairs.csv", "Similarity pairs", max_rows=300)
+    _render_csv_table(demo_dir / "sku_merge_decisions.csv", "Merge decisions", max_rows=300)
+    _render_csv_table(demo_dir / "sku_clusters.csv", "Final clusters", max_rows=300)
+
+
+def _render_greedy_vs_cluster(summary_csv: Path, results_root: Path) -> None:
+    st.markdown("### Greedy vs Clustered gallery")
+    st.caption("Сравнение старого жадного объединения crop-ов и нового режима provisional SKU + clustering.")
+
+    df = _read_csv(summary_csv)
+    if df.empty:
+        st.warning(f"Summary CSV пустой или не читается: `{summary_csv}`")
+        return
+
+    if "gallery_build_mode" not in df.columns:
+        st.info("В summary нет колонки `gallery_build_mode`. Это обычная ночная серия без сравнения greedy/cluster.")
+        return
+
+    ok_df = df[df.get("status", "").astype(str).str.startswith("ok")].copy()
+    if ok_df.empty:
+        st.warning("Нет успешных запусков для сравнения.")
+        _render_csv_table(summary_csv, "Исходная summary-таблица", max_rows=100)
+        return
+
+    for col in ["matched_rate", "unknown_rate", "avg_similarity", "gallery_refs", "created_demo_sku"]:
+        if col in ok_df.columns:
+            ok_df[col] = pd.to_numeric(ok_df[col], errors="coerce").fillna(0.0)
+
+    greedy_df = ok_df[ok_df["gallery_build_mode"].astype(str).eq("greedy")]
+    cluster_df = ok_df[ok_df["gallery_build_mode"].astype(str).eq("cluster")]
+    best_overall = _best_row(ok_df)
+    best_greedy = _best_row(greedy_df)
+    best_cluster = _best_row(cluster_df)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        _render_result_card("Лучший общий", best_overall)
+    with c2:
+        _render_result_card("Лучший greedy", best_greedy)
+    with c3:
+        _render_result_card("Лучший cluster", best_cluster)
+
+    if best_greedy is not None and best_cluster is not None:
+        delta_matched = _to_float(best_greedy.get("matched_rate")) - _to_float(best_cluster.get("matched_rate"))
+        delta_similarity = _to_float(best_greedy.get("avg_similarity")) - _to_float(best_cluster.get("avg_similarity"))
+        delta_refs = _to_int(best_greedy.get("gallery_refs")) - _to_int(best_cluster.get("gallery_refs"))
+        if delta_matched >= 0:
+            st.success(
+                "Текущий вывод: основной финальный режим лучше оставить `greedy`. "
+                f"Он выше cluster по matched_rate на `{delta_matched:.4f}`, "
+                f"по avg_similarity на `{delta_similarity:.4f}` и даёт на `{delta_refs}` больше gallery refs."
+            )
+        else:
+            st.success(
+                "Текущий вывод: cluster-режим обогнал greedy по matched_rate. "
+                "Перед фиксацией как основного режима нужно визуально проверить contact sheets."
+            )
+
+    st.info(
+        "Рекомендация для программы: использовать `greedy` как основной режим идентификации, "
+        "а `cluster` оставить как диагностический режим для анализа похожих SKU, contact sheets и отчётов по merge decisions."
+    )
+
+    comparison_md = results_root / "cluster_comparison_summary.md"
+    comparison_text = _read_text(comparison_md)
+    with st.expander("Cluster comparison summary.md", expanded=True):
+        if comparison_text:
+            st.markdown(comparison_text)
+        else:
+            st.info(f"Файл не найден: `{comparison_md}`")
+
+    display_cols = [
+        "experiment",
+        "gallery_build_mode",
+        "matched_rate",
+        "unknown_rate",
+        "avg_similarity",
+        "created_demo_sku",
+        "gallery_refs",
+        "duplicate_refs",
+        "cluster_merge_threshold",
+        "cluster_strong_merge_threshold",
+        "cluster_min_similarity",
+        "max_refs_per_sku",
+        "out_dir",
+    ]
+    existing_cols = [col for col in display_cols if col in ok_df.columns]
+    st.markdown("#### Таблица сравнения")
+    st.dataframe(
+        ok_df.sort_values(["matched_rate", "avg_similarity"], ascending=False)[existing_cols],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("### Проверка cluster contact sheets")
+    if cluster_df.empty:
+        st.info("Cluster-запусков нет.")
+        return
+
+    cluster_options = [str(value) for value in cluster_df.sort_values("matched_rate", ascending=False)["experiment"].tolist()]
+    selected = st.selectbox("Cluster-эксперимент", cluster_options, key="cluster_compare_selected_experiment")
+    selected_row = cluster_df[cluster_df["experiment"].astype(str).eq(selected)].iloc[0]
+    experiment_dir = Path(str(selected_row.get("out_dir") or results_root / selected))
+    st.caption(f"Папка эксперимента: `{experiment_dir}`")
+
+    sheet_tab, table_tab, report_tab = st.tabs(["Contact sheets", "Cluster tables", "Cluster report"])
+    with sheet_tab:
+        _render_cluster_contact_sheets(experiment_dir, key_prefix="cluster_compare")
+    with table_tab:
+        _render_cluster_tables(experiment_dir)
+    with report_tab:
+        report_path = experiment_dir / "02_demo_gallery" / "sku_merge_report.md"
+        text = _read_text(report_path)
+        if text:
+            st.markdown(text)
+        else:
+            st.info(f"Файл не найден: `{report_path}`")
+
+
 def _render_plots(results_root: Path) -> None:
     plot_paths = [
         results_root / "night_experiments_top_matched_rate.png",
@@ -176,12 +370,13 @@ def _render_plots(results_root: Path) -> None:
 
 def _render_report_texts(results_root: Path) -> None:
     reports = [
+        ("Greedy vs Cluster summary", results_root / "cluster_comparison_summary.md"),
         ("Подробный отчёт", results_root / "night_experiments_detailed_report.md"),
         ("Раздел для ВКР", results_root / "vkr_night_experiments_section.md"),
         ("Краткий summary ночного запуска", results_root / "night_experiments_summary.md"),
     ]
     for title, path in reports:
-        with st.expander(title, expanded=title == "Раздел для ВКР"):
+        with st.expander(title, expanded=title in {"Раздел для ВКР", "Greedy vs Cluster summary"}):
             text = _read_text(path)
             if text:
                 st.markdown(text)
@@ -189,17 +384,23 @@ def _render_report_texts(results_root: Path) -> None:
                 st.info(f"Файл не найден: `{path}`")
 
 
-def _render_visualized_for_best(best_json: Path) -> None:
+def _render_visualized_for_best(best_json: Path, summary_csv: Path | None = None) -> None:
     payload = _read_json(best_json)
     recommendations = payload.get("recommendations", []) if payload else []
-    if not recommendations:
-        st.info("Нет рекомендаций для предпросмотра visualized.")
-        return
 
-    options = [str(rec.get("experiment", "")) for rec in recommendations if rec.get("experiment")]
-    out_dirs = {str(rec.get("experiment", "")): Path(str(rec.get("out_dir", ""))) for rec in recommendations}
+    options: List[str] = []
+    out_dirs: Dict[str, Path] = {}
+    if recommendations:
+        options = [str(rec.get("experiment", "")) for rec in recommendations if rec.get("experiment")]
+        out_dirs = {str(rec.get("experiment", "")): Path(str(rec.get("out_dir", ""))) for rec in recommendations}
+    elif summary_csv is not None and summary_csv.exists():
+        df = _read_csv(summary_csv)
+        if not df.empty and {"experiment", "out_dir"}.issubset(df.columns):
+            options = [str(value) for value in df["experiment"].head(20).tolist()]
+            out_dirs = {str(row["experiment"]): Path(str(row["out_dir"])) for _, row in df.head(20).iterrows()}
+
     if not options:
-        st.info("В recommendations нет out_dir.")
+        st.info("Нет рекомендаций или summary для предпросмотра visualized.")
         return
 
     selected = st.selectbox("Эксперимент для предпросмотра", options, key="night_visualized_experiment")
@@ -218,7 +419,7 @@ def _render_visualized_for_best(best_json: Path) -> None:
 
 def page_night_experiments_reports(config: Dict[str, Any]) -> None:
     st.subheader("Отчёты по серии экспериментов SKU110K")
-    st.caption("Здесь можно посмотреть результаты ночных запусков, ранжирование конфигураций, влияние параметров и готовый текст для ВКР.")
+    st.caption("Здесь можно посмотреть результаты ночных запусков, greedy vs cluster, ранжирование конфигураций, влияние параметров и готовый текст для ВКР.")
     _render_settings(config)
 
     night = config.setdefault("night_experiments", {})
@@ -237,17 +438,19 @@ def page_night_experiments_reports(config: Dict[str, Any]) -> None:
         st.warning(f"Исходная таблица серии не найдена: `{summary_csv}`")
         return
 
-    tabs = st.tabs(["Рекомендации", "Ranked", "Влияние параметров", "Графики", "Текст отчётов", "Visualized"])
+    tabs = st.tabs(["Greedy vs Cluster", "Рекомендации", "Ranked", "Влияние параметров", "Графики", "Текст отчётов", "Visualized"])
     with tabs[0]:
+        _render_greedy_vs_cluster(summary_csv, results_root)
+    with tabs[1]:
         _render_best_config(best_json)
         _render_csv_table(summary_csv, "Исходная summary-таблица", max_rows=100)
-    with tabs[1]:
-        _render_csv_table(ranked_csv, "Ранжированная таблица экспериментов", max_rows=100)
     with tabs[2]:
-        _render_csv_table(impact_csv, "Влияние параметров", max_rows=200)
+        _render_csv_table(ranked_csv, "Ранжированная таблица экспериментов", max_rows=100)
     with tabs[3]:
-        _render_plots(results_root)
+        _render_csv_table(impact_csv, "Влияние параметров", max_rows=200)
     with tabs[4]:
-        _render_report_texts(results_root)
+        _render_plots(results_root)
     with tabs[5]:
-        _render_visualized_for_best(best_json)
+        _render_report_texts(results_root)
+    with tabs[6]:
+        _render_visualized_for_best(best_json, summary_csv=summary_csv)
