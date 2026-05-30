@@ -10,17 +10,33 @@ import streamlit as st
 from control_panel import save_config
 from control_panel_wsl import python_command
 from panel_progress import CommandStep, run_steps_with_progress
+from path_utils import to_current_os_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+PATH_COLUMNS = {"out_dir", "log_file", "weights", "primary_ref"}
 
 
-def _safe_path(raw: str | Path) -> Path:
-    return Path(str(raw).strip().strip('"').strip("'"))
+def _safe_path(raw: str | Path | None) -> Path:
+    return to_current_os_path(raw)
+
+
+def _path_for_display(path: str | Path | None) -> str:
+    return str(to_current_os_path(path))
+
+
+def _normalize_path_columns_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    view = df.copy()
+    for col in PATH_COLUMNS.intersection(view.columns):
+        view[col] = view[col].astype(str).map(_path_for_display)
+    return view
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
+    path = _safe_path(path)
     if not path.exists():
         return {}
     try:
@@ -30,6 +46,7 @@ def _read_json(path: Path) -> Dict[str, Any]:
 
 
 def _read_text(path: Path, max_chars: int = 40_000) -> str:
+    path = _safe_path(path)
     if not path.exists():
         return ""
     try:
@@ -42,6 +59,7 @@ def _read_text(path: Path, max_chars: int = 40_000) -> str:
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
+    path = _safe_path(path)
     if not path.exists():
         return pd.DataFrame()
     try:
@@ -73,6 +91,7 @@ def _format_percent(value: Any) -> str:
 
 
 def _render_csv_table(path: Path, title: str, max_rows: int = 500) -> None:
+    path = _safe_path(path)
     if not path.exists():
         st.info(f"Файл не найден: `{path}`")
         return
@@ -83,11 +102,12 @@ def _render_csv_table(path: Path, title: str, max_rows: int = 500) -> None:
         return
 
     st.markdown(f"#### {title}")
-    st.dataframe(df.head(max_rows), use_container_width=True, hide_index=True)
+    st.dataframe(_normalize_path_columns_for_display(df.head(max_rows)), use_container_width=True, hide_index=True)
     st.caption(f"Файл: `{path}`")
 
 
 def _existing_images(path: Path, limit: int = 24) -> List[Path]:
+    path = _safe_path(path)
     if not path.exists():
         return []
     return [p for p in sorted(path.iterdir()) if p.is_file() and p.suffix.lower() in IMAGE_EXTS][:limit]
@@ -112,7 +132,7 @@ def _build_report_args(config: Dict[str, Any]) -> List[str]:
 
 
 def _guess_summary_csv(results_root: Path) -> Path:
-    return results_root / "night_experiments_summary.csv"
+    return _safe_path(results_root) / "night_experiments_summary.csv"
 
 
 def _render_settings(config: Dict[str, Any]) -> None:
@@ -122,9 +142,9 @@ def _render_settings(config: Dict[str, Any]) -> None:
         with c1:
             night["results_root"] = st.text_input(
                 "Папка серии экспериментов",
-                value=str(night.get("results_root", "/mnt/d/1Diplom/shelfvision_results/night_sku110k_v2_2026-05-28_00-16-10")),
+                value=str(night.get("results_root", "D:/1Diplom/shelfvision_results/night_sku110k_v2_2026-05-28_00-16-10")),
                 key="night_results_root",
-                help="Папка, где лежит night_experiments_summary.csv и подпапки экспериментов 01/02/...",
+                help="Можно вводить Windows-путь D:/... или WSL-путь /mnt/d/... Панель сама адаптирует путь для чтения и запуска WSL-команд.",
             )
             night["summary_csv"] = st.text_input(
                 "night_experiments_summary.csv, опционально",
@@ -173,6 +193,7 @@ def _render_settings(config: Dict[str, Any]) -> None:
 
 
 def _render_best_config(best_json: Path) -> None:
+    best_json = _safe_path(best_json)
     payload = _read_json(best_json)
     recommendations = payload.get("recommendations", []) if payload else []
     if not recommendations:
@@ -189,6 +210,8 @@ def _render_best_config(best_json: Path) -> None:
             st.write(f"unknown_rate: `{float(rec.get('unknown_rate', 0.0) or 0.0):.4f}`")
             st.write(f"avg_similarity: `{float(rec.get('avg_similarity', 0.0) or 0.0):.4f}`")
             st.write(f"gallery_refs: `{rec.get('gallery_refs', '')}`")
+            if rec.get("out_dir"):
+                st.caption(f"out_dir: `{_path_for_display(rec.get('out_dir'))}`")
 
 
 def _best_row(df: pd.DataFrame) -> pd.Series | None:
@@ -215,6 +238,7 @@ def _render_result_card(title: str, row: pd.Series | None) -> None:
 
 
 def _render_cluster_contact_sheets(experiment_dir: Path, key_prefix: str) -> None:
+    experiment_dir = _safe_path(experiment_dir)
     sheets_dir = experiment_dir / "02_demo_gallery" / "cluster_contact_sheets"
     if not sheets_dir.exists():
         st.info(f"Contact sheets не найдены: `{sheets_dir}`")
@@ -233,6 +257,7 @@ def _render_cluster_contact_sheets(experiment_dir: Path, key_prefix: str) -> Non
 
 
 def _render_cluster_tables(experiment_dir: Path) -> None:
+    experiment_dir = _safe_path(experiment_dir)
     demo_dir = experiment_dir / "02_demo_gallery"
     _render_csv_table(demo_dir / "sku_cluster_summary.csv", "Cluster summary", max_rows=300)
     _render_csv_table(demo_dir / "sku_similarity_pairs.csv", "Similarity pairs", max_rows=300)
@@ -241,6 +266,8 @@ def _render_cluster_tables(experiment_dir: Path) -> None:
 
 
 def _render_greedy_vs_cluster(summary_csv: Path, results_root: Path) -> None:
+    summary_csv = _safe_path(summary_csv)
+    results_root = _safe_path(results_root)
     st.markdown("### Greedy vs Clustered gallery")
     st.caption("Сравнение старого жадного объединения crop-ов и нового режима provisional SKU + clustering.")
 
@@ -324,7 +351,7 @@ def _render_greedy_vs_cluster(summary_csv: Path, results_root: Path) -> None:
     existing_cols = [col for col in display_cols if col in ok_df.columns]
     st.markdown("#### Таблица сравнения")
     st.dataframe(
-        ok_df.sort_values(["matched_rate", "avg_similarity"], ascending=False)[existing_cols],
+        _normalize_path_columns_for_display(ok_df.sort_values(["matched_rate", "avg_similarity"], ascending=False)[existing_cols]),
         use_container_width=True,
         hide_index=True,
     )
@@ -337,7 +364,7 @@ def _render_greedy_vs_cluster(summary_csv: Path, results_root: Path) -> None:
     cluster_options = [str(value) for value in cluster_df.sort_values("matched_rate", ascending=False)["experiment"].tolist()]
     selected = st.selectbox("Cluster-эксперимент", cluster_options, key="cluster_compare_selected_experiment")
     selected_row = cluster_df[cluster_df["experiment"].astype(str).eq(selected)].iloc[0]
-    experiment_dir = Path(str(selected_row.get("out_dir") or results_root / selected))
+    experiment_dir = _safe_path(str(selected_row.get("out_dir") or results_root / selected))
     st.caption(f"Папка эксперимента: `{experiment_dir}`")
 
     sheet_tab, table_tab, report_tab = st.tabs(["Contact sheets", "Cluster tables", "Cluster report"])
@@ -355,6 +382,7 @@ def _render_greedy_vs_cluster(summary_csv: Path, results_root: Path) -> None:
 
 
 def _render_plots(results_root: Path) -> None:
+    results_root = _safe_path(results_root)
     plot_paths = [
         results_root / "night_experiments_top_matched_rate.png",
         results_root / "night_experiments_parameter_impact.png",
@@ -369,6 +397,7 @@ def _render_plots(results_root: Path) -> None:
 
 
 def _render_report_texts(results_root: Path) -> None:
+    results_root = _safe_path(results_root)
     reports = [
         ("Greedy vs Cluster summary", results_root / "cluster_comparison_summary.md"),
         ("Подробный отчёт", results_root / "night_experiments_detailed_report.md"),
@@ -385,6 +414,7 @@ def _render_report_texts(results_root: Path) -> None:
 
 
 def _render_visualized_for_best(best_json: Path, summary_csv: Path | None = None) -> None:
+    best_json = _safe_path(best_json)
     payload = _read_json(best_json)
     recommendations = payload.get("recommendations", []) if payload else []
 
@@ -392,12 +422,12 @@ def _render_visualized_for_best(best_json: Path, summary_csv: Path | None = None
     out_dirs: Dict[str, Path] = {}
     if recommendations:
         options = [str(rec.get("experiment", "")) for rec in recommendations if rec.get("experiment")]
-        out_dirs = {str(rec.get("experiment", "")): Path(str(rec.get("out_dir", ""))) for rec in recommendations}
-    elif summary_csv is not None and summary_csv.exists():
+        out_dirs = {str(rec.get("experiment", "")): _safe_path(str(rec.get("out_dir", ""))) for rec in recommendations}
+    elif summary_csv is not None and _safe_path(summary_csv).exists():
         df = _read_csv(summary_csv)
         if not df.empty and {"experiment", "out_dir"}.issubset(df.columns):
             options = [str(value) for value in df["experiment"].head(20).tolist()]
-            out_dirs = {str(row["experiment"]): Path(str(row["out_dir"])) for _, row in df.head(20).iterrows()}
+            out_dirs = {str(row["experiment"]): _safe_path(str(row["out_dir"])) for _, row in df.head(20).iterrows()}
 
     if not options:
         st.info("Нет рекомендаций или summary для предпросмотра visualized.")
