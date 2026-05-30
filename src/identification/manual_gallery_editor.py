@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import re
 import shutil
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -10,7 +12,6 @@ from typing import Dict, Iterable, List
 
 import pandas as pd
 
-from .gallery_manager import build_sku_gallery
 from .sku_gallery import IMAGE_EXTS
 
 
@@ -23,6 +24,8 @@ EDIT_COLUMNS = [
     "comment",
     "created_at",
 ]
+WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
+WSL_MOUNT_RE = re.compile(r"^/mnt/([a-zA-Z])/(.*)$")
 
 
 @dataclass
@@ -54,6 +57,19 @@ class ManualGallerySummary:
     warnings: List[str]
 
 
+def _current_os_path(value: str | Path | None) -> Path:
+    raw = str(value or "").strip().strip('"').strip("'").replace("\\", "/")
+    if os.name == "nt":
+        match = WSL_MOUNT_RE.match(raw)
+        if match:
+            return Path(f"{match.group(1).upper()}:/{match.group(2)}")
+        return Path(raw)
+    match = WINDOWS_DRIVE_RE.match(raw)
+    if match:
+        return Path(f"/mnt/{match.group(1).lower()}/{match.group(2)}")
+    return Path(raw)
+
+
 def _iter_sku_dirs(gallery_dir: Path) -> Iterable[Path]:
     if not gallery_dir.exists():
         return []
@@ -65,7 +81,7 @@ def _iter_image_refs(sku_dir: Path) -> List[Path]:
 
 
 def list_sku_refs(gallery_dir: str | Path) -> Dict[str, List[Path]]:
-    gallery_dir = Path(gallery_dir)
+    gallery_dir = _current_os_path(gallery_dir)
     result: Dict[str, List[Path]] = {}
     for sku_dir in _iter_sku_dirs(gallery_dir):
         refs = _iter_image_refs(sku_dir)
@@ -75,7 +91,7 @@ def list_sku_refs(gallery_dir: str | Path) -> Dict[str, List[Path]]:
 
 
 def infer_gallery_dir_from_experiment(experiment_dir: str | Path) -> Path | None:
-    experiment_dir = Path(experiment_dir)
+    experiment_dir = _current_os_path(experiment_dir)
     demo_dir = experiment_dir / "02_demo_gallery"
 
     for json_path in [
@@ -89,12 +105,12 @@ def infer_gallery_dir_from_experiment(experiment_dir: str | Path) -> Path | None
         for key in ["gallery_dir", "output_gallery_dir"]:
             value = data.get(key)
             if value:
-                path = Path(str(value))
+                path = _current_os_path(str(value))
                 if path.exists():
                     return path
         gallery_csv = data.get("gallery_csv")
         if gallery_csv:
-            path = Path(str(gallery_csv)).parent
+            path = _current_os_path(str(gallery_csv)).parent
             if path.exists():
                 return path
 
@@ -107,7 +123,7 @@ def infer_gallery_dir_from_experiment(experiment_dir: str | Path) -> Path | None
             continue
         if "gallery_image_path" not in df.columns or df.empty:
             continue
-        first = Path(str(df["gallery_image_path"].dropna().astype(str).iloc[0]))
+        first = _current_os_path(str(df["gallery_image_path"].dropna().astype(str).iloc[0]))
         if first.parent.parent.exists():
             return first.parent.parent
 
@@ -115,7 +131,7 @@ def infer_gallery_dir_from_experiment(experiment_dir: str | Path) -> Path | None
 
 
 def read_manual_edits(edits_csv: str | Path) -> List[ManualGalleryEdit]:
-    edits_csv = Path(edits_csv)
+    edits_csv = _current_os_path(edits_csv)
     if not edits_csv.exists():
         return []
     try:
@@ -143,7 +159,7 @@ def read_manual_edits(edits_csv: str | Path) -> List[ManualGalleryEdit]:
 
 
 def append_manual_edit(edits_csv: str | Path, edit: ManualGalleryEdit) -> Path:
-    edits_csv = Path(edits_csv)
+    edits_csv = _current_os_path(edits_csv)
     edits_csv.parent.mkdir(parents=True, exist_ok=True)
     if not edit.created_at:
         edit.created_at = datetime.now().isoformat(timespec="seconds")
@@ -201,7 +217,7 @@ def _copy_groups_to_gallery(groups: Dict[str, List[Path]], output_gallery_dir: P
     return refs_count
 
 
-def _write_manual_items(output_gallery_dir: Path, out_dir: Path) -> Path:
+def _manual_gallery_rows(output_gallery_dir: Path) -> List[dict]:
     rows: List[dict] = []
     for sku_id, refs in list_sku_refs(output_gallery_dir).items():
         for index, ref in enumerate(refs, start=1):
@@ -209,13 +225,72 @@ def _write_manual_items(output_gallery_dir: Path, out_dir: Path) -> Path:
                 {
                     "sku_id": sku_id,
                     "sku_name": sku_id.replace("_", " "),
+                    "category": "",
                     "ref_index": index,
                     "image_path": str(ref),
                 }
             )
+    return rows
+
+
+def _write_manual_items(output_gallery_dir: Path, out_dir: Path) -> Path:
     path = out_dir / "manual_gallery_items.csv"
-    pd.DataFrame(rows).to_csv(path, index=False)
+    pd.DataFrame(_manual_gallery_rows(output_gallery_dir)).to_csv(path, index=False)
     return path
+
+
+def _write_simple_gallery_csv(output_gallery_dir: Path, output_gallery_csv: Path) -> Path:
+    rows = _manual_gallery_rows(output_gallery_dir)
+    output_gallery_csv.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows, columns=["sku_id", "sku_name", "category", "image_path"]).to_csv(output_gallery_csv, index=False)
+    return output_gallery_csv
+
+
+def _write_simple_gallery_check(output_gallery_dir: Path, output_gallery_csv: Path, out_dir: Path) -> Dict[str, Path]:
+    check_dir = out_dir / "gallery_check"
+    check_dir.mkdir(parents=True, exist_ok=True)
+    rows = _manual_gallery_rows(output_gallery_dir)
+    stats = []
+    for sku_id, refs in list_sku_refs(output_gallery_dir).items():
+        stats.append({"sku_id": sku_id, "images_count": len(refs), "status": "ok" if refs else "empty"})
+    summary = {
+        "gallery_dir": str(output_gallery_dir),
+        "output_csv": str(output_gallery_csv),
+        "sku_count": len(stats),
+        "images_count": len(rows),
+        "status": "ok" if rows else "error",
+        "note": "Manual gallery check does not require cv2; image integrity is not validated here.",
+    }
+    summary_json = check_dir / "sku_gallery_report.json"
+    sku_stats_csv = check_dir / "sku_gallery_sku_stats.csv"
+    image_stats_csv = check_dir / "sku_gallery_images.csv"
+    markdown_report = check_dir / "sku_gallery_report.md"
+    summary_json.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    pd.DataFrame(stats).to_csv(sku_stats_csv, index=False)
+    pd.DataFrame(rows).to_csv(image_stats_csv, index=False)
+    markdown_report.write_text(
+        "\n".join(
+            [
+                "# ShelfVision: manual SKU gallery check",
+                "",
+                f"- Gallery dir: `{output_gallery_dir}`",
+                f"- Gallery CSV: `{output_gallery_csv}`",
+                f"- SKU count: {summary['sku_count']}",
+                f"- Images count: {summary['images_count']}",
+                f"- Status: **{summary['status']}**",
+                "",
+                "This lightweight check intentionally does not import OpenCV, so the Control Panel can run even when `cv2` is unavailable in the Windows environment.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "gallery_csv": output_gallery_csv,
+        "summary_json": summary_json,
+        "sku_stats_csv": sku_stats_csv,
+        "image_stats_csv": image_stats_csv,
+        "markdown_report": markdown_report,
+    }
 
 
 def _write_report(summary: ManualGallerySummary, out_dir: Path) -> Path:
@@ -266,12 +341,12 @@ def build_manual_gallery_from_edits(
     out_dir: str | Path | None = None,
     output_gallery_csv: str | Path | None = None,
 ) -> Dict[str, Path]:
-    source_gallery_dir = Path(source_gallery_dir)
-    output_gallery_dir = Path(output_gallery_dir)
-    edits_csv = Path(edits_csv)
-    out_dir = Path(out_dir) if out_dir is not None else output_gallery_dir.parent / "manual_gallery_report"
+    source_gallery_dir = _current_os_path(source_gallery_dir)
+    output_gallery_dir = _current_os_path(output_gallery_dir)
+    edits_csv = _current_os_path(edits_csv)
+    out_dir = _current_os_path(out_dir) if out_dir is not None else output_gallery_dir.parent / "manual_gallery_report"
     out_dir.mkdir(parents=True, exist_ok=True)
-    output_gallery_csv = Path(output_gallery_csv) if output_gallery_csv is not None else output_gallery_dir / "gallery.csv"
+    output_gallery_csv = _current_os_path(output_gallery_csv) if output_gallery_csv is not None else output_gallery_dir / "gallery.csv"
 
     original_groups = list_sku_refs(source_gallery_dir)
     groups: Dict[str, List[Path]] = {sku_id: list(refs) for sku_id, refs in original_groups.items()}
@@ -326,13 +401,8 @@ def build_manual_gallery_from_edits(
     groups = {sku_id: refs for sku_id, refs in groups.items() if refs}
     manual_refs_count = _copy_groups_to_gallery(groups, output_gallery_dir)
     manual_items_csv = _write_manual_items(output_gallery_dir, out_dir)
-
-    gallery_outputs = build_sku_gallery(
-        gallery_dir=output_gallery_dir,
-        output_csv=output_gallery_csv,
-        out_dir=out_dir / "gallery_check",
-        min_images_per_sku=1,
-    )
+    _write_simple_gallery_csv(output_gallery_dir, output_gallery_csv)
+    gallery_outputs = _write_simple_gallery_check(output_gallery_dir, output_gallery_csv, out_dir)
 
     applied_edits_csv = out_dir / "manual_cluster_edits_applied.csv"
     _write_edits_csv(applied_edits_csv, edits)
