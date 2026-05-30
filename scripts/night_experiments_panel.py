@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -16,6 +17,13 @@ from path_utils import to_current_os_path
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 PATH_COLUMNS = {"out_dir", "log_file", "weights", "primary_ref"}
+REVIEW_STATUS_LABELS = {
+    "not_reviewed": "не проверено",
+    "clean": "чистый кластер",
+    "mixed": "смешанный кластер",
+    "unclear": "сомнительно",
+}
+REVIEW_STATUS_OPTIONS = list(REVIEW_STATUS_LABELS.keys())
 
 
 def _safe_path(raw: str | Path | None) -> Path:
@@ -111,6 +119,71 @@ def _existing_images(path: Path, limit: int = 24) -> List[Path]:
     if not path.exists():
         return []
     return [p for p in sorted(path.iterdir()) if p.is_file() and p.suffix.lower() in IMAGE_EXTS][:limit]
+
+
+def _load_contact_sheet_reviews(review_csv: Path) -> Dict[str, Dict[str, Any]]:
+    review_csv = _safe_path(review_csv)
+    if not review_csv.exists():
+        return {}
+    try:
+        df = pd.read_csv(review_csv).fillna("")
+    except Exception:
+        return {}
+    if "sheet_file" not in df.columns:
+        return {}
+    return {str(row["sheet_file"]): dict(row) for _, row in df.iterrows()}
+
+
+def _save_contact_sheet_reviews(review_csv: Path, reviews: Dict[str, Dict[str, Any]]) -> None:
+    review_csv = _safe_path(review_csv)
+    review_csv.parent.mkdir(parents=True, exist_ok=True)
+    columns = [
+        "sheet_file",
+        "sku_id",
+        "visual_status",
+        "visual_status_label",
+        "comment",
+        "updated_at",
+    ]
+    rows = []
+    for sheet_file, row in sorted(reviews.items()):
+        status = str(row.get("visual_status") or "not_reviewed")
+        rows.append(
+            {
+                "sheet_file": sheet_file,
+                "sku_id": str(row.get("sku_id") or Path(sheet_file).stem),
+                "visual_status": status,
+                "visual_status_label": REVIEW_STATUS_LABELS.get(status, status),
+                "comment": str(row.get("comment") or ""),
+                "updated_at": str(row.get("updated_at") or ""),
+            }
+        )
+    pd.DataFrame(rows, columns=columns).to_csv(review_csv, index=False)
+
+
+def _render_review_summary(review_csv: Path) -> None:
+    reviews = _load_contact_sheet_reviews(review_csv)
+    if not reviews:
+        st.info("Визуальная проверка contact sheets пока не сохранена.")
+        return
+
+    statuses = [str(row.get("visual_status") or "not_reviewed") for row in reviews.values()]
+    total = len(statuses)
+    clean = statuses.count("clean")
+    mixed = statuses.count("mixed")
+    unclear = statuses.count("unclear")
+    reviewed = total - statuses.count("not_reviewed")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Проверено", f"{reviewed}/{total}")
+    c2.metric("Чистые", clean)
+    c3.metric("Смешанные", mixed)
+    c4.metric("Сомнительные", unclear)
+
+    if mixed > 0:
+        st.warning("Есть смешанные кластеры. Для такого cluster-режима лучше поднять merge/min similarity или оставить cluster только как диагностический режим.")
+    elif reviewed > 0 and clean == reviewed:
+        st.success("Все проверенные contact sheets отмечены как чистые.")
 
 
 def _build_report_args(config: Dict[str, Any]) -> List[str]:
@@ -239,10 +312,14 @@ def _render_result_card(title: str, row: pd.Series | None) -> None:
 
 def _render_cluster_contact_sheets(experiment_dir: Path, key_prefix: str) -> None:
     experiment_dir = _safe_path(experiment_dir)
-    sheets_dir = experiment_dir / "02_demo_gallery" / "cluster_contact_sheets"
+    demo_dir = experiment_dir / "02_demo_gallery"
+    sheets_dir = demo_dir / "cluster_contact_sheets"
+    review_csv = demo_dir / "cluster_contact_sheet_review.csv"
     if not sheets_dir.exists():
         st.info(f"Contact sheets не найдены: `{sheets_dir}`")
         return
+
+    _render_review_summary(review_csv)
 
     limit = st.slider("Сколько contact sheets показать", 1, 30, 10, key=f"{key_prefix}_contact_sheets_limit")
     images = _existing_images(sheets_dir, limit=limit)
@@ -250,15 +327,66 @@ def _render_cluster_contact_sheets(experiment_dir: Path, key_prefix: str) -> Non
         st.info("В contact_sheets нет изображений.")
         return
 
+    reviews = _load_contact_sheet_reviews(review_csv)
+    edited_reviews = dict(reviews)
+
+    st.caption("Отметь визуальное качество каждого contact sheet. Оценка сохранится в `cluster_contact_sheet_review.csv`.")
     cols = st.columns(2)
     for index, image in enumerate(images):
+        existing = reviews.get(image.name, {})
+        existing_status = str(existing.get("visual_status") or "not_reviewed")
+        if existing_status not in REVIEW_STATUS_OPTIONS:
+            existing_status = "not_reviewed"
+        existing_comment = str(existing.get("comment") or "")
+
         with cols[index % 2]:
             st.image(str(image), caption=image.name, use_container_width=True)
+            status = st.radio(
+                "Оценка",
+                REVIEW_STATUS_OPTIONS,
+                index=REVIEW_STATUS_OPTIONS.index(existing_status),
+                format_func=lambda value: REVIEW_STATUS_LABELS.get(value, value),
+                horizontal=True,
+                key=f"{key_prefix}_{image.stem}_status",
+            )
+            comment = st.text_input(
+                "Комментарий",
+                value=existing_comment,
+                key=f"{key_prefix}_{image.stem}_comment",
+                placeholder="например: разные товары склеены / выглядит чисто",
+            )
+            edited_reviews[image.name] = {
+                "sheet_file": image.name,
+                "sku_id": image.stem,
+                "visual_status": status,
+                "visual_status_label": REVIEW_STATUS_LABELS.get(status, status),
+                "comment": comment,
+                "updated_at": str(existing.get("updated_at") or ""),
+            }
+
+    save_col, path_col = st.columns([1, 3])
+    with save_col:
+        if st.button("Сохранить визуальную оценку", use_container_width=True, key=f"{key_prefix}_save_contact_sheet_review"):
+            now = datetime.now().isoformat(timespec="seconds")
+            for image in images:
+                row = edited_reviews.get(image.name, {})
+                row["updated_at"] = now
+                edited_reviews[image.name] = row
+            _save_contact_sheet_reviews(review_csv, edited_reviews)
+            st.success("Визуальная оценка contact sheets сохранена.")
+    with path_col:
+        st.caption(f"CSV визуальной проверки: `{review_csv}`")
+
+    review_df = _read_csv(review_csv)
+    if not review_df.empty:
+        with st.expander("Таблица визуальной проверки", expanded=False):
+            st.dataframe(review_df, use_container_width=True, hide_index=True)
 
 
 def _render_cluster_tables(experiment_dir: Path) -> None:
     experiment_dir = _safe_path(experiment_dir)
     demo_dir = experiment_dir / "02_demo_gallery"
+    _render_csv_table(demo_dir / "cluster_contact_sheet_review.csv", "Manual contact sheet review", max_rows=300)
     _render_csv_table(demo_dir / "sku_cluster_summary.csv", "Cluster summary", max_rows=300)
     _render_csv_table(demo_dir / "sku_similarity_pairs.csv", "Similarity pairs", max_rows=300)
     _render_csv_table(demo_dir / "sku_merge_decisions.csv", "Merge decisions", max_rows=300)
