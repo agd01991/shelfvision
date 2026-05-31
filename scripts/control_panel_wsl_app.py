@@ -14,6 +14,7 @@ from full_photo_identification_panel import page_full_photo_identification
 from manual_cluster_editor_panel import page_manual_cluster_editor
 from night_experiments_panel import page_night_experiments_reports
 from setup_pages import page_setup
+from sku_audit_panel import page_sku_audit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -274,6 +275,8 @@ def page_actions_app(config: Dict[str, Any]) -> None:
     page_night_experiments_reports(config)
     st.divider()
     page_manual_cluster_editor(config)
+    st.divider()
+    page_sku_audit(config)
     st.divider()
     page_actions_wsl(config)
 
