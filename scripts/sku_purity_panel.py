@@ -306,7 +306,7 @@ def page_sku_purity_audit(config: Dict[str, Any]) -> None:
     st.caption(f"Purity audit out: `{out_dir}`")
     st.caption(f"Manual edits CSV: `{_manual_edits_csv(experiment_dir)}`")
 
-    advanced = is_advanced(config)
+    advanced = is_advanced(config, page_key="actions")
 
     if advanced:
         with st.expander("Расширенные параметры purity audit", expanded=True):

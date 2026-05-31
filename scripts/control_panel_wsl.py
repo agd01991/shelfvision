@@ -22,6 +22,7 @@ from control_panel import (
 )
 from panel_progress import CommandStep, run_steps_with_progress
 from setup_pages import page_setup
+from ui_settings import is_advanced, render_settings_mode_switch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -117,6 +118,8 @@ def _video_expected_seconds(config: Dict[str, Any]) -> int | None:
 
 def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
     st.header("3. Настройки проекта")
+    render_settings_mode_switch(config, page_key="settings")
+    advanced = is_advanced(config, page_key="settings")
 
     with st.form("config_form_wsl"):
         runtime = config.setdefault("runtime", {})
@@ -134,57 +137,63 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
 
         st.subheader("Режим запуска")
         runtime["use_wsl_runtime"] = st.checkbox("Запускать задачи через WSL .venv_wsl", value=bool(runtime.get("use_wsl_runtime", True)))
+        if not advanced:
+            st.caption("Технические пути venv/requirements, WBF, tracking и служебные лимиты скрыты. Включи расширенный режим, если нужно менять их вручную.")
 
         st.subheader("Пути")
         paths["image"] = st.text_input("Одно изображение", value=str(paths.get("image", "")))
         paths["images_dir"] = st.text_input("Папка изображений", value=str(paths.get("images_dir", "")))
-        paths["gt_coco"] = st.text_input("COCO annotations.json", value=str(paths.get("gt_coco", "")))
-        paths["gt_yolo_labels"] = st.text_input("YOLO labels", value=str(paths.get("gt_yolo_labels", "")))
         paths["out_dir"] = st.text_input("Папка результатов", value=str(paths.get("out_dir", "results/control_panel")))
+        if advanced:
+            paths["gt_coco"] = st.text_input("COCO annotations.json", value=str(paths.get("gt_coco", "")))
+            paths["gt_yolo_labels"] = st.text_input("YOLO labels", value=str(paths.get("gt_yolo_labels", "")))
 
         st.subheader("Веса")
         weights["yolo"] = st.text_input("YOLO weights", value=str(weights.get("yolo", "")))
         weights["yolo_seg"] = st.text_input("YOLO-Seg weights", value=str(weights.get("yolo_seg", "")))
         weights["rtdetr"] = st.text_input("RT-DETR weights", value=str(weights.get("rtdetr", "")))
-        weights["frcnn"] = st.text_input("Faster R-CNN weights", value=str(weights.get("frcnn", "")))
+        if advanced:
+            weights["frcnn"] = st.text_input("Faster R-CNN weights", value=str(weights.get("frcnn", "")))
 
-        st.subheader("Setup")
-        setup["venv_dir"] = st.text_input("Windows/local venv для панели", value=str(setup.get("venv_dir", ".venv")))
-        setup["venv_dir_wsl"] = st.text_input("WSL venv для запуска задач", value=str(setup.get("venv_dir_wsl", ".venv_wsl")))
-        setup["requirements"] = st.text_input("requirements.txt", value=str(setup.get("requirements", "requirements.txt")))
+        if advanced:
+            st.subheader("Setup")
+            setup["venv_dir"] = st.text_input("Windows/local venv для панели", value=str(setup.get("venv_dir", ".venv")))
+            setup["venv_dir_wsl"] = st.text_input("WSL venv для запуска задач", value=str(setup.get("venv_dir_wsl", ".venv_wsl")))
+            setup["requirements"] = st.text_input("requirements.txt", value=str(setup.get("requirements", "requirements.txt")))
 
         st.subheader("Runtime")
         runtime["conf"] = st.slider("Confidence", 0.01, 0.95, float(runtime.get("conf", 0.25)), 0.01)
         imgsz_options = [416, 512, 640, 768, 1024]
         imgsz_value = int(runtime.get("imgsz", 640))
         runtime["imgsz"] = st.selectbox("imgsz", imgsz_options, index=imgsz_options.index(imgsz_value) if imgsz_value in imgsz_options else 2)
-        runtime["device"] = st.text_input("device", value=str(runtime.get("device", "0")))
-        runtime["models"] = st.multiselect(
-            "Модели для полного pipeline",
-            options=list(MODEL_LABELS.keys()),
-            default=[m for m in runtime.get("models", ["yolo", "rtdetr", "wbf"]) if m in MODEL_LABELS],
-            format_func=lambda x: MODEL_LABELS[x],
-        )
+        if advanced:
+            runtime["device"] = st.text_input("device", value=str(runtime.get("device", "0")))
+            runtime["models"] = st.multiselect(
+                "Модели для полного pipeline",
+                options=list(MODEL_LABELS.keys()),
+                default=[m for m in runtime.get("models", ["yolo", "rtdetr", "wbf"]) if m in MODEL_LABELS],
+                format_func=lambda x: MODEL_LABELS[x],
+            )
 
-        st.subheader("WBF")
-        wbf["iou"] = st.slider("WBF IoU", 0.1, 0.9, float(wbf.get("iou", 0.55)), 0.01)
-        wbf["skip"] = st.slider("WBF skip", 0.0, 0.5, float(wbf.get("skip", 0.001)), 0.001)
-        wbf["yolo_weight"] = st.number_input("YOLO weight", 0.1, 5.0, float(wbf.get("yolo_weight", 1.0)), 0.1)
-        wbf["rtdetr_weight"] = st.number_input("RT-DETR weight", 0.1, 5.0, float(wbf.get("rtdetr_weight", 1.0)), 0.1)
+            st.subheader("WBF")
+            wbf["iou"] = st.slider("WBF IoU", 0.1, 0.9, float(wbf.get("iou", 0.55)), 0.01)
+            wbf["skip"] = st.slider("WBF skip", 0.0, 0.5, float(wbf.get("skip", 0.001)), 0.001)
+            wbf["yolo_weight"] = st.number_input("YOLO weight", 0.1, 5.0, float(wbf.get("yolo_weight", 1.0)), 0.1)
+            wbf["rtdetr_weight"] = st.number_input("RT-DETR weight", 0.1, 5.0, float(wbf.get("rtdetr_weight", 1.0)), 0.1)
 
-        st.subheader("Плотность")
-        density["model"] = st.selectbox(
-            "Модель для density",
-            list(MODEL_LABELS.keys()),
-            index=list(MODEL_LABELS.keys()).index(density.get("model", "yolo")) if density.get("model", "yolo") in MODEL_LABELS else 0,
-            format_func=lambda x: MODEL_LABELS[x],
-        )
-        density["rows"] = st.number_input("Rows", 1, 10, int(density.get("rows", 3)))
-        density["cols"] = st.number_input("Cols", 1, 10, int(density.get("cols", 3)))
-        density["limit"] = st.number_input("Visualize limit", 0, 1000, int(density.get("limit", 20)))
+            st.subheader("Плотность")
+            density["model"] = st.selectbox(
+                "Модель для density",
+                list(MODEL_LABELS.keys()),
+                index=list(MODEL_LABELS.keys()).index(density.get("model", "yolo")) if density.get("model", "yolo") in MODEL_LABELS else 0,
+                format_func=lambda x: MODEL_LABELS[x],
+            )
+            density["rows"] = st.number_input("Rows", 1, 10, int(density.get("rows", 3)))
+            density["cols"] = st.number_input("Cols", 1, 10, int(density.get("cols", 3)))
+            density["limit"] = st.number_input("Visualize limit", 0, 1000, int(density.get("limit", 20)))
 
-        st.subheader("Диагностика готовности")
-        readiness["out_dir"] = st.text_input("Папка отчётов диагностики", value=str(readiness.get("out_dir", "D:/1Diplom/shelfvision_results/readiness")))
+            st.subheader("Диагностика готовности")
+            readiness["out_dir"] = st.text_input("Папка отчётов диагностики", value=str(readiness.get("out_dir", "D:/1Diplom/shelfvision_results/readiness")))
 
         st.subheader("Видео")
         video["model"] = st.selectbox("Модель для видео", ["yolo", "yolo_seg"], index=0 if video.get("model", "yolo_seg") == "yolo" else 1, format_func=lambda x: "YOLO-Seg" if x == "yolo_seg" else "YOLO")
@@ -195,18 +204,20 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         video["save_video"] = st.checkbox("Сохранять размеченное видео", value=bool(video.get("save_video", True)))
         video["sample_frames"] = st.number_input("Кадры-примеры", 0, 100, int(video.get("sample_frames", 8)))
         video["show_masks"] = st.checkbox("Показывать masks на видео", value=bool(video.get("show_masks", True)))
-        video["save_frames_for_identification"] = st.checkbox("Сохранять кадры для идентификации", value=bool(video.get("save_frames_for_identification", True)))
-        video["tracking_enabled"] = st.checkbox("Включить IoU tracking для видео", value=bool(video.get("tracking_enabled", True)))
-        video["tracking_iou"] = st.slider("Tracking IoU threshold", 0.05, 0.95, float(video.get("tracking_iou", 0.30)), 0.01)
-        video["tracking_max_missing"] = st.number_input("Tracking max missing frames", 0, 100, int(video.get("tracking_max_missing", 5)))
-        video["progress_every"] = st.number_input("Печатать прогресс каждые N кадров", 1, 1000, int(video.get("progress_every", 10)))
-        video["codec"] = st.text_input("Кодек", value=str(video.get("codec", "mp4v")))
+        if advanced:
+            video["save_frames_for_identification"] = st.checkbox("Сохранять кадры для идентификации", value=bool(video.get("save_frames_for_identification", True)))
+            video["tracking_enabled"] = st.checkbox("Включить IoU tracking для видео", value=bool(video.get("tracking_enabled", True)))
+            video["tracking_iou"] = st.slider("Tracking IoU threshold", 0.05, 0.95, float(video.get("tracking_iou", 0.30)), 0.01)
+            video["tracking_max_missing"] = st.number_input("Tracking max missing frames", 0, 100, int(video.get("tracking_max_missing", 5)))
+            video["progress_every"] = st.number_input("Печатать прогресс каждые N кадров", 1, 1000, int(video.get("progress_every", 10)))
+            video["codec"] = st.text_input("Кодек", value=str(video.get("codec", "mp4v")))
 
         st.subheader("SKU-галерея")
         sku_gallery["gallery_dir"] = st.text_input("Папка SKU-галереи", value=str(sku_gallery.get("gallery_dir", identification.get("gallery_dir", "D:/1Diplom/sku_gallery"))))
         sku_gallery["output_csv"] = st.text_input("Куда сохранить gallery.csv", value=str(sku_gallery.get("output_csv", identification.get("gallery_csv", "D:/1Diplom/sku_gallery/gallery.csv"))))
         sku_gallery["out_dir"] = st.text_input("Папка отчётов SKU-галереи", value=str(sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/sku_gallery")))
-        sku_gallery["min_images_per_sku"] = st.number_input("Минимум эталонов на SKU", 1, 100, int(sku_gallery.get("min_images_per_sku", 3)))
+        if advanced:
+            sku_gallery["min_images_per_sku"] = st.number_input("Минимум эталонов на SKU", 1, 100, int(sku_gallery.get("min_images_per_sku", 3)))
 
         st.subheader("Demo SKU-галерея")
         demo_sku_gallery["images_dir"] = st.text_input("Папка изображений для фото-идентификации", value=str(demo_sku_gallery.get("images_dir", paths.get("images_dir", "D:/1Diplom/data/raw/d2s_full/images"))))
@@ -215,16 +226,17 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         demo_sku_gallery["gallery_csv"] = st.text_input("Demo gallery.csv", value=str(demo_sku_gallery.get("gallery_csv", sku_gallery.get("output_csv", "D:/1Diplom/sku_gallery/gallery.csv"))))
         demo_sku_gallery["model"] = st.selectbox("Модель для фото-идентификации", list(PHOTO_MODEL_LABELS.keys()), index=list(PHOTO_MODEL_LABELS.keys()).index(demo_sku_gallery.get("model", "yolo")) if demo_sku_gallery.get("model", "yolo") in PHOTO_MODEL_LABELS else 0, format_func=lambda x: PHOTO_MODEL_LABELS[x])
         demo_sku_gallery["max_sku"] = st.number_input("Максимум demo SKU", 1, 500, int(demo_sku_gallery.get("max_sku", 30)))
-        demo_sku_gallery["min_score"] = st.slider("Минимальный score для эталона", 0.0, 1.0, float(demo_sku_gallery.get("min_score", 0.35)), 0.01)
-        demo_sku_gallery["min_width"] = st.number_input("Минимальная ширина crop", 1, 1000, int(demo_sku_gallery.get("min_width", 20)))
-        demo_sku_gallery["min_height"] = st.number_input("Минимальная высота crop", 1, 1000, int(demo_sku_gallery.get("min_height", 20)))
-        demo_sku_gallery["padding"] = st.slider("Padding crop", 0.0, 0.5, float(demo_sku_gallery.get("padding", 0.05)), 0.01)
-        demo_sku_gallery["threshold"] = st.slider("Порог SKU matching", 0.0, 1.0, float(demo_sku_gallery.get("threshold", identification.get("threshold", 0.65))), 0.01)
-        demo_sku_gallery["top_k"] = st.number_input("Top-k кандидатов", 1, 20, int(demo_sku_gallery.get("top_k", identification.get("top_k", 3))))
-        demo_sku_gallery["visualize_limit"] = st.number_input("Лимит визуализаций фото", 0, 1000, int(demo_sku_gallery.get("visualize_limit", 50)))
-        demo_sku_gallery["use_masks"] = st.checkbox("Использовать masks для demo crop", value=bool(demo_sku_gallery.get("use_masks", True)))
-        demo_sku_gallery["prefix"] = st.text_input("Префикс demo SKU", value=str(demo_sku_gallery.get("prefix", "sku_demo_")))
-        demo_sku_gallery["keep_old_demo"] = st.checkbox("Не удалять старые sku_demo_*", value=bool(demo_sku_gallery.get("keep_old_demo", False)))
+        if advanced:
+            demo_sku_gallery["min_score"] = st.slider("Минимальный score для эталона", 0.0, 1.0, float(demo_sku_gallery.get("min_score", 0.35)), 0.01)
+            demo_sku_gallery["min_width"] = st.number_input("Минимальная ширина crop", 1, 1000, int(demo_sku_gallery.get("min_width", 20)))
+            demo_sku_gallery["min_height"] = st.number_input("Минимальная высота crop", 1, 1000, int(demo_sku_gallery.get("min_height", 20)))
+            demo_sku_gallery["padding"] = st.slider("Padding crop", 0.0, 0.5, float(demo_sku_gallery.get("padding", 0.05)), 0.01)
+            demo_sku_gallery["threshold"] = st.slider("Порог SKU matching", 0.0, 1.0, float(demo_sku_gallery.get("threshold", identification.get("threshold", 0.65))), 0.01)
+            demo_sku_gallery["top_k"] = st.number_input("Top-k кандидатов", 1, 20, int(demo_sku_gallery.get("top_k", identification.get("top_k", 3))))
+            demo_sku_gallery["visualize_limit"] = st.number_input("Лимит визуализаций фото", 0, 1000, int(demo_sku_gallery.get("visualize_limit", 50)))
+            demo_sku_gallery["use_masks"] = st.checkbox("Использовать masks для demo crop", value=bool(demo_sku_gallery.get("use_masks", True)))
+            demo_sku_gallery["prefix"] = st.text_input("Префикс demo SKU", value=str(demo_sku_gallery.get("prefix", "sku_demo_")))
+            demo_sku_gallery["keep_old_demo"] = st.checkbox("Не удалять старые sku_demo_*", value=bool(demo_sku_gallery.get("keep_old_demo", False)))
 
         st.subheader("Идентификация SKU")
         identification["predictions"] = st.text_input("predictions.json", value=str(identification.get("predictions", "results/inference/yolo_seg_batch/predictions.json")))
@@ -232,24 +244,26 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
         identification["out_dir"] = st.text_input("Папка результатов идентификации", value=str(identification.get("out_dir", "D:/1Diplom/shelfvision_results/identification")))
         identification["gallery_csv"] = st.text_input("SKU gallery.csv", value=str(identification.get("gallery_csv", sku_gallery.get("output_csv", "D:/1Diplom/sku_gallery/gallery.csv"))))
         identification["gallery_dir"] = st.text_input("SKU gallery dir", value=str(identification.get("gallery_dir", sku_gallery.get("gallery_dir", "D:/1Diplom/sku_gallery"))))
-        identification["gt_csv"] = st.text_input("GT CSV, опционально", value=str(identification.get("gt_csv", "")))
         identification["threshold"] = st.slider("SKU similarity threshold", 0.0, 1.0, float(identification.get("threshold", 0.65)), 0.01)
         identification["top_k"] = st.number_input("Top-k кандидатов SKU", 1, 20, int(identification.get("top_k", 3)))
-        identification["padding"] = st.slider("Padding вокруг bbox", 0.0, 0.5, float(identification.get("padding", 0.05)), 0.01)
-        identification["use_masks"] = st.checkbox("Использовать masks для crop", value=bool(identification.get("use_masks", True)))
-        identification["no_visualize"] = st.checkbox("Не сохранять визуализации", value=bool(identification.get("no_visualize", False)))
-        identification["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 1000, int(identification.get("visualize_limit", 30)))
-        identification["stabilize_tracks"] = st.checkbox("Стабилизировать SKU по track_id", value=bool(identification.get("stabilize_tracks", True)))
-        identification["render_identified_video"] = st.checkbox("Собрать видео с подписями SKU", value=bool(identification.get("render_identified_video", True)))
-        identification["video_summary"] = st.text_input("video_summary.json, опционально", value=str(identification.get("video_summary", "")))
-        identification["identified_video_codec"] = st.text_input("Кодек identified video", value=str(identification.get("identified_video_codec", "mp4v")))
+        if advanced:
+            identification["gt_csv"] = st.text_input("GT CSV, опционально", value=str(identification.get("gt_csv", "")))
+            identification["padding"] = st.slider("Padding вокруг bbox", 0.0, 0.5, float(identification.get("padding", 0.05)), 0.01)
+            identification["use_masks"] = st.checkbox("Использовать masks для crop", value=bool(identification.get("use_masks", True)))
+            identification["no_visualize"] = st.checkbox("Не сохранять визуализации", value=bool(identification.get("no_visualize", False)))
+            identification["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 1000, int(identification.get("visualize_limit", 30)))
+            identification["stabilize_tracks"] = st.checkbox("Стабилизировать SKU по track_id", value=bool(identification.get("stabilize_tracks", True)))
+            identification["render_identified_video"] = st.checkbox("Собрать видео с подписями SKU", value=bool(identification.get("render_identified_video", True)))
+            identification["video_summary"] = st.text_input("video_summary.json, опционально", value=str(identification.get("video_summary", "")))
+            identification["identified_video_codec"] = st.text_input("Кодек identified video", value=str(identification.get("identified_video_codec", "mp4v")))
 
         st.subheader("Материалы презентации")
         presentation["out_dir"] = st.text_input("Папка материалов презентации", value=str(presentation.get("out_dir", "D:/1Diplom/presentation_assets")))
-        presentation["results_root"] = st.text_input("Корень результатов", value=str(presentation.get("results_root", "D:/1Diplom/shelfvision_results")))
-        presentation["video_dir"] = st.text_input("Папка видео результатов", value=str(presentation.get("video_dir", video.get("output_dir", "results/video/yolo"))))
-        presentation["identification_dir"] = st.text_input("Папка результатов идентификации для слайдов", value=str(presentation.get("identification_dir", demo_sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification") + "/03_identification")))
-        presentation["video_frame"] = st.number_input("Кадр из видео для слайдов", 0, 100000, int(presentation.get("video_frame", 0)))
+        if advanced:
+            presentation["results_root"] = st.text_input("Корень результатов", value=str(presentation.get("results_root", "D:/1Diplom/shelfvision_results")))
+            presentation["video_dir"] = st.text_input("Папка видео результатов", value=str(presentation.get("video_dir", video.get("output_dir", "results/video/yolo"))))
+            presentation["identification_dir"] = st.text_input("Папка результатов идентификации для слайдов", value=str(presentation.get("identification_dir", demo_sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification") + "/03_identification")))
+            presentation["video_frame"] = st.number_input("Кадр из видео для слайдов", 0, 100000, int(presentation.get("video_frame", 0)))
 
         if st.form_submit_button("Сохранить настройки"):
             identification["gallery_dir"] = str(sku_gallery.get("gallery_dir", identification.get("gallery_dir", "")))
@@ -259,7 +273,6 @@ def page_config_wsl(config: Dict[str, Any]) -> Dict[str, Any]:
             save_config(config)
             st.success("Настройки сохранены")
     return config
-
 
 def _build_readiness_args(config: Dict[str, Any]) -> List[str]:
     readiness = config.setdefault("readiness", {})

@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 import streamlit as st
 import yaml
 
+from ui_settings import is_advanced, render_settings_mode_switch
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config"
@@ -261,32 +263,43 @@ def page_setup(config: Dict[str, Any]) -> None:
 
 def page_downloads(config: Dict[str, Any]) -> None:
     st.header("2. Скачивание файлов")
+    render_settings_mode_switch(config, page_key="downloads")
+    advanced = is_advanced(config, page_key="downloads")
     st.caption("Сюда можно добавить ссылки на веса моделей, архивы датасета или другие файлы.")
 
     downloads = config["setup"].setdefault("downloads", [])
-    edited = st.data_editor(
-        downloads,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "name": st.column_config.TextColumn("Название"),
-            "url": st.column_config.TextColumn("URL"),
-            "output": st.column_config.TextColumn("Куда сохранить"),
-        },
-    )
-    config["setup"]["downloads"] = edited
 
-    if st.button("Сохранить список загрузок", use_container_width=True):
-        save_config(config)
-        st.success("Список загрузок сохранён в config/shelfvision.yaml")
+    if advanced:
+        edited = st.data_editor(
+            downloads,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "name": st.column_config.TextColumn("Название"),
+                "url": st.column_config.TextColumn("URL"),
+                "output": st.column_config.TextColumn("Куда сохранить"),
+            },
+        )
+        config["setup"]["downloads"] = edited
+
+        if st.button("Сохранить список загрузок", use_container_width=True):
+            save_config(config)
+            st.success("Список загрузок сохранён в config/shelfvision.yaml")
+    else:
+        edited = [item for item in downloads if item.get("output") or item.get("url")]
+        st.info("Показаны только уже заданные загрузки. В расширенном режиме можно добавлять, удалять и редактировать URL/output.")
 
     st.divider()
     for item in edited:
         name = item.get("name") or "file"
         url = item.get("url") or ""
         output = item.get("output") or ""
-        with st.expander(f"{name}: {output}"):
-            st.write(f"URL: `{url or 'не указан'}`")
+        expanded = advanced
+        with st.expander(f"{name}: {output}", expanded=expanded):
+            if advanced:
+                st.write(f"URL: `{url or 'не указан'}`")
+            elif not url:
+                st.caption("URL не задан. Включи расширенный режим, чтобы отредактировать список загрузок.")
             st.write(f"Output: `{output or 'не указан'}`")
             if output:
                 check_path("Файл", output, should_exist=True)
@@ -299,7 +312,6 @@ def page_downloads(config: Dict[str, Any]) -> None:
                         st.success(f"Файл скачан: {rel_path(saved)}")
                     except Exception as exc:
                         st.error(f"Ошибка скачивания: {exc}")
-
 
 def page_config(config: Dict[str, Any]) -> Dict[str, Any]:
     st.header("3. Настройки проекта")

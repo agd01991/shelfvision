@@ -15,6 +15,7 @@ from asset_discovery import AssetCandidate, DiscoveryRootStats, analyze_and_disc
 from control_panel import ROOT, check_path, rel_path, resolve_path, save_config, venv_python
 from estimate_dependencies import estimate_dependency_seconds
 from panel_progress import CommandStep, run_long_task_with_callback, run_steps_with_progress
+from ui_settings import is_advanced, render_settings_mode_switch
 
 
 def _windows_python_path(venv_dir: Path) -> Path:
@@ -376,6 +377,8 @@ def _render_asset_discovery(config: Dict[str, Any]) -> None:
 
 def page_setup(config: Dict[str, Any]) -> None:
     st.header("1. Первый запуск и установка")
+    render_settings_mode_switch(config, page_key="setup")
+    advanced = is_advanced(config, page_key="setup")
     st.caption("Здесь видно, какой процесс запущен, какой шаг выполняется, таймер, примерное оставшееся время и живой лог команды.")
 
     st.info("Обычный режим: Windows `.venv` нужна только для открытия панели, а рабочие зависимости ставятся в WSL `.venv_wsl`. Пересоздавать среды каждый раз не нужно.")
@@ -390,15 +393,16 @@ def page_setup(config: Dict[str, Any]) -> None:
         if st.button("Создать/починить Windows .venv для панели", use_container_width=True):
             if run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=False), title="Создание Windows .venv", success_message="Windows .venv готова. Можно запускать Control Panel.", failure_message="Не удалось подготовить Windows .venv"):
                 st.balloons()
-        if st.button("Пересоздать Windows .venv с нуля", use_container_width=True):
-            venv_dir = resolve_path(config["setup"].get("venv_dir", ".venv"))
-            with st.spinner(f"Удаляется {rel_path(venv_dir)}..."):
-                _reset_directory(venv_dir)
-            if run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=False), title="Полная пересборка Windows .venv", success_message="Windows .venv пересоздана.", failure_message="Не удалось пересоздать Windows .venv"):
-                st.balloons()
-        if st.button("Установить ВСЕ зависимости в Windows .venv", use_container_width=True):
-            st.warning("Обычно для проекта используется WSL .venv_wsl. Установка всех зависимостей в Windows .venv нужна только для отдельного Windows-запуска.")
-            run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=True)[1:], title="Установка зависимостей в Windows .venv", success_message="Зависимости установлены в Windows .venv.", failure_message="Ошибка установки зависимостей в Windows .venv")
+        if advanced:
+            if st.button("Пересоздать Windows .venv с нуля", use_container_width=True):
+                venv_dir = resolve_path(config["setup"].get("venv_dir", ".venv"))
+                with st.spinner(f"Удаляется {rel_path(venv_dir)}..."):
+                    _reset_directory(venv_dir)
+                if run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=False), title="Полная пересборка Windows .venv", success_message="Windows .venv пересоздана.", failure_message="Не удалось пересоздать Windows .venv"):
+                    st.balloons()
+            if st.button("Установить ВСЕ зависимости в Windows .venv", use_container_width=True):
+                st.warning("Обычно для проекта используется WSL .venv_wsl. Установка всех зависимостей в Windows .venv нужна только для отдельного Windows-запуска.")
+                run_steps_with_progress(_windows_venv_steps(config, install_full_requirements=True)[1:], title="Установка зависимостей в Windows .venv", success_message="Зависимости установлены в Windows .venv.", failure_message="Ошибка установки зависимостей в Windows .venv")
 
     with col2:
         st.subheader("WSL .venv_wsl для рабочих задач")
@@ -409,12 +413,12 @@ def page_setup(config: Dict[str, Any]) -> None:
             run_steps_with_progress(_wsl_check_dependency_steps(config, strict=False), title="Проверка зависимостей WSL .venv_wsl", success_message="Проверка зависимостей завершена. Посмотри строки MISSING/VERSION в логе ниже.", failure_message="Проверка зависимостей WSL завершилась с ошибкой")
         if st.button("Доустановить недостающие зависимости в WSL .venv_wsl", use_container_width=True):
             run_steps_with_progress(_wsl_install_missing_steps(config), title="Доустановка зависимостей WSL .venv_wsl", success_message="Доустановка завершена, повторная проверка выполнена.", failure_message="Ошибка доустановки зависимостей WSL .venv_wsl")
-        if st.button("Запустить wsl --install", use_container_width=True):
+        if advanced and st.button("Запустить wsl --install", use_container_width=True):
             run_steps_with_progress([CommandStep("Установка WSL", ["wsl", "--install"], ROOT, "Запускается установка WSL.", estimated_seconds=600)], title="Установка WSL", success_message="Команда wsl --install выполнена. Может потребоваться перезагрузка.", failure_message="Ошибка выполнения wsl --install")
         if st.button("Создать WSL venv и установить зависимости", use_container_width=True):
             if run_steps_with_progress(_wsl_setup_steps(config), title="Установка зависимостей через WSL", success_message="WSL .venv_wsl готова. Рабочие задачи можно запускать через WSL runtime.", failure_message="Ошибка установки зависимостей через WSL"):
                 st.balloons()
-        if st.button("Пересоздать WSL .venv_wsl с нуля", use_container_width=True):
+        if advanced and st.button("Пересоздать WSL .venv_wsl с нуля", use_container_width=True):
             if run_steps_with_progress(_wsl_reset_steps(config), title="Полная пересборка WSL .venv_wsl", success_message="WSL .venv_wsl пересоздана и зависимости установлены.", failure_message="Ошибка пересборки WSL .venv_wsl"):
                 st.balloons()
 
@@ -428,4 +432,7 @@ def page_setup(config: Dict[str, Any]) -> None:
     check_path("Images dir", config["paths"].get("images_dir", ""))
 
     st.divider()
-    _render_asset_discovery(config)
+    if advanced:
+        _render_asset_discovery(config)
+    else:
+        st.caption("Автопоиск файлов и глубокий обход папок скрыты. Включи режим «Для уверенных пользователей», если нужно искать веса, изображения и видео по диску.")
