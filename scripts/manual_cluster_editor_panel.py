@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List
 
 import pandas as pd
 import streamlit as st
 
-from control_panel import save_config
 from control_panel_wsl import python_command
 from panel_progress import CommandStep, run_steps_with_progress
 from path_utils import to_current_os_path
@@ -38,6 +38,16 @@ def _read_csv(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _read_json(path: Path) -> Dict[str, Any]:
+    path = _safe_path(path)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def _read_text(path: Path, max_chars: int = 30_000) -> str:
     path = _safe_path(path)
     if not path.exists():
@@ -57,6 +67,20 @@ def _write_text_preview(path: Path) -> None:
         st.markdown(text)
     else:
         st.info(f"Файл не найден: `{_safe_path(path)}`")
+
+
+def _to_float(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return 0
 
 
 def _select_experiment_from_summary(results_root: Path, summary_csv: Path) -> Path | None:
@@ -101,7 +125,6 @@ def _render_current_edits(edits_csv: Path) -> None:
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
-
 def _render_merge_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
     sku_refs = list_sku_refs(_safe_path(source_gallery_dir))
     sku_ids = sorted(sku_refs.keys())
@@ -139,7 +162,6 @@ def _render_merge_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
         st.success(f"Операция merge добавлена: {source_sku} → {target_sku}")
 
 
-
 def _render_split_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
     sku_refs = list_sku_refs(_safe_path(source_gallery_dir))
     sku_ids = sorted(sku_refs.keys())
@@ -173,7 +195,6 @@ def _render_split_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
             ),
         )
         st.success(f"Операция split добавлена: {source_sku}, refs: {', '.join(selected_refs)}")
-
 
 
 def _manual_paths(experiment_dir: Path) -> tuple[Path, Path, Path, Path]:
@@ -211,7 +232,178 @@ def _build_rerun_args(experiment_dir: Path, manual_gallery_dir: Path, manual_gal
     ]
 
 
-def _render_apply_tab(experiment_dir: Path, source_gallery_dir: Path, edits_csv: Path) -> None:
+def _extract_metrics(raw: Dict[str, Any]) -> Dict[str, Any]:
+    if not raw:
+        return {}
+    return {
+        "objects": _to_int(raw.get("query_objects_count", raw.get("total_objects", 0))),
+        "matched": _to_int(raw.get("matched", 0)),
+        "unknown": _to_int(raw.get("unknown", 0)),
+        "matched_rate": _to_float(raw.get("matched_rate", 0.0)),
+        "unknown_rate": _to_float(raw.get("unknown_rate", 0.0)),
+        "avg_similarity": _to_float(raw.get("avg_similarity", 0.0)),
+    }
+
+
+def _find_original_summary(experiment_dir: Path) -> tuple[Path | None, Dict[str, Any]]:
+    experiment_dir = _safe_path(experiment_dir)
+    candidates = [
+        experiment_dir / "05_reports" / "full_experiment_summary.json",
+        experiment_dir / "05_reports" / "existing_identification_summary.json",
+        experiment_dir / "04_identification" / "identification_metrics.json",
+    ]
+    for path in candidates:
+        raw = _read_json(path)
+        metrics = _extract_metrics(raw)
+        if metrics:
+            return path, metrics
+    return None, {}
+
+
+def _find_manual_summary(manual_root: Path) -> tuple[Path | None, Dict[str, Any]]:
+    manual_root = _safe_path(manual_root)
+    candidates = [
+        manual_root / "manual_identification" / "05_reports" / "existing_identification_summary.json",
+        manual_root / "manual_identification" / "04_identification" / "identification_metrics.json",
+    ]
+    for path in candidates:
+        raw = _read_json(path)
+        metrics = _extract_metrics(raw)
+        if metrics:
+            return path, metrics
+    return None, {}
+
+
+def _comparison_rows(original: Dict[str, Any], manual: Dict[str, Any]) -> pd.DataFrame:
+    rows = []
+    labels = {
+        "objects": "Query objects",
+        "matched": "Matched",
+        "unknown": "Unknown",
+        "matched_rate": "Matched rate",
+        "unknown_rate": "Unknown rate",
+        "avg_similarity": "Avg similarity",
+    }
+    for key, label in labels.items():
+        before = original.get(key, 0)
+        after = manual.get(key, 0)
+        rows.append(
+            {
+                "metric": label,
+                "original": before,
+                "manual": after,
+                "delta": after - before,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _write_before_after_report(experiment_dir: Path, manual_root: Path, original: Dict[str, Any], manual: Dict[str, Any]) -> Path:
+    manual_root = _safe_path(manual_root)
+    report_path = manual_root / "manual_vs_original_report.md"
+    rows = _comparison_rows(original, manual)
+
+    delta_matched_rate = manual.get("matched_rate", 0.0) - original.get("matched_rate", 0.0)
+    delta_unknown_rate = manual.get("unknown_rate", 0.0) - original.get("unknown_rate", 0.0)
+    delta_similarity = manual.get("avg_similarity", 0.0) - original.get("avg_similarity", 0.0)
+
+    verdict = "manual gallery улучшила matched_rate" if delta_matched_rate > 0 else "manual gallery не улучшила matched_rate"
+    lines = [
+        "# ShelfVision: сравнение original vs manual gallery",
+        "",
+        f"- Experiment dir: `{_safe_path(experiment_dir)}`",
+        f"- Manual root: `{manual_root}`",
+        "",
+        "## Итог",
+        "",
+        f"- Вывод: **{verdict}**",
+        f"- Δ matched_rate: `{delta_matched_rate:.4f}`",
+        f"- Δ unknown_rate: `{delta_unknown_rate:.4f}`",
+        f"- Δ avg_similarity: `{delta_similarity:.4f}`",
+        "",
+        "## Метрики",
+        "",
+        "| metric | original | manual | delta |",
+        "|---|---:|---:|---:|",
+    ]
+    for _, row in rows.iterrows():
+        metric = row["metric"]
+        original_value = row["original"]
+        manual_value = row["manual"]
+        delta = row["delta"]
+        if "rate" in metric.lower() or "similarity" in metric.lower():
+            lines.append(f"| {metric} | {original_value:.4f} | {manual_value:.4f} | {delta:.4f} |")
+        else:
+            lines.append(f"| {metric} | {int(original_value)} | {int(manual_value)} | {int(delta)} |")
+    lines.extend(
+        [
+            "",
+            "## Формулировка для ВКР",
+            "",
+            "После автоматического формирования SKU-галереи была выполнена ручная экспертная корректировка кластеров. "
+            "Для проверки влияния корректировки идентификация была пересчитана на той же query-части, но с использованием manual gallery. "
+            "Такой подход позволяет оценивать эффект ручных merge/split-операций без повторного запуска детектора.",
+        ]
+    )
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+    return report_path
+
+
+def _render_before_after_tab(experiment_dir: Path) -> None:
+    manual_root, _, _, _ = _manual_paths(experiment_dir)
+    original_path, original_metrics = _find_original_summary(experiment_dir)
+    manual_path, manual_metrics = _find_manual_summary(manual_root)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("#### Original")
+        if original_metrics:
+            st.metric("matched_rate", f"{original_metrics['matched_rate']:.4f}")
+            st.caption(f"Источник: `{original_path}`")
+            st.write(f"unknown_rate: `{original_metrics['unknown_rate']:.4f}`")
+            st.write(f"avg_similarity: `{original_metrics['avg_similarity']:.4f}`")
+            st.write(f"matched: `{original_metrics['matched']}`")
+            st.write(f"unknown: `{original_metrics['unknown']}`")
+        else:
+            st.info("Original summary не найден.")
+    with c2:
+        st.markdown("#### Manual")
+        if manual_metrics:
+            st.metric("matched_rate", f"{manual_metrics['matched_rate']:.4f}")
+            st.caption(f"Источник: `{manual_path}`")
+            st.write(f"unknown_rate: `{manual_metrics['unknown_rate']:.4f}`")
+            st.write(f"avg_similarity: `{manual_metrics['avg_similarity']:.4f}`")
+            st.write(f"matched: `{manual_metrics['matched']}`")
+            st.write(f"unknown: `{manual_metrics['unknown']}`")
+        else:
+            st.info("Manual summary пока не найден. Сначала нажми `Пересчитать идентификацию с manual gallery`.")
+
+    if not original_metrics or not manual_metrics:
+        return
+
+    comparison = _comparison_rows(original_metrics, manual_metrics)
+    st.markdown("#### Таблица до/после")
+    st.dataframe(comparison, use_container_width=True, hide_index=True)
+
+    delta = manual_metrics["matched_rate"] - original_metrics["matched_rate"]
+    if delta > 0:
+        st.success(f"Manual gallery улучшила matched_rate на `{delta:.4f}`.")
+    elif delta < 0:
+        st.warning(f"Manual gallery ухудшила matched_rate на `{abs(delta):.4f}`. Проверь merge/split-операции.")
+    else:
+        st.info("Matched rate не изменился.")
+
+    if st.button("Сформировать markdown-отчёт до/после", use_container_width=True, key="manual_write_before_after_report"):
+        report_path = _write_before_after_report(experiment_dir, manual_root, original_metrics, manual_metrics)
+        st.success(f"Отчёт сохранён: `{report_path}`")
+
+    report_path = manual_root / "manual_vs_original_report.md"
+    if report_path.exists():
+        with st.expander("manual_vs_original_report.md", expanded=True):
+            _write_text_preview(report_path)
+
+
+def _render_apply_tab(config: Dict[str, Any], experiment_dir: Path, source_gallery_dir: Path, edits_csv: Path) -> None:
     manual_root, _, manual_gallery_dir, manual_gallery_csv = _manual_paths(experiment_dir)
     st.markdown("#### Сборка manual gallery")
     st.write(f"Manual root: `{manual_root}`")
@@ -239,7 +431,7 @@ def _render_apply_tab(experiment_dir: Path, source_gallery_dir: Path, edits_csv:
             if not manual_gallery_csv.exists():
                 st.warning("Сначала собери manual gallery.")
             else:
-                cmd = python_command({}, "run_existing_photo_identification.py", _build_rerun_args(experiment_dir, manual_gallery_dir, manual_gallery_csv))
+                cmd = python_command(config, "run_existing_photo_identification.py", _build_rerun_args(experiment_dir, manual_gallery_dir, manual_gallery_csv))
                 run_steps_with_progress(
                     [
                         CommandStep(
@@ -262,7 +454,7 @@ def _render_apply_tab(experiment_dir: Path, source_gallery_dir: Path, edits_csv:
     summary_json = manual_root / "manual_gallery_summary.json"
     if summary_json.exists():
         with st.expander("Manual gallery summary.json", expanded=False):
-            st.json(pd.read_json(summary_json, typ="series").to_dict())
+            st.json(_read_json(summary_json))
 
     manual_items = manual_root / "manual_gallery_items.csv"
     if manual_items.exists():
@@ -270,11 +462,10 @@ def _render_apply_tab(experiment_dir: Path, source_gallery_dir: Path, edits_csv:
             st.dataframe(_read_csv(manual_items), use_container_width=True, hide_index=True)
 
     manual_identification = manual_root / "manual_identification"
-    identification_csv = manual_identification / "identification_results.csv"
+    identification_csv = manual_identification / "04_identification" / "identification_results.csv"
     if identification_csv.exists():
         with st.expander("Manual identification results", expanded=False):
             st.dataframe(_read_csv(identification_csv).head(500), use_container_width=True, hide_index=True)
-
 
 
 def page_manual_cluster_editor(config: Dict[str, Any]) -> None:
@@ -311,7 +502,7 @@ def page_manual_cluster_editor(config: Dict[str, Any]) -> None:
     c2.metric("Refs в исходной gallery", sum(len(refs) for refs in sku_refs.values()))
     c3.metric("Manual edits", len(read_manual_edits(edits_csv)))
 
-    tabs = st.tabs(["Merge", "Split", "Текущие операции", "Применить и пересчитать"])
+    tabs = st.tabs(["Merge", "Split", "Текущие операции", "Применить и пересчитать", "Сравнение до/после"])
     with tabs[0]:
         _render_merge_tab(source_gallery_dir, edits_csv)
     with tabs[1]:
@@ -319,4 +510,6 @@ def page_manual_cluster_editor(config: Dict[str, Any]) -> None:
     with tabs[2]:
         _render_current_edits(edits_csv)
     with tabs[3]:
-        _render_apply_tab(experiment_dir, source_gallery_dir, edits_csv)
+        _render_apply_tab(config, experiment_dir, source_gallery_dir, edits_csv)
+    with tabs[4]:
+        _render_before_after_tab(experiment_dir)
