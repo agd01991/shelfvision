@@ -1,4 +1,5 @@
 from __future__ import annotations
+from src.identification.sku_audit_contact_sheets import write_pair_contact_sheet
 
 import json
 import os
@@ -53,7 +54,11 @@ def _iter_sku_dirs(gallery_dir: Path) -> Iterable[Path]:
 
 
 def _iter_refs(sku_dir: Path) -> List[Path]:
-    return sorted(path for path in sku_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTS)
+    return sorted(
+        path
+        for path in sku_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+    )
 
 
 def _safe_pair_name(sku_a: str, sku_b: str) -> str:
@@ -146,15 +151,17 @@ def run_sku_similarity_audit(
     contact_sheets_dir = out_dir / "sku_pair_contact_sheets"
     contact_sheets_dir.mkdir(parents=True, exist_ok=True)
 
-    refs_by_sku, features_by_sku, refs_count, usable_refs_count = _extract_gallery_features(
-        gallery_dir=gallery_dir,
-        max_refs_per_sku=max_refs_per_sku,
+    refs_by_sku, features_by_sku, refs_count, usable_refs_count = (
+        _extract_gallery_features(
+            gallery_dir=gallery_dir,
+            max_refs_per_sku=max_refs_per_sku,
+        )
     )
 
     sku_ids = sorted(features_by_sku.keys())
     rows: List[dict] = []
     for i, sku_a in enumerate(sku_ids):
-        for sku_b in sku_ids[i + 1:]:
+        for sku_b in sku_ids[i + 1 :]:
             scores = _pair_scores(features_by_sku[sku_a], features_by_sku[sku_b])
             report_score = max(
                 scores["centroid_similarity"],
@@ -163,16 +170,22 @@ def run_sku_similarity_audit(
             )
             if report_score < pair_report_threshold:
                 continue
-            recommendation = _recommendation(scores, candidate_threshold=candidate_threshold)
-            rows.append({
-                "sku_a": sku_a,
-                "sku_b": sku_b,
-                **scores,
-                "recommendation": recommendation,
-                "sku_a_refs": len(refs_by_sku.get(sku_a, [])),
-                "sku_b_refs": len(refs_by_sku.get(sku_b, [])),
-                "pair_contact_sheet": str(contact_sheets_dir / _safe_pair_name(sku_a, sku_b)),
-            })
+            recommendation = _recommendation(
+                scores, candidate_threshold=candidate_threshold
+            )
+            rows.append(
+                {
+                    "sku_a": sku_a,
+                    "sku_b": sku_b,
+                    **scores,
+                    "recommendation": recommendation,
+                    "sku_a_refs": len(refs_by_sku.get(sku_a, [])),
+                    "sku_b_refs": len(refs_by_sku.get(sku_b, [])),
+                    "pair_contact_sheet": str(
+                        contact_sheets_dir / _safe_pair_name(sku_a, sku_b)
+                    ),
+                }
+            )
 
     rows.sort(
         key=lambda row: (
@@ -185,7 +198,8 @@ def run_sku_similarity_audit(
     )
     rows_to_write = rows[:top_n] if top_n > 0 else rows
     candidate_rows = [
-        row for row in rows_to_write
+        row
+        for row in rows_to_write
         if row["recommendation"] in {"merge_candidate", "review_candidate"}
     ]
 
@@ -193,6 +207,15 @@ def run_sku_similarity_audit(
     candidates_csv = out_dir / "merge_candidates.csv"
     pd.DataFrame(rows_to_write).to_csv(pairs_csv, index=False)
     pd.DataFrame(candidate_rows).to_csv(candidates_csv, index=False)
+
+    for row in rows_to_write[: max(0, contact_sheet_limit)]:
+        write_pair_contact_sheet(
+            sku_a=str(row["sku_a"]),
+            refs_a=refs_by_sku.get(str(row["sku_a"]), []),
+            sku_b=str(row["sku_b"]),
+            refs_b=refs_by_sku.get(str(row["sku_b"]), []),
+            output_path=Path(str(row["pair_contact_sheet"])),
+        )
 
     summary = SkuAuditSummary(
         gallery_dir=str(gallery_dir),
@@ -209,7 +232,9 @@ def run_sku_similarity_audit(
         status="ok" if sku_ids else "error",
     )
     summary_json = out_dir / "sku_similarity_audit_summary.json"
-    summary_json.write_text(json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_json.write_text(
+        json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     report_md = out_dir / "sku_similarity_audit_report.md"
     lines = [

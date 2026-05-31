@@ -9,7 +9,11 @@ import streamlit as st
 from control_panel_wsl import python_command
 from panel_progress import CommandStep, run_steps_with_progress
 from path_utils import to_current_os_path
-from src.identification.manual_gallery_editor import ManualGalleryEdit, append_manual_edit, infer_gallery_dir_from_experiment
+from src.identification.manual_gallery_editor import (
+    ManualGalleryEdit,
+    append_manual_edit,
+    infer_gallery_dir_from_experiment,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,30 +42,66 @@ def _select_experiment(results_root: Path, summary_csv: Path) -> Path | None:
     return _p(str(row.get("out_dir") or results_root / selected))
 
 
-def _audit_args(gallery_dir: Path, out_dir: Path, pair_threshold: float, candidate_threshold: float, top_n: int, sheet_limit: int, max_refs: int) -> List[str]:
+def _audit_args(
+    gallery_dir: Path,
+    out_dir: Path,
+    pair_threshold: float,
+    candidate_threshold: float,
+    top_n: int,
+    sheet_limit: int,
+    max_refs: int,
+) -> List[str]:
     return [
-        "--gallery-dir", str(_p(gallery_dir)),
-        "--out-dir", str(_p(out_dir)),
-        "--pair-report-threshold", str(pair_threshold),
-        "--candidate-threshold", str(candidate_threshold),
-        "--top-n", str(top_n),
-        "--contact-sheet-limit", str(sheet_limit),
-        "--max-refs-per-sku", str(max_refs),
+        "--gallery-dir",
+        str(_p(gallery_dir)),
+        "--out-dir",
+        str(_p(out_dir)),
+        "--pair-report-threshold",
+        str(pair_threshold),
+        "--candidate-threshold",
+        str(candidate_threshold),
+        "--top-n",
+        str(top_n),
+        "--contact-sheet-limit",
+        str(sheet_limit),
+        "--max-refs-per-sku",
+        str(max_refs),
     ]
 
 
 def page_sku_audit(config: Dict[str, Any]) -> None:
     st.subheader("SKU-to-SKU similarity audit")
-    st.caption("Find visually similar SKU folders and add merge operations to the manual editor.")
+    st.caption(
+        "Find visually similar SKU folders and add merge operations to the manual editor."
+    )
 
     night = config.setdefault("night_experiments", {})
-    default_root = str(night.get("out_dir") or night.get("results_root") or "D:/1Diplom/shelfvision_results/cluster_compare_sku110k_2026-05-29_23-35-48")
-    results_root = _p(st.text_input("Experiment series root", value=default_root, key="sku_audit_results_root"))
-    summary_csv = _p(st.text_input("Summary CSV", value=str(night.get("summary_csv") or results_root / "night_experiments_summary.csv"), key="sku_audit_summary_csv"))
+    default_root = str(
+        night.get("out_dir")
+        or night.get("results_root")
+        or "D:/1Diplom/shelfvision_results/cluster_compare_sku110k_2026-05-29_23-35-48"
+    )
+    results_root = _p(
+        st.text_input(
+            "Experiment series root", value=default_root, key="sku_audit_results_root"
+        )
+    )
+    summary_csv = _p(
+        st.text_input(
+            "Summary CSV",
+            value=str(
+                night.get("summary_csv")
+                or results_root / "night_experiments_summary.csv"
+            ),
+            key="sku_audit_summary_csv",
+        )
+    )
 
     experiment_dir = _select_experiment(results_root, summary_csv)
     if experiment_dir is None:
-        raw_exp = st.text_input("Experiment dir", value="", key="sku_audit_experiment_dir")
+        raw_exp = st.text_input(
+            "Experiment dir", value="", key="sku_audit_experiment_dir"
+        )
         if not raw_exp.strip():
             st.info("Provide summary CSV or experiment dir.")
             return
@@ -69,7 +109,13 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
 
     st.caption(f"Experiment dir: `{experiment_dir}`")
     inferred_gallery = infer_gallery_dir_from_experiment(experiment_dir)
-    gallery_dir = _p(st.text_input("Source SKU gallery", value=str(inferred_gallery or experiment_dir / "02_demo_gallery"), key="sku_audit_gallery_dir"))
+    gallery_dir = _p(
+        st.text_input(
+            "Source SKU gallery",
+            value=str(inferred_gallery or experiment_dir / "02_demo_gallery"),
+            key="sku_audit_gallery_dir",
+        )
+    )
     if not gallery_dir.exists():
         st.warning(f"Gallery not found: `{gallery_dir}`")
         return
@@ -81,22 +127,58 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        pair_threshold = st.slider("Pair report threshold", 0.50, 0.99, 0.75, 0.01, key="sku_audit_pair_threshold")
-        candidate_threshold = st.slider("Candidate threshold", 0.50, 0.99, 0.82, 0.01, key="sku_audit_candidate_threshold")
+        pair_threshold = st.slider(
+            "Pair report threshold",
+            0.50,
+            0.99,
+            0.75,
+            0.01,
+            key="sku_audit_pair_threshold",
+        )
+        candidate_threshold = st.slider(
+            "Candidate threshold",
+            0.50,
+            0.99,
+            0.82,
+            0.01,
+            key="sku_audit_candidate_threshold",
+        )
     with c2:
         top_n = st.number_input("Top-N pairs", 1, 5000, 200, key="sku_audit_top_n")
-        sheet_limit = st.number_input("Contact sheet limit", 0, 500, 80, key="sku_audit_sheet_limit")
+        sheet_limit = st.number_input(
+            "Contact sheet limit", 0, 500, 80, key="sku_audit_sheet_limit"
+        )
     with c3:
-        max_refs = st.number_input("Max refs per SKU", 1, 100, 10, key="sku_audit_max_refs")
+        max_refs = st.number_input(
+            "Max refs per SKU", 1, 100, 10, key="sku_audit_max_refs"
+        )
 
-    if st.button("Run SKU similarity audit", use_container_width=True, key="sku_audit_run"):
+    if st.button(
+        "Run SKU similarity audit", use_container_width=True, key="sku_audit_run"
+    ):
         cmd = python_command(
             config,
             "run_sku_similarity_audit.py",
-            _audit_args(gallery_dir, audit_dir, float(pair_threshold), float(candidate_threshold), int(top_n), int(sheet_limit), int(max_refs)),
+            _audit_args(
+                gallery_dir,
+                audit_dir,
+                float(pair_threshold),
+                float(candidate_threshold),
+                int(top_n),
+                int(sheet_limit),
+                int(max_refs),
+            ),
         )
         run_steps_with_progress(
-            [CommandStep(title="SKU similarity audit", cmd=cmd, cwd=ROOT, description="Computing similarities between SKU folders.", estimated_seconds=None)],
+            [
+                CommandStep(
+                    title="SKU similarity audit",
+                    cmd=cmd,
+                    cwd=ROOT,
+                    description="Computing similarities between SKU folders.",
+                    estimated_seconds=None,
+                )
+            ],
             title="SKU similarity audit",
             success_message="Audit finished.",
             failure_message="Audit failed.",
@@ -121,9 +203,33 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
     row = candidates.loc[idx]
     sku_a = str(row["sku_a"])
     sku_b = str(row["sku_b"])
-    target = st.radio("Target SKU", [sku_a, sku_b], horizontal=True, key="sku_audit_target")
+
+    sheet_path = _p(str(row.get("pair_contact_sheet", "")))
+
+    if sheet_path.exists():
+        st.image(str(sheet_path), caption=sheet_path.name, use_container_width=True)
+    else:
+        st.info(f"Contact sheet не найден: `{sheet_path}`")
+
+    target = st.radio(
+        "Target SKU", [sku_a, sku_b], horizontal=True, key="sku_audit_target"
+    )
     source = sku_b if target == sku_a else sku_a
-    comment = st.text_input("Comment", value=f"audit candidate: {sku_a} / {sku_b}", key="sku_audit_comment")
-    if st.button("Add merge operation to manual editor", use_container_width=True, key="sku_audit_add_merge"):
-        append_manual_edit(_p(manual_edits_csv), ManualGalleryEdit(operation="merge", source_sku_id=source, target_sku_id=target, comment=comment))
+    comment = st.text_input(
+        "Comment", value=f"audit candidate: {sku_a} / {sku_b}", key="sku_audit_comment"
+    )
+    if st.button(
+        "Add merge operation to manual editor",
+        use_container_width=True,
+        key="sku_audit_add_merge",
+    ):
+        append_manual_edit(
+            _p(manual_edits_csv),
+            ManualGalleryEdit(
+                operation="merge",
+                source_sku_id=source,
+                target_sku_id=target,
+                comment=comment,
+            ),
+        )
         st.success(f"Merge added: {source} -> {target}")
