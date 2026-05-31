@@ -16,7 +16,7 @@ from night_experiments_panel import page_night_experiments_reports
 from setup_pages import page_setup
 from sku_audit_panel import page_sku_audit
 from sku_purity_panel import page_sku_purity_audit
-from ui_settings import render_settings_mode_switch
+from ui_settings import is_advanced, render_settings_mode_switch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -191,7 +191,7 @@ def _render_text_preview(path: Path, max_chars: int = 6000) -> None:
     st.code(text, language="text")
 
 
-def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
+def _render_result_dir(title: str, root: Path | None, config_key: str, advanced: bool = False) -> None:
     st.subheader(title)
     if root is None:
         st.info(f"Путь не задан: `{config_key}`")
@@ -204,7 +204,7 @@ def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
 
     files = _list_files(root)
     key_files = _find_key_files(root)
-    images = _find_preview_images(root)
+    images = _find_preview_images(root, limit=12 if advanced else 4)
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Файлов", len(files))
@@ -220,7 +220,7 @@ def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
 
     if key_files:
         st.write("Ключевые файлы:")
-        for path in key_files[:30]:
+        for path in key_files[:30 if advanced else 8]:
             with st.expander(_rel_or_abs(path), expanded=path.name in {"manual_gallery_report.md", "sku_purity_audit_report.md", "full_experiment_summary.md", "experiment_summary.md", "night_experiments_detailed_report.md", "vkr_night_experiments_section.md"}):
                 if path.suffix.lower() == ".md":
                     _render_markdown_preview(path)
@@ -229,11 +229,14 @@ def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
                 else:
                     st.write(f"`{_rel_or_abs(path)}`")
 
-    with st.expander("Все файлы", expanded=False):
-        for path in files[:300]:
-            st.write(f"- `{_rel_or_abs(path)}`")
-        if len(files) >= 300:
-            st.caption("Показаны первые 300 файлов.")
+    if advanced:
+        with st.expander("Все файлы", expanded=False):
+            for path in files[:300]:
+                st.write(f"- `{_rel_or_abs(path)}`")
+            if len(files) >= 300:
+                st.caption("Показаны первые 300 файлов.")
+    else:
+        st.caption("Полный список файлов скрыт. Включи расширенный режим, чтобы увидеть все файлы в папке.")
 
 
 def _streamlit_url(script_path: str) -> str:
@@ -280,10 +283,12 @@ def page_interface_shortcuts() -> None:
 
 
 def page_actions_app(config: Dict[str, Any]) -> None:
-    render_settings_mode_switch(config)
+    render_settings_mode_switch(config, page_key="actions")
+    advanced = is_advanced(config, page_key="actions")
     st.divider()
-    page_interface_shortcuts()
-    st.divider()
+    if advanced:
+        page_interface_shortcuts()
+        st.divider()
     page_full_photo_identification(config)
     st.divider()
     page_night_experiments_reports(config)
@@ -293,12 +298,17 @@ def page_actions_app(config: Dict[str, Any]) -> None:
     page_sku_audit(config)
     st.divider()
     page_sku_purity_audit(config)
-    st.divider()
-    page_actions_wsl(config)
+    if advanced:
+        st.divider()
+        page_actions_wsl(config)
+    else:
+        st.caption("Старый блок ручного запуска инференса, полного pipeline и smoke-проверок скрыт. Включи расширенный режим страницы, чтобы открыть его.")
 
 
 def page_results_wsl(config: Dict[str, Any]) -> None:
     st.header("5. Результаты")
+    render_settings_mode_switch(config, page_key="results")
+    advanced = is_advanced(config, page_key="results")
     st.caption("Здесь показаны все основные папки результатов, а не только старый `results/control_panel`.")
 
     candidates = _candidate_dirs(config)
@@ -309,18 +319,22 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
 
     st.info("Подробный просмотр серии экспериментов SKU110K, audit и ручной редактор кластеров находятся в разделе `Запуск задач`.")
 
-    selected_titles = st.multiselect(
-        "Какие разделы показать",
-        options=[title for title, _, _ in candidates],
-        default=[title for title, _, _ in existing[:4]] or ["Полная фото-идентификация gallery/query", "Фото-идентификация"],
-    )
+    if advanced:
+        selected_titles = st.multiselect(
+            "Какие разделы показать",
+            options=[title for title, _, _ in candidates],
+            default=[title for title, _, _ in existing[:4]] or ["Полная фото-идентификация gallery/query", "Фото-идентификация"],
+        )
+    else:
+        selected_titles = [title for title, _, _ in existing[:3]]
+        st.caption("Показаны первые найденные рабочие папки. В расширенном режиме можно выбрать любые разделы и увидеть отсутствующие пути.")
 
     for title, path, key in candidates:
         if title in selected_titles:
-            _render_result_dir(title, path, key)
+            _render_result_dir(title, path, key, advanced=advanced)
             st.divider()
 
-    if missing:
+    if advanced and missing:
         with st.expander("Папки, которые пока не найдены", expanded=False):
             for title, path, key in missing:
                 st.write(f"- **{title}** (`{key}`): `{_rel_or_abs(path) if path else 'не задано'}`")
@@ -348,10 +362,34 @@ def main() -> None:
         page_results_wsl(config)
     elif page == "config YAML":
         st.header("config/shelfvision.yaml")
-        st.code(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), language="yaml")
-        if st.button("Сохранить текущий YAML"):
-            save_config(config)
-            st.success("Сохранено")
+        render_settings_mode_switch(config, page_key="config_yaml")
+        advanced = is_advanced(config, page_key="config_yaml")
+        current_yaml = yaml.safe_dump(config, allow_unicode=True, sort_keys=False)
+        if advanced:
+            edited_yaml = st.text_area("Редактирование YAML", value=current_yaml, height=650)
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Проверить YAML", use_container_width=True):
+                    try:
+                        yaml.safe_load(edited_yaml) or {}
+                        st.success("YAML корректен")
+                    except Exception as exc:
+                        st.error(f"Ошибка YAML: {exc}")
+            with c2:
+                if st.button("Сохранить отредактированный YAML", use_container_width=True):
+                    try:
+                        parsed = yaml.safe_load(edited_yaml) or {}
+                    except Exception as exc:
+                        st.error(f"Ошибка YAML: {exc}")
+                    else:
+                        save_config(parsed)
+                        st.success("Сохранено")
+        else:
+            st.code(current_yaml, language="yaml")
+            st.caption("Прямое редактирование YAML скрыто. Включи расширенный режим этой страницы, чтобы редактировать файл вручную.")
+            if st.button("Сохранить текущую конфигурацию", use_container_width=True):
+                save_config(config)
+                st.success("Сохранено")
 
 
 if __name__ == "__main__":
