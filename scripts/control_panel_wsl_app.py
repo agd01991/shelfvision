@@ -15,6 +15,8 @@ from manual_cluster_editor_panel import page_manual_cluster_editor
 from night_experiments_panel import page_night_experiments_reports
 from setup_pages import page_setup
 from sku_audit_panel import page_sku_audit
+from sku_purity_panel import page_sku_purity_audit
+from ui_settings import render_settings_mode_switch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,8 +86,18 @@ def _find_key_files(root: Path) -> List[Path]:
     names = [
         "manual_gallery_report.md",
         "manual_gallery_summary.json",
+        "manual_vs_original_report.md",
         "manual_cluster_edits.csv",
         "manual_cluster_edits_applied.csv",
+        "sku_similarity_audit_report.md",
+        "sku_similarity_audit_summary.json",
+        "sku_to_sku_similarity.csv",
+        "merge_candidates.csv",
+        "sku_purity_audit_report.md",
+        "sku_purity_audit_summary.json",
+        "sku_ref_purity.csv",
+        "mixed_sku_candidates.csv",
+        "ref_outlier_candidates.csv",
         "night_experiments_detailed_report.md",
         "vkr_night_experiments_section.md",
         "night_experiments_ranked.csv",
@@ -209,7 +221,7 @@ def _render_result_dir(title: str, root: Path | None, config_key: str) -> None:
     if key_files:
         st.write("Ключевые файлы:")
         for path in key_files[:30]:
-            with st.expander(_rel_or_abs(path), expanded=path.name in {"manual_gallery_report.md", "full_experiment_summary.md", "experiment_summary.md", "night_experiments_detailed_report.md", "vkr_night_experiments_section.md"}):
+            with st.expander(_rel_or_abs(path), expanded=path.name in {"manual_gallery_report.md", "sku_purity_audit_report.md", "full_experiment_summary.md", "experiment_summary.md", "night_experiments_detailed_report.md", "vkr_night_experiments_section.md"}):
                 if path.suffix.lower() == ".md":
                     _render_markdown_preview(path)
                 elif path.suffix.lower() in TEXT_EXTS:
@@ -268,6 +280,8 @@ def page_interface_shortcuts() -> None:
 
 
 def page_actions_app(config: Dict[str, Any]) -> None:
+    render_settings_mode_switch(config)
+    st.divider()
     page_interface_shortcuts()
     st.divider()
     page_full_photo_identification(config)
@@ -277,6 +291,8 @@ def page_actions_app(config: Dict[str, Any]) -> None:
     page_manual_cluster_editor(config)
     st.divider()
     page_sku_audit(config)
+    st.divider()
+    page_sku_purity_audit(config)
     st.divider()
     page_actions_wsl(config)
 
@@ -291,7 +307,7 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
 
     st.success(f"Найдено рабочих папок: {len(existing)} из {len(candidates)}")
 
-    st.info("Подробный просмотр серии экспериментов SKU110K и ручной редактор кластеров находятся в разделе `Запуск задач`.")
+    st.info("Подробный просмотр серии экспериментов SKU110K, audit и ручной редактор кластеров находятся в разделе `Запуск задач`.")
 
     selected_titles = st.multiselect(
         "Какие разделы показать",
