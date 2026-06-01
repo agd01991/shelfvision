@@ -10,6 +10,7 @@ import streamlit as st
 from control_panel import save_config
 from control_panel_wsl import python_command, use_wsl_runtime
 from panel_progress import CommandStep, run_steps_with_progress
+from ui_settings import is_advanced
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,80 @@ GALLERY_BUILD_MODE_LABELS = {
     "cluster": "Clustered provisional SKU",
 }
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+FULL_PHOTO_PRESETS = {
+    "fast": {
+        "label": "Быстрый",
+        "description": "Минимальный прогон для проверки работоспособности.",
+        "limit": 60,
+        "gallery_count": 30,
+        "query_count": 30,
+        "max_sku": 50,
+        "threshold": 0.65,
+        "top_k": 3,
+        "visualize_limit": 20,
+        "progress_every": 50,
+        "gallery_build_mode": "greedy",
+        "dedup_threshold": 0.86,
+        "max_refs_per_sku": 3,
+        "padding": 0.05,
+        "min_score": 0.35,
+        "min_width": 20,
+        "min_height": 20,
+        "enable_uncertain_status": True,
+        "ambiguity_margin": 0.03,
+    },
+    "balanced": {
+        "label": "Сбалансированный",
+        "description": "Рекомендуемый режим для основной проверки качества.",
+        "limit": 0,
+        "gallery_count": 120,
+        "query_count": 140,
+        "max_sku": 150,
+        "threshold": 0.65,
+        "top_k": 5,
+        "visualize_limit": 100,
+        "progress_every": 100,
+        "gallery_build_mode": "greedy",
+        "dedup_threshold": 0.82,
+        "max_refs_per_sku": 10,
+        "padding": 0.05,
+        "min_score": 0.35,
+        "min_width": 20,
+        "min_height": 20,
+        "enable_uncertain_status": True,
+        "ambiguity_margin": 0.03,
+    },
+    "quality": {
+        "label": "Качественный",
+        "description": "Более полный режим: больше gallery/query и больше refs на SKU.",
+        "limit": 0,
+        "gallery_count": 160,
+        "query_count": 140,
+        "max_sku": 200,
+        "threshold": 0.65,
+        "top_k": 5,
+        "visualize_limit": 150,
+        "progress_every": 100,
+        "gallery_build_mode": "greedy",
+        "dedup_threshold": 0.82,
+        "max_refs_per_sku": 15,
+        "padding": 0.05,
+        "min_score": 0.35,
+        "min_width": 20,
+        "min_height": 20,
+        "enable_uncertain_status": True,
+        "ambiguity_margin": 0.03,
+    },
+}
+
+
+def _apply_full_photo_preset(full: Dict[str, Any], preset_key: str) -> None:
+    preset = FULL_PHOTO_PRESETS.get(preset_key, FULL_PHOTO_PRESETS["balanced"])
+    for key, value in preset.items():
+        if key in {"label", "description"}:
+            continue
+        full[key] = value
 
 
 def _photo_weight_path(config: Dict[str, Any], model: str) -> str:
@@ -155,6 +230,7 @@ def _build_existing_photo_args(config: Dict[str, Any]) -> List[str]:
         "--gallery-dir", str(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")),
         "--gallery-csv", str(full.get("gallery_csv", "D:/1Diplom/sku_gallery_full/gallery.csv")),
         "--threshold", str(full.get("threshold", 0.65)),
+        "--ambiguity-margin", str(full.get("ambiguity_margin", 0.03)),
         "--thresholds", str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
         "--top-k", str(full.get("top_k", 3)),
         "--padding", str(full.get("padding", 0.05)),
@@ -170,6 +246,8 @@ def _build_existing_photo_args(config: Dict[str, Any]) -> List[str]:
     cache_dir = str(full.get("feature_cache_dir", "")).strip()
     if cache_dir:
         args.extend(["--cache-dir", cache_dir])
+    if bool(full.get("enable_uncertain_status", True)):
+        args.append("--enable-uncertain-status")
     if bool(full.get("bbox_only", False)):
         args.append("--bbox-only")
     return args
@@ -177,7 +255,99 @@ def _build_existing_photo_args(config: Dict[str, Any]) -> List[str]:
 
 def _render_full_photo_settings(config: Dict[str, Any]) -> None:
     full = config.setdefault("full_photo_identification", {})
-    with st.expander("Настройки полного эксперимента", expanded=False):
+    advanced = is_advanced(config, page_key="actions")
+
+    st.markdown("#### Настройки идентификации")
+
+    if not advanced:
+        st.caption(
+            "В рекомендованном режиме показаны только основные поля. "
+            "Пороги, min crop, cache, cluster-настройки и технические флаги скрыты."
+        )
+
+        preset_options = list(FULL_PHOTO_PRESETS.keys())
+        current_preset = str(full.get("recommended_preset", "balanced"))
+        if current_preset not in preset_options:
+            current_preset = "balanced"
+
+        selected_preset = st.selectbox(
+            "Профиль качества",
+            preset_options,
+            index=preset_options.index(current_preset),
+            format_func=lambda key: FULL_PHOTO_PRESETS[key]["label"],
+            key="full_photo_recommended_preset",
+        )
+        full["recommended_preset"] = selected_preset
+        _apply_full_photo_preset(full, selected_preset)
+
+        st.info(FULL_PHOTO_PRESETS[selected_preset]["description"])
+
+        c1, c2 = st.columns(2)
+        with c1:
+            model_options = list(PHOTO_MODEL_LABELS.keys())
+            current_model = str(full.get("model", "yolo"))
+            full["model"] = st.selectbox(
+                "Модель",
+                model_options,
+                index=model_options.index(current_model) if current_model in model_options else 0,
+                format_func=lambda x: PHOTO_MODEL_LABELS[x],
+                key="full_photo_model_simple",
+            )
+            full["images_dir"] = st.text_input(
+                "Папка изображений",
+                value=str(full.get("images_dir", "D:/1Diplom/data/raw/d2s_full/images")),
+                key="full_photo_images_dir_simple",
+            )
+            full["out_dir"] = st.text_input(
+                "Папка результатов",
+                value=str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")),
+                key="full_photo_out_dir_simple",
+            )
+        with c2:
+            full["gallery_dir"] = st.text_input(
+                "Папка SKU-галереи",
+                value=str(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")),
+                key="full_photo_gallery_dir_simple",
+            )
+            full["gallery_csv"] = st.text_input(
+                "gallery.csv",
+                value=str(full.get("gallery_csv", "D:/1Diplom/sku_gallery_full/gallery.csv")),
+                key="full_photo_gallery_csv_simple",
+            )
+            full["query_predictions_json"] = st.text_input(
+                "Query predictions.json, если уже есть",
+                value=str(full.get("query_predictions_json", "")),
+                key="full_photo_query_predictions_json_simple",
+                help="Если пусто, будет использован <out_dir>/03_query_inference/predictions.json",
+            )
+
+        with st.expander("Какие параметры применит выбранный профиль", expanded=False):
+            preset = FULL_PHOTO_PRESETS[selected_preset]
+            st.write(
+                {
+                    "limit": preset["limit"],
+                    "gallery_count": preset["gallery_count"],
+                    "query_count": preset["query_count"],
+                    "max_sku": preset["max_sku"],
+                    "threshold": preset["threshold"],
+                    "top_k": preset["top_k"],
+                    "dedup_threshold": preset["dedup_threshold"],
+                    "max_refs_per_sku": preset["max_refs_per_sku"],
+                    "enable_uncertain_status": preset["enable_uncertain_status"],
+                    "ambiguity_margin": preset["ambiguity_margin"],
+                }
+            )
+
+        if st.button("Сохранить рекомендованные настройки", use_container_width=True, key="save_full_photo_settings_simple"):
+            save_config(config)
+            st.success("Рекомендованные настройки сохранены.")
+        return
+
+    with st.expander("Настройки полного эксперимента", expanded=True):
+        st.warning(
+            "Расширенный режим: доступны технические параметры. "
+            "Их изменение влияет на качество, время работы и размер результатов."
+        )
         c1, c2 = st.columns(2)
         with c1:
             full["images_dir"] = st.text_input("Полная папка изображений", value=str(full.get("images_dir", "D:/1Diplom/data/raw/d2s_full/images")), key="full_photo_images_dir")
@@ -195,7 +365,9 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             full["query_count"] = st.number_input("Query images, 0 — все оставшиеся", 0, 1_000_000, int(full.get("query_count", 70)), key="full_photo_query_count")
             full["max_sku"] = st.number_input("Максимум demo SKU", 1, 10_000, int(full.get("max_sku", 50)), key="full_photo_max_sku")
             full["threshold"] = st.slider("Порог SKU matching", 0.0, 1.0, float(full.get("threshold", 0.65)), 0.01, key="full_photo_threshold")
-            full["thresholds"] = st.text_input("Пороги для threshold analysis", value=str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")), key="full_photo_thresholds", help="Через запятую. Эти значения попадут в 05_reports/threshold_analysis.csv и .md")
+            full["enable_uncertain_status"] = st.checkbox("Включить статус matched_uncertain", value=bool(full.get("enable_uncertain_status", True)), key="full_photo_enable_uncertain_status")
+            full["ambiguity_margin"] = st.slider("Ambiguity margin", 0.0, 0.20, float(full.get("ambiguity_margin", 0.03)), 0.005, key="full_photo_ambiguity_margin")
+            full["thresholds"] = st.text_input("Пороги для threshold analysis", value=str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")), key="full_photo_thresholds")
             full["top_k"] = st.number_input("Top-k", 1, 50, int(full.get("top_k", 3)), key="full_photo_top_k")
             full["visualize_limit"] = st.number_input("Лимит визуализаций", 0, 10_000, int(full.get("visualize_limit", 100)), key="full_photo_visualize_limit")
             full["progress_every"] = st.number_input("Прогресс каждые N фото", 1, 10_000, int(full.get("progress_every", 10)), key="full_photo_progress_every")
@@ -208,22 +380,15 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             full["min_width"] = st.number_input("Min crop width", 1, 5000, int(full.get("min_width", 20)), key="full_photo_min_width")
             full["min_height"] = st.number_input("Min crop height", 1, 5000, int(full.get("min_height", 20)), key="full_photo_min_height")
             implied_shuffle = _shuffle_implied_by_paths(full)
-            full["shuffle"] = st.checkbox("Случайная воспроизводимая выборка", value=bool(full.get("shuffle", False)) or implied_shuffle, key="full_photo_shuffle", help="Перемешивает список изображений перед split gallery/query. Для ВКР лучше включать и фиксировать seed.")
+            full["shuffle"] = st.checkbox("Случайная воспроизводимая выборка", value=bool(full.get("shuffle", False)) or implied_shuffle, key="full_photo_shuffle")
             full["seed"] = st.number_input("Seed для случайной выборки", 0, 1_000_000, int(full.get("seed", 42)), key="full_photo_seed")
             if implied_shuffle and not bool(full.get("shuffle", False)):
                 st.warning("В названии папок есть `shuffle/seed`, поэтому команда будет запущена с `--shuffle --seed`, даже если настройка не была сохранена ранее.")
         with c4:
             mode_options = list(GALLERY_BUILD_MODE_LABELS.keys())
             current_mode = str(full.get("gallery_build_mode", "greedy"))
-            full["gallery_build_mode"] = st.selectbox(
-                "Режим формирования demo SKU-галереи",
-                mode_options,
-                index=mode_options.index(current_mode) if current_mode in mode_options else 0,
-                format_func=lambda x: GALLERY_BUILD_MODE_LABELS[x],
-                key="full_photo_gallery_build_mode",
-                help="greedy — старый быстрый режим; cluster — сначала создаёт provisional SKU, считает похожесть и затем объединяет похожие crop-ы.",
-            )
-            full["deduplicate_gallery"] = st.checkbox("Объединять похожие crop-ы в один demo SKU", value=bool(full.get("deduplicate_gallery", True)), key="full_photo_deduplicate_gallery", help="Используется в greedy-режиме. В cluster-режиме объединение включено всегда.")
+            full["gallery_build_mode"] = st.selectbox("Режим формирования demo SKU-галереи", mode_options, index=mode_options.index(current_mode) if current_mode in mode_options else 0, format_func=lambda x: GALLERY_BUILD_MODE_LABELS[x], key="full_photo_gallery_build_mode")
+            full["deduplicate_gallery"] = st.checkbox("Объединять похожие crop-ы в один demo SKU", value=bool(full.get("deduplicate_gallery", True)), key="full_photo_deduplicate_gallery")
             full["dedup_threshold"] = st.slider("Порог объединения crop-ов в gallery", 0.0, 1.0, float(full.get("dedup_threshold", 0.86)), 0.01, key="full_photo_dedup_threshold")
             full["max_refs_per_sku"] = st.number_input("Максимум эталонов на один demo SKU", 1, 50, int(full.get("max_refs_per_sku", 3)), key="full_photo_max_refs_per_sku")
             full["padding"] = st.slider("Crop padding", 0.0, 0.5, float(full.get("padding", 0.05)), 0.01, key="full_photo_padding")
@@ -246,18 +411,8 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
                 st.info("Для SKU110K удобно начать с auto или 1500–2500. Чем больше кандидатов, тем тяжелее pairwise similarity.")
 
         with st.expander("Дополнительно для быстрого пересчёта идентификации", expanded=False):
-            full["query_predictions_json"] = st.text_input(
-                "Query predictions.json, опционально",
-                value=str(full.get("query_predictions_json", "")),
-                key="full_photo_query_predictions_json",
-                help="Если пусто, будет использован <out_dir>/03_query_inference/predictions.json",
-            )
-            full["feature_cache_dir"] = st.text_input(
-                "Feature cache dir, опционально",
-                value=str(full.get("feature_cache_dir", "")),
-                key="full_photo_feature_cache_dir",
-                help="Если пусто, будет использован <out_dir>/04_identification/feature_cache",
-            )
+            full["query_predictions_json"] = st.text_input("Query predictions.json, опционально", value=str(full.get("query_predictions_json", "")), key="full_photo_query_predictions_json", help="Если пусто, будет использован <out_dir>/03_query_inference/predictions.json")
+            full["feature_cache_dir"] = st.text_input("Feature cache dir, опционально", value=str(full.get("feature_cache_dir", "")), key="full_photo_feature_cache_dir", help="Если пусто, будет использован <out_dir>/04_identification/feature_cache")
 
         if st.button("Сохранить настройки полного эксперимента", use_container_width=True, key="save_full_photo_settings"):
             save_config(config)
@@ -336,6 +491,7 @@ def _render_contact_sheets(contact_sheets_dir: Path) -> None:
 def _render_full_photo_results(config: Dict[str, Any]) -> None:
     full = config.setdefault("full_photo_identification", {})
     out_dir = _safe_path(str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")))
+    advanced = is_advanced(config, page_key="actions")
 
     with st.expander("Результаты последнего полного эксперимента", expanded=True):
         st.caption(f"Папка результатов: `{out_dir}`")
@@ -353,6 +509,10 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
         demo_items_csv = demo_dir / "demo_sku_gallery_items.csv"
         identification_csv = identification_dir / "identification_results.csv"
         existing_summary_md = reports_dir / "existing_identification_summary.md"
+        assignment_report_md = identification_dir / "assignment_uncertainty_report.md"
+        assignment_summary_csv = identification_dir / "query_assignment_sku_summary.csv"
+        uncertain_csv = identification_dir / "matched_uncertain_candidates.csv"
+        suspicious_csv = identification_dir / "suspicious_absorber_sku.csv"
         provisional_csv = demo_dir / "provisional_sku_items.csv"
         similarity_pairs_csv = demo_dir / "sku_similarity_pairs.csv"
         merge_decisions_csv = demo_dir / "sku_merge_decisions.csv"
@@ -364,50 +524,82 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
         summary = _read_json(summary_json)
         _render_summary_cards(summary)
 
-        tabs = st.tabs(["Threshold", "Demo gallery", "Cluster merge", "Identification", "Visualized", "Markdown reports"])
-        with tabs[0]:
-            if threshold_plot_png.exists():
-                st.image(str(threshold_plot_png), caption="Threshold analysis", use_container_width=True)
-            else:
-                st.info(f"График threshold analysis пока не найден: `{threshold_plot_png}`")
-            _render_csv_table(threshold_csv, "Таблица threshold analysis")
+        if advanced:
+            tabs = st.tabs(["Threshold", "Demo gallery", "Cluster merge", "Identification", "Uncertain audit", "Visualized", "Markdown reports"])
+        else:
+            tabs = st.tabs(["Identification", "Uncertain audit", "Reports"])
 
-        with tabs[1]:
-            demo_report = _read_text(demo_report_md)
-            if demo_report:
-                st.markdown(demo_report)
-            else:
-                st.info(f"Отчёт demo gallery пока не найден: `{demo_report_md}`")
-            _render_csv_table(demo_items_csv, "Demo SKU refs", max_rows=500)
+        if advanced:
+            with tabs[0]:
+                if threshold_plot_png.exists():
+                    st.image(str(threshold_plot_png), caption="Threshold analysis", use_container_width=True)
+                else:
+                    st.info(f"График threshold analysis пока не найден: `{threshold_plot_png}`")
+                _render_csv_table(threshold_csv, "Таблица threshold analysis")
 
-        with tabs[2]:
-            st.caption("Эта вкладка заполняется при режиме `Clustered provisional SKU`.")
-            cluster_report = _read_text(cluster_report_md)
-            if cluster_report:
-                st.markdown(cluster_report)
-            else:
-                st.info(f"Cluster report пока не найден: `{cluster_report_md}`")
-            _render_csv_table(provisional_csv, "Provisional SKU items", max_rows=500)
-            _render_csv_table(cluster_summary_csv, "Cluster summary", max_rows=500)
-            _render_csv_table(similarity_pairs_csv, "Similarity pairs", max_rows=500)
-            _render_csv_table(merge_decisions_csv, "Merge decisions", max_rows=500)
-            _render_csv_table(clusters_csv, "Final clusters", max_rows=500)
-            _render_contact_sheets(contact_sheets_dir)
+            with tabs[1]:
+                demo_report = _read_text(demo_report_md)
+                if demo_report:
+                    st.markdown(demo_report)
+                else:
+                    st.info(f"Отчёт demo gallery пока не найден: `{demo_report_md}`")
+                _render_csv_table(demo_items_csv, "Demo SKU refs", max_rows=500)
 
-        with tabs[3]:
+            with tabs[2]:
+                st.caption("Эта вкладка заполняется при режиме `Clustered provisional SKU`.")
+                cluster_report = _read_text(cluster_report_md)
+                if cluster_report:
+                    st.markdown(cluster_report)
+                else:
+                    st.info(f"Cluster report пока не найден: `{cluster_report_md}`")
+                _render_csv_table(provisional_csv, "Provisional SKU items", max_rows=500)
+                _render_csv_table(cluster_summary_csv, "Cluster summary", max_rows=500)
+                _render_csv_table(similarity_pairs_csv, "Similarity pairs", max_rows=500)
+                _render_csv_table(merge_decisions_csv, "Merge decisions", max_rows=500)
+                _render_csv_table(clusters_csv, "Final clusters", max_rows=500)
+                _render_contact_sheets(contact_sheets_dir)
+
+            identification_tab = tabs[3]
+            uncertain_tab = tabs[4]
+            visualized_tab = tabs[5]
+            reports_tab = tabs[6]
+        else:
+            identification_tab = tabs[0]
+            uncertain_tab = tabs[1]
+            reports_tab = tabs[2]
+            visualized_tab = None
+
+        with identification_tab:
             _render_csv_table(identification_csv, "Результаты идентификации", max_rows=500)
 
-        with tabs[4]:
-            _render_visualized_examples(visualized_dir)
+        with uncertain_tab:
+            report = _read_text(assignment_report_md)
+            if report:
+                st.markdown(report)
+            else:
+                st.info(f"Assignment uncertainty report пока не найден: `{assignment_report_md}`")
+            _render_csv_table(assignment_summary_csv, "SKU assignment summary", max_rows=300)
+            _render_csv_table(suspicious_csv, "Suspicious absorber SKU", max_rows=300)
+            if advanced:
+                _render_csv_table(uncertain_csv, "Matched uncertain candidates", max_rows=500)
 
-        with tabs[5]:
-            for title, path in [
+        if visualized_tab is not None:
+            with visualized_tab:
+                _render_visualized_examples(visualized_dir)
+
+        with reports_tab:
+            report_items = [
                 ("Full experiment summary", summary_md),
                 ("Existing identification rerun", existing_summary_md),
-                ("Threshold analysis", threshold_md),
-                ("Demo SKU gallery report", demo_report_md),
-                ("Cluster merge report", cluster_report_md),
-            ]:
+                ("Assignment uncertainty", assignment_report_md),
+            ]
+            if advanced:
+                report_items.extend([
+                    ("Threshold analysis", threshold_md),
+                    ("Demo SKU gallery report", demo_report_md),
+                    ("Cluster merge report", cluster_report_md),
+                ])
+            for title, path in report_items:
                 with st.expander(title, expanded=False):
                     text = _read_text(path)
                     if text:
@@ -438,7 +630,7 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
             run_steps_with_progress(
                 [CommandStep(title="Быстрый пересчёт идентификации", cmd=cmd, cwd=ROOT, description="Переиспользуются существующие query predictions.json, gallery.csv и feature cache. YOLO-инференс заново не запускается.", estimated_seconds=None)],
                 title="Быстрый пересчёт идентификации",
-                success_message="Идентификация и threshold analysis пересчитаны. Ниже можно посмотреть обновлённые таблицы, графики и визуализации.",
+                success_message="Идентификация, threshold analysis и assignment uncertainty audit пересчитаны.",
                 failure_message="Ошибка быстрого пересчёта идентификации",
             )
     with c2:
@@ -446,6 +638,9 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
         out_dir = str(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification"))
         st.info(f"Результаты будут сохранены в: `{out_dir}`")
         st.caption(f"Режим запуска: {'WSL .venv_wsl' if use_wsl_runtime(config) else 'Windows/local .venv'}")
-        st.caption("Для изменения `threshold`, `thresholds`, `top_k` и визуализаций можно использовать быстрый пересчёт. Для изменения `dedup_threshold`, `max_refs_per_sku`, `max_sku` или режима gallery build нужен полный pipeline.")
+        if is_advanced(config, page_key="actions"):
+            st.caption("Для изменения `threshold`, `thresholds`, `top_k` и визуализаций можно использовать быстрый пересчёт. Для изменения `dedup_threshold`, `max_refs_per_sku`, `max_sku` или режима gallery build нужен полный pipeline.")
+        else:
+            st.caption("В рекомендованном режиме используется профиль качества и безопасная проверка matched_uncertain.")
 
     _render_full_photo_results(config)
