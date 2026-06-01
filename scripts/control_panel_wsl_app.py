@@ -98,6 +98,12 @@ def _find_key_files(root: Path) -> List[Path]:
         "sku_ref_purity.csv",
         "mixed_sku_candidates.csv",
         "ref_outlier_candidates.csv",
+        "assignment_uncertainty_report.md",
+        "assignment_uncertainty_summary.json",
+        "query_assignment_audit.csv",
+        "query_assignment_sku_summary.csv",
+        "matched_uncertain_candidates.csv",
+        "suspicious_absorber_sku.csv",
         "night_experiments_detailed_report.md",
         "vkr_night_experiments_section.md",
         "night_experiments_ranked.csv",
@@ -108,6 +114,8 @@ def _find_key_files(root: Path) -> List[Path]:
         "full_experiment_summary.md",
         "full_experiment_summary.csv",
         "full_experiment_summary.json",
+        "existing_identification_summary.md",
+        "existing_identification_summary.json",
         "experiment_summary.md",
         "experiment_summary.csv",
         "identification_results.csv",
@@ -191,7 +199,7 @@ def _render_text_preview(path: Path, max_chars: int = 6000) -> None:
     st.code(text, language="text")
 
 
-def _render_result_dir(title: str, root: Path | None, config_key: str, advanced: bool = False) -> None:
+def _render_result_dir(title: str, root: Path | None, config_key: str, advanced: bool = True) -> None:
     st.subheader(title)
     if root is None:
         st.info(f"Путь не задан: `{config_key}`")
@@ -204,7 +212,7 @@ def _render_result_dir(title: str, root: Path | None, config_key: str, advanced:
 
     files = _list_files(root)
     key_files = _find_key_files(root)
-    images = _find_preview_images(root, limit=12 if advanced else 4)
+    images = _find_preview_images(root)
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Файлов", len(files))
@@ -214,14 +222,15 @@ def _render_result_dir(title: str, root: Path | None, config_key: str, advanced:
     if images:
         st.write("Превью изображений:")
         cols = st.columns(min(4, len(images)))
-        for idx, image_path in enumerate(images[:12]):
+        for idx, image_path in enumerate(images[:12 if advanced else 4]):
             with cols[idx % len(cols)]:
                 st.image(str(image_path), caption=image_path.name, use_container_width=True)
 
     if key_files:
         st.write("Ключевые файлы:")
-        for path in key_files[:30 if advanced else 8]:
-            with st.expander(_rel_or_abs(path), expanded=path.name in {"manual_gallery_report.md", "sku_purity_audit_report.md", "full_experiment_summary.md", "experiment_summary.md", "night_experiments_detailed_report.md", "vkr_night_experiments_section.md"}):
+        visible_files = key_files[:30] if advanced else key_files[:8]
+        for path in visible_files:
+            with st.expander(_rel_or_abs(path), expanded=path.name in {"assignment_uncertainty_report.md", "manual_gallery_report.md", "sku_purity_audit_report.md", "full_experiment_summary.md", "experiment_summary.md", "night_experiments_detailed_report.md", "vkr_night_experiments_section.md"}):
                 if path.suffix.lower() == ".md":
                     _render_markdown_preview(path)
                 elif path.suffix.lower() in TEXT_EXTS:
@@ -235,8 +244,6 @@ def _render_result_dir(title: str, root: Path | None, config_key: str, advanced:
                 st.write(f"- `{_rel_or_abs(path)}`")
             if len(files) >= 300:
                 st.caption("Показаны первые 300 файлов.")
-    else:
-        st.caption("Полный список файлов скрыт. Включи расширенный режим, чтобы увидеть все файлы в папке.")
 
 
 def _streamlit_url(script_path: str) -> str:
@@ -286,23 +293,35 @@ def page_actions_app(config: Dict[str, Any]) -> None:
     render_settings_mode_switch(config, page_key="actions")
     advanced = is_advanced(config, page_key="actions")
     st.divider()
+
     if advanced:
         page_interface_shortcuts()
         st.divider()
+
     page_full_photo_identification(config)
-    st.divider()
-    page_night_experiments_reports(config)
-    st.divider()
-    page_manual_cluster_editor(config)
-    st.divider()
-    page_sku_audit(config)
-    st.divider()
-    page_sku_purity_audit(config)
+
     if advanced:
         st.divider()
+        page_night_experiments_reports(config)
+        st.divider()
+        page_manual_cluster_editor(config)
+        st.divider()
+        page_sku_audit(config)
+        st.divider()
+        page_sku_purity_audit(config)
+        st.divider()
         page_actions_wsl(config)
-    else:
-        st.caption("Старый блок ручного запуска инференса, полного pipeline и smoke-проверок скрыт. Включи расширенный режим страницы, чтобы открыть его.")
+        return
+
+    st.divider()
+    with st.expander("Дополнительные инструменты проверки SKU", expanded=False):
+        st.caption("Эти инструменты скрыты по умолчанию, чтобы не перегружать рекомендованный режим.")
+        page_sku_audit(config)
+        st.divider()
+        page_sku_purity_audit(config)
+
+    with st.expander("Расширенные задачи и ночные эксперименты", expanded=False):
+        st.info("Ночные эксперименты, ручной редактор кластеров и старый WSL-блок доступны в режиме «Для уверенных пользователей».")
 
 
 def page_results_wsl(config: Dict[str, Any]) -> None:
@@ -362,34 +381,10 @@ def main() -> None:
         page_results_wsl(config)
     elif page == "config YAML":
         st.header("config/shelfvision.yaml")
-        render_settings_mode_switch(config, page_key="config_yaml")
-        advanced = is_advanced(config, page_key="config_yaml")
-        current_yaml = yaml.safe_dump(config, allow_unicode=True, sort_keys=False)
-        if advanced:
-            edited_yaml = st.text_area("Редактирование YAML", value=current_yaml, height=650)
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Проверить YAML", use_container_width=True):
-                    try:
-                        yaml.safe_load(edited_yaml) or {}
-                        st.success("YAML корректен")
-                    except Exception as exc:
-                        st.error(f"Ошибка YAML: {exc}")
-            with c2:
-                if st.button("Сохранить отредактированный YAML", use_container_width=True):
-                    try:
-                        parsed = yaml.safe_load(edited_yaml) or {}
-                    except Exception as exc:
-                        st.error(f"Ошибка YAML: {exc}")
-                    else:
-                        save_config(parsed)
-                        st.success("Сохранено")
-        else:
-            st.code(current_yaml, language="yaml")
-            st.caption("Прямое редактирование YAML скрыто. Включи расширенный режим этой страницы, чтобы редактировать файл вручную.")
-            if st.button("Сохранить текущую конфигурацию", use_container_width=True):
-                save_config(config)
-                st.success("Сохранено")
+        st.code(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), language="yaml")
+        if st.button("Сохранить текущий YAML"):
+            save_config(config)
+            st.success("Сохранено")
 
 
 if __name__ == "__main__":
