@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import pandas as pd
 
@@ -11,15 +11,25 @@ from .matcher import IdentificationResult
 def summarize_identification(results: List[IdentificationResult]) -> Dict[str, float | int]:
     total = len(results)
     matched = sum(1 for item in results if item.sku_status == "matched")
+    matched_uncertain = sum(1 for item in results if item.sku_status == "matched_uncertain")
     unknown = sum(1 for item in results if item.sku_status == "unknown")
+    assigned = matched + matched_uncertain
     avg_similarity = sum(item.sku_confidence for item in results) / total if total else 0.0
+    margins = [float(item.distinct_margin) for item in results if item.distinct_margin is not None]
+    mean_distinct_margin = sum(margins) / len(margins) if margins else 0.0
+
     return {
         "total_objects": total,
         "matched": matched,
+        "matched_uncertain": matched_uncertain,
         "unknown": unknown,
+        "assigned": assigned,
         "matched_rate": matched / total if total else 0.0,
+        "matched_uncertain_rate": matched_uncertain / total if total else 0.0,
         "unknown_rate": unknown / total if total else 0.0,
+        "assigned_rate": assigned / total if total else 0.0,
         "avg_similarity": avg_similarity,
+        "mean_distinct_margin": mean_distinct_margin,
     }
 
 
@@ -46,6 +56,8 @@ def evaluate_with_ground_truth(
     top1_correct = 0
     topk_correct = 0
     false_match = 0
+    uncertain_correct = 0
+    uncertain_total = 0
 
     for item in results:
         true_sku = gt_map.get((item.image_name, item.object_id))
@@ -58,6 +70,10 @@ def evaluate_with_ground_truth(
             topk_correct += 1
         if item.sku_status == "matched" and item.sku_id != true_sku:
             false_match += 1
+        if item.sku_status == "matched_uncertain":
+            uncertain_total += 1
+            if item.sku_id == true_sku:
+                uncertain_correct += 1
 
     summary.update(
         {
@@ -65,6 +81,9 @@ def evaluate_with_ground_truth(
             "top1_accuracy": top1_correct / evaluated if evaluated else 0.0,
             "topk_accuracy": topk_correct / evaluated if evaluated else 0.0,
             "false_match_rate": false_match / evaluated if evaluated else 0.0,
+            "uncertain_total": uncertain_total,
+            "uncertain_correct": uncertain_correct,
+            "uncertain_accuracy": uncertain_correct / uncertain_total if uncertain_total else 0.0,
         }
     )
     return summary
