@@ -43,6 +43,13 @@ class IdentificationResult:
     sku_confidence: float
     sku_status: str
     top_k: List[SkuCandidate]
+    best_distinct_sku: str = ""
+    best_distinct_score: float = 0.0
+    second_distinct_sku: str = ""
+    second_distinct_score: float = 0.0
+    distinct_margin: Optional[float] = None
+    safe_sku_id: Optional[str] = None
+    safe_sku_name: str = ""
     track_id: Optional[int] = None
     track_stabilized: bool = False
     track_frames_count: int = 0
@@ -89,12 +96,58 @@ def _build_gallery_features(
     return features
 
 
+def _distinct_top2(candidates: List[SkuCandidate]) -> tuple[str, float, str, float, Optional[float]]:
+    distinct: List[SkuCandidate] = []
+    seen: set[str] = set()
+
+    for candidate in candidates:
+        if candidate.sku_id in seen:
+            continue
+        distinct.append(candidate)
+        seen.add(candidate.sku_id)
+        if len(distinct) >= 2:
+            break
+
+    if not distinct:
+        return "", 0.0, "", 0.0, None
+
+    best = distinct[0]
+    if len(distinct) == 1:
+        return best.sku_id, float(best.score), "", 0.0, None
+
+    second = distinct[1]
+    margin = float(best.score) - float(second.score)
+    return best.sku_id, float(best.score), second.sku_id, float(second.score), margin
+
+
+def _resolve_assignment_status(
+    best: SkuCandidate | None,
+    threshold: float,
+    enable_uncertain_status: bool,
+    ambiguity_margin: float,
+    distinct_margin: Optional[float],
+) -> str:
+    if not best or best.score < threshold:
+        return "unknown"
+
+    if (
+        enable_uncertain_status
+        and distinct_margin is not None
+        and distinct_margin < ambiguity_margin
+    ):
+        return "matched_uncertain"
+
+    return "matched"
+
+
 def _match_one_crop(
     crop: CropRecord,
     gallery_features: List[tuple[SkuGalleryItem, np.ndarray]],
     cache: VisualFeatureCache,
     threshold: float,
     top_k: int,
+    enable_uncertain_status: bool = False,
+    ambiguity_margin: float = 0.03,
 ) -> IdentificationResult:
     crop_feature = cache.get_or_extract(crop.crop_path)
     candidates: List[SkuCandidate] = []
@@ -112,7 +165,21 @@ def _match_one_crop(
 
     candidates.sort(key=lambda item: item.score, reverse=True)
     best = candidates[0] if candidates else None
-    status = "matched" if best and best.score >= threshold else "unknown"
+    best_distinct_sku, best_distinct_score, second_distinct_sku, second_distinct_score, distinct_margin = _distinct_top2(candidates)
+
+    status = _resolve_assignment_status(
+        best=best,
+        threshold=threshold,
+        enable_uncertain_status=enable_uncertain_status,
+        ambiguity_margin=ambiguity_margin,
+        distinct_margin=distinct_margin,
+    )
+
+    assigned_sku_id = best.sku_id if status in {"matched", "matched_uncertain"} and best else None
+    assigned_sku_name = best.sku_name if status in {"matched", "matched_uncertain"} and best else "unknown"
+    safe_sku_id = best.sku_id if status == "matched" and best else None
+    safe_sku_name = best.sku_name if status == "matched" and best else ""
+
     return IdentificationResult(
         image_path=crop.image_path,
         image_name=crop.image_name,
@@ -126,11 +193,18 @@ def _match_one_crop(
         detection_score=crop.score,
         label=crop.label,
         class_id=crop.class_id,
-        sku_id=best.sku_id if status == "matched" and best else None,
-        sku_name=best.sku_name if status == "matched" and best else "unknown",
+        sku_id=assigned_sku_id,
+        sku_name=assigned_sku_name,
         sku_confidence=best.score if best else 0.0,
         sku_status=status,
         top_k=candidates[:top_k],
+        best_distinct_sku=best_distinct_sku,
+        best_distinct_score=best_distinct_score,
+        second_distinct_sku=second_distinct_sku,
+        second_distinct_score=second_distinct_score,
+        distinct_margin=distinct_margin,
+        safe_sku_id=safe_sku_id,
+        safe_sku_name=safe_sku_name,
     )
 
 
@@ -161,6 +235,8 @@ def run_sku_matching(
     padding_ratio: float = 0.05,
     progress_every: int = 10,
     cache_dir: str | Path | None = None,
+    enable_uncertain_status: bool = False,
+    ambiguity_margin: float = 0.03,
 ) -> List[IdentificationResult]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -192,10 +268,14 @@ def run_sku_matching(
             cache=cache,
             threshold=threshold,
             top_k=top_k,
+            enable_uncertain_status=enable_uncertain_status,
+            ambiguity_margin=ambiguity_margin,
         )
         results.append(result)
         if index == 1 or index % max(1, progress_every) == 0 or index == total:
             matched = sum(1 for item in results if item.sku_status == "matched")
+            uncertain = sum(1 for item in results if item.sku_status == "matched_uncertain")
+            unknown = sum(1 for item in results if item.sku_status == "unknown")
             _progress(
                 "identify",
                 index,
@@ -203,7 +283,8 @@ def run_sku_matching(
                 started,
                 objects=index,
                 matched=matched,
-                unknown=index - matched,
+                matched_uncertain=uncertain,
+                unknown=unknown,
                 cache_dir=str(cache.cache_dir),
             )
 
