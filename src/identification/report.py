@@ -53,6 +53,13 @@ def build_identified_predictions(
                         "sku_name": matched.sku_name,
                         "sku_confidence": matched.sku_confidence,
                         "sku_status": matched.sku_status,
+                        "safe_sku_id": matched.safe_sku_id,
+                        "safe_sku_name": matched.safe_sku_name,
+                        "best_distinct_sku": matched.best_distinct_sku,
+                        "best_distinct_score": matched.best_distinct_score,
+                        "second_distinct_sku": matched.second_distinct_sku,
+                        "second_distinct_score": matched.second_distinct_score,
+                        "distinct_margin": matched.distinct_margin,
                         "sku_top_k": [candidate.__dict__ for candidate in matched.top_k],
                         "track_id": matched.track_id,
                         "track_stabilized": matched.track_stabilized,
@@ -66,6 +73,7 @@ def build_identified_predictions(
         enriched = dict(prediction)
         enriched["detections"] = detections
         enriched["identified_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "matched")
+        enriched["matched_uncertain_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "matched_uncertain")
         enriched["unknown_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "unknown")
         enriched["tracked_objects_count"] = sum(1 for item in detections if item.get("track_id") is not None)
         identified.append(enriched)
@@ -99,11 +107,14 @@ def save_identification_report(
         "## Сводка",
         "",
         f"- Всего объектов: {metrics.get('total_objects', 0)}",
-        f"- Сопоставлено с SKU: {metrics.get('matched', 0)}",
+        f"- Сопоставлено с SKU уверенно: {metrics.get('matched', 0)}",
+        f"- Matched uncertain: {metrics.get('matched_uncertain', 0)}",
         f"- Unknown: {metrics.get('unknown', 0)}",
         f"- Доля matched: {metrics.get('matched_rate', 0):.4f}",
+        f"- Доля matched uncertain: {metrics.get('matched_uncertain_rate', 0):.4f}",
         f"- Доля unknown: {metrics.get('unknown_rate', 0):.4f}",
         f"- Средняя similarity: {metrics.get('avg_similarity', 0):.4f}",
+        f"- Средний distinct margin: {metrics.get('mean_distinct_margin', 0):.4f}",
         f"- Треков в видео: {tracks_count}",
         f"- Объектов со стабилизированным SKU по треку: {stabilized_count}",
     ]
@@ -117,13 +128,15 @@ def save_identification_report(
         )
 
     lines.extend(["", "## Первые результаты", ""])
-    lines.append("| image | object | track | status | sku | confidence | crop |")
-    lines.append("|---|---:|---:|---|---|---:|---|")
+    lines.append("| image | object | track | status | sku | safe sku | confidence | margin | crop |")
+    lines.append("|---|---:|---:|---|---|---|---:|---:|---|")
     for item in results[:30]:
         track = item.track_id if item.track_id is not None else ""
+        margin = item.distinct_margin if item.distinct_margin is not None else 0.0
+        safe_sku = item.safe_sku_name or ""
         lines.append(
             f"| {item.image_name} | {item.object_id} | {track} | {item.sku_status} | {item.sku_name} | "
-            f"{item.sku_confidence:.4f} | `{item.crop_path}` |"
+            f"{safe_sku} | {item.sku_confidence:.4f} | {margin:.4f} | `{item.crop_path}` |"
         )
 
     report_path = out_dir / "identification_report.md"
