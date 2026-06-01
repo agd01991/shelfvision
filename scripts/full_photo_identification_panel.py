@@ -183,6 +183,7 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
         "--cluster-pair-report-threshold", str(full.get("cluster_pair_report_threshold", 0.75)),
         "--cluster-max-candidates", str(full.get("cluster_max_candidates", 0)),
         "--threshold", str(full.get("threshold", 0.65)),
+        "--ambiguity-margin", str(full.get("ambiguity_margin", 0.03)),
         "--thresholds", str(full.get("thresholds", "0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")),
         "--top-k", str(full.get("top_k", 3)),
         "--visualize-limit", str(full.get("visualize_limit", 100)),
@@ -210,6 +211,8 @@ def _build_full_photo_args(config: Dict[str, Any]) -> List[str]:
 
     if gallery_build_mode == "greedy" and not bool(full.get("deduplicate_gallery", True)):
         args.append("--no-deduplicate-gallery")
+    if bool(full.get("enable_uncertain_status", True)):
+        args.append("--enable-uncertain-status")
     if bool(full.get("bbox_only", False)):
         args.append("--bbox-only")
     if bool(full.get("keep_old_demo", False)):
@@ -264,12 +267,10 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
             "В рекомендованном режиме показаны только основные поля. "
             "Пороги, min crop, cache, cluster-настройки и технические флаги скрыты."
         )
-
         preset_options = list(FULL_PHOTO_PRESETS.keys())
         current_preset = str(full.get("recommended_preset", "balanced"))
         if current_preset not in preset_options:
             current_preset = "balanced"
-
         selected_preset = st.selectbox(
             "Профиль качества",
             preset_options,
@@ -279,7 +280,6 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
         )
         full["recommended_preset"] = selected_preset
         _apply_full_photo_preset(full, selected_preset)
-
         st.info(FULL_PHOTO_PRESETS[selected_preset]["description"])
 
         c1, c2 = st.columns(2)
@@ -337,17 +337,13 @@ def _render_full_photo_settings(config: Dict[str, Any]) -> None:
                     "ambiguity_margin": preset["ambiguity_margin"],
                 }
             )
-
         if st.button("Сохранить рекомендованные настройки", use_container_width=True, key="save_full_photo_settings_simple"):
             save_config(config)
             st.success("Рекомендованные настройки сохранены.")
         return
 
     with st.expander("Настройки полного эксперимента", expanded=True):
-        st.warning(
-            "Расширенный режим: доступны технические параметры. "
-            "Их изменение влияет на качество, время работы и размер результатов."
-        )
+        st.warning("Расширенный режим: доступны технические параметры. Их изменение влияет на качество, время работы и размер результатов.")
         c1, c2 = st.columns(2)
         with c1:
             full["images_dir"] = st.text_input("Полная папка изображений", value=str(full.get("images_dir", "D:/1Diplom/data/raw/d2s_full/images")), key="full_photo_images_dir")
@@ -436,6 +432,10 @@ def _render_summary_cards(summary: Dict[str, Any]) -> None:
     c6.metric("Unknown", int(summary.get("unknown", 0) or 0))
     c7.metric("Matched rate", f"{float(summary.get('matched_rate', 0.0) or 0.0):.4f}")
     c8.metric("Avg similarity", f"{float(summary.get('avg_similarity', 0.0) or 0.0):.4f}")
+    if int(summary.get("matched_uncertain", 0) or 0):
+        c9, c10 = st.columns(2)
+        c9.metric("Matched uncertain", int(summary.get("matched_uncertain", 0) or 0))
+        c10.metric("Uncertain rate", f"{float(summary.get('matched_uncertain_rate', 0.0) or 0.0):.4f}")
 
     st.caption("Matched rate — это доля сопоставленных объектов с demo SKU-галереей, а не accuracy по реальным SKU-классам.")
 
@@ -513,6 +513,8 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
         assignment_summary_csv = identification_dir / "query_assignment_sku_summary.csv"
         uncertain_csv = identification_dir / "matched_uncertain_candidates.csv"
         suspicious_csv = identification_dir / "suspicious_absorber_sku.csv"
+        segmentation_identification_md = reports_dir / "segmentation_identification_report.md"
+        segmentation_identification_json = reports_dir / "segmentation_identification_summary.json"
         provisional_csv = demo_dir / "provisional_sku_items.csv"
         similarity_pairs_csv = demo_dir / "sku_similarity_pairs.csv"
         merge_decisions_csv = demo_dir / "sku_merge_decisions.csv"
@@ -525,9 +527,9 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
         _render_summary_cards(summary)
 
         if advanced:
-            tabs = st.tabs(["Threshold", "Demo gallery", "Cluster merge", "Identification", "Uncertain audit", "Visualized", "Markdown reports"])
+            tabs = st.tabs(["Threshold", "Demo gallery", "Cluster merge", "Identification", "Uncertain audit", "Seg+ID report", "Visualized", "Markdown reports"])
         else:
-            tabs = st.tabs(["Identification", "Uncertain audit", "Reports"])
+            tabs = st.tabs(["Identification", "Uncertain audit", "Seg+ID report", "Reports"])
 
         if advanced:
             with tabs[0]:
@@ -536,7 +538,6 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
                 else:
                     st.info(f"График threshold analysis пока не найден: `{threshold_plot_png}`")
                 _render_csv_table(threshold_csv, "Таблица threshold analysis")
-
             with tabs[1]:
                 demo_report = _read_text(demo_report_md)
                 if demo_report:
@@ -544,7 +545,6 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
                 else:
                     st.info(f"Отчёт demo gallery пока не найден: `{demo_report_md}`")
                 _render_csv_table(demo_items_csv, "Demo SKU refs", max_rows=500)
-
             with tabs[2]:
                 st.caption("Эта вкладка заполняется при режиме `Clustered provisional SKU`.")
                 cluster_report = _read_text(cluster_report_md)
@@ -558,20 +558,20 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
                 _render_csv_table(merge_decisions_csv, "Merge decisions", max_rows=500)
                 _render_csv_table(clusters_csv, "Final clusters", max_rows=500)
                 _render_contact_sheets(contact_sheets_dir)
-
             identification_tab = tabs[3]
             uncertain_tab = tabs[4]
-            visualized_tab = tabs[5]
-            reports_tab = tabs[6]
+            segid_tab = tabs[5]
+            visualized_tab = tabs[6]
+            reports_tab = tabs[7]
         else:
             identification_tab = tabs[0]
             uncertain_tab = tabs[1]
-            reports_tab = tabs[2]
+            segid_tab = tabs[2]
+            reports_tab = tabs[3]
             visualized_tab = None
 
         with identification_tab:
             _render_csv_table(identification_csv, "Результаты идентификации", max_rows=500)
-
         with uncertain_tab:
             report = _read_text(assignment_report_md)
             if report:
@@ -582,15 +582,23 @@ def _render_full_photo_results(config: Dict[str, Any]) -> None:
             _render_csv_table(suspicious_csv, "Suspicious absorber SKU", max_rows=300)
             if advanced:
                 _render_csv_table(uncertain_csv, "Matched uncertain candidates", max_rows=500)
-
+        with segid_tab:
+            report = _read_text(segmentation_identification_md)
+            if report:
+                st.markdown(report)
+            else:
+                st.info(f"Segmentation + identification report пока не найден: `{segmentation_identification_md}`")
+            if advanced:
+                with st.expander("segmentation_identification_summary.json", expanded=False):
+                    st.json(_read_json(segmentation_identification_json))
         if visualized_tab is not None:
             with visualized_tab:
                 _render_visualized_examples(visualized_dir)
-
         with reports_tab:
             report_items = [
                 ("Full experiment summary", summary_md),
                 ("Existing identification rerun", existing_summary_md),
+                ("Segmentation + identification report", segmentation_identification_md),
                 ("Assignment uncertainty", assignment_report_md),
             ]
             if advanced:
@@ -619,9 +627,9 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
             save_config(config)
             cmd = python_command(config, "run_full_photo_identification_pipeline.py", _build_full_photo_args(config))
             run_steps_with_progress(
-                [CommandStep(title="Полная фото-идентификация gallery/query", cmd=cmd, cwd=ROOT, description="Идёт split на gallery/query, инференс, сборка demo SKU-галереи и идентификация query-объектов. В логе должны появляться строки PHOTO_PROGRESS и PROGRESS_JSON.", estimated_seconds=None)],
+                [CommandStep(title="Полная фото-идентификация gallery/query", cmd=cmd, cwd=ROOT, description="Идёт split на gallery/query, инференс, сборка demo SKU-галереи, идентификация query-объектов и отчёт Segmentation + Identification. В логе должны появляться строки PHOTO_PROGRESS и PROGRESS_JSON.", estimated_seconds=None)],
                 title="Полная фото-идентификация",
-                success_message="Полный эксперимент завершён. Ниже можно посмотреть summary, threshold-график, таблицы и визуализации.",
+                success_message="Полный эксперимент завершён. Ниже можно посмотреть summary, Seg+ID report, threshold-график, таблицы и визуализации.",
                 failure_message="Ошибка полного эксперимента фото-идентификации",
             )
         if st.button("Быстро пересчитать только идентификацию", use_container_width=True, key="rerun_existing_photo_identification"):
@@ -630,7 +638,7 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
             run_steps_with_progress(
                 [CommandStep(title="Быстрый пересчёт идентификации", cmd=cmd, cwd=ROOT, description="Переиспользуются существующие query predictions.json, gallery.csv и feature cache. YOLO-инференс заново не запускается.", estimated_seconds=None)],
                 title="Быстрый пересчёт идентификации",
-                success_message="Идентификация, threshold analysis и assignment uncertainty audit пересчитаны.",
+                success_message="Идентификация, threshold analysis, assignment uncertainty audit и Seg+ID report пересчитаны.",
                 failure_message="Ошибка быстрого пересчёта идентификации",
             )
     with c2:
@@ -641,6 +649,5 @@ def page_full_photo_identification(config: Dict[str, Any]) -> None:
         if is_advanced(config, page_key="actions"):
             st.caption("Для изменения `threshold`, `thresholds`, `top_k` и визуализаций можно использовать быстрый пересчёт. Для изменения `dedup_threshold`, `max_refs_per_sku`, `max_sku` или режима gallery build нужен полный pipeline.")
         else:
-            st.caption("В рекомендованном режиме используется профиль качества и безопасная проверка matched_uncertain.")
-
+            st.caption("В рекомендованном режиме используется профиль качества, безопасная проверка matched_uncertain и отчёт Segmentation + Identification.")
     _render_full_photo_results(config)
