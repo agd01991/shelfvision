@@ -11,6 +11,7 @@ from typing import Dict, List, Sequence
 import pandas as pd
 
 from run_inference import get_predictors, save_summary_csv
+from src.identification.assignment_audit import save_assignment_audit_outputs
 from src.identification.clustered_gallery_builder import build_clustered_demo_sku_gallery_from_predictions
 from src.identification.demo_gallery_builder import build_demo_sku_gallery_from_predictions
 from src.identification.matcher import run_sku_matching
@@ -20,6 +21,7 @@ from src.identification.threshold_analysis import save_threshold_analysis
 from src.identification.visualization import visualize_identification_results
 from src.identification.vkr_report import generate_vkr_experiment_report
 from src.inference.prediction import ImagePrediction, save_predictions_json
+from src.reporting.segmentation_identification_report import generate_segmentation_identification_report
 from src.visualization.draw_boxes import draw_prediction
 
 
@@ -44,10 +46,15 @@ class FullExperimentSummary:
     extracted_gallery_crops_count: int
     query_objects_count: int
     matched: int
+    matched_uncertain: int
     unknown: int
+    assigned: int
     matched_rate: float
+    matched_uncertain_rate: float
     unknown_rate: float
+    assigned_rate: float
     avg_similarity: float
+    mean_distinct_margin: float
     elapsed_seconds: float
     gallery_predictions_json: str
     query_predictions_json: str
@@ -55,6 +62,8 @@ class FullExperimentSummary:
     identification_results_csv: str
     visualized_dir: str
     threshold_analysis_csv: str
+    assignment_uncertainty_report_md: str
+    segmentation_identification_report_md: str
     params: Dict[str, str | int | float | bool]
 
 
@@ -101,6 +110,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cluster-max-candidates", type=int, default=0, help="Cluster gallery: maximum provisional candidates. 0 means auto")
 
     parser.add_argument("--threshold", type=float, default=0.65)
+    parser.add_argument(
+        "--enable-uncertain-status",
+        action="store_true",
+        help="Enable matched_uncertain when top-1/top-2 distinct SKU margin is below --ambiguity-margin.",
+    )
+    parser.add_argument(
+        "--ambiguity-margin",
+        type=float,
+        default=0.03,
+        help="If best distinct SKU score minus second distinct SKU score is below this margin, mark as matched_uncertain.",
+    )
     parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--gt-csv", default=None)
@@ -117,9 +137,8 @@ def _parse_thresholds(raw: str) -> List[float]:
     values: List[float] = []
     for chunk in str(raw).split(","):
         chunk = chunk.strip()
-        if not chunk:
-            continue
-        values.append(float(chunk))
+        if chunk:
+            values.append(float(chunk))
     return values or [0.65]
 
 
@@ -185,7 +204,6 @@ def _save_manifest(out_dir: Path, gallery: Sequence[Path], query: Sequence[Path]
     all_csv = manifest_dir / "all_images.csv"
     gallery_csv = manifest_dir / "gallery_images.csv"
     query_csv = manifest_dir / "query_images.csv"
-
     pd.DataFrame([asdict(row) for row in rows]).to_csv(all_csv, index=False)
     pd.DataFrame([asdict(row) for row in rows if row.split == "gallery"]).to_csv(gallery_csv, index=False)
     pd.DataFrame([asdict(row) for row in rows if row.split == "query"]).to_csv(query_csv, index=False)
@@ -422,6 +440,8 @@ def _save_full_summary(
     metrics: Dict[str, object],
     elapsed_seconds: float,
     threshold_outputs: Dict[str, Path],
+    assignment_outputs: Dict[str, Path],
+    segmentation_identification_outputs: Dict[str, Path],
 ) -> Dict[str, Path]:
     reports_dir = out_dir / "05_reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -435,10 +455,15 @@ def _save_full_summary(
         extracted_gallery_crops_count=int(demo_summary.get("extracted_crops_count", 0) or 0),
         query_objects_count=int(metrics.get("total_objects", 0) or 0),
         matched=int(metrics.get("matched", 0) or 0),
+        matched_uncertain=int(metrics.get("matched_uncertain", 0) or 0),
         unknown=int(metrics.get("unknown", 0) or 0),
+        assigned=int(metrics.get("assigned", 0) or 0),
         matched_rate=float(metrics.get("matched_rate", 0.0) or 0.0),
+        matched_uncertain_rate=float(metrics.get("matched_uncertain_rate", 0.0) or 0.0),
         unknown_rate=float(metrics.get("unknown_rate", 0.0) or 0.0),
+        assigned_rate=float(metrics.get("assigned_rate", 0.0) or 0.0),
         avg_similarity=float(metrics.get("avg_similarity", 0.0) or 0.0),
+        mean_distinct_margin=float(metrics.get("mean_distinct_margin", 0.0) or 0.0),
         elapsed_seconds=elapsed_seconds,
         gallery_predictions_json=str(gallery_predictions_json),
         query_predictions_json=str(query_predictions_json),
@@ -446,6 +471,8 @@ def _save_full_summary(
         identification_results_csv=str(identification_dir / "identification_results.csv"),
         visualized_dir=str(identification_dir / "visualized"),
         threshold_analysis_csv=str(threshold_outputs.get("threshold_analysis_csv", "")),
+        assignment_uncertainty_report_md=str(assignment_outputs.get("assignment_uncertainty_report_md", "")),
+        segmentation_identification_report_md=str(segmentation_identification_outputs.get("segmentation_identification_report_md", "")),
         params={
             "model": args.model,
             "weights": args.weights,
@@ -457,6 +484,8 @@ def _save_full_summary(
             "conf": args.conf,
             "imgsz": args.imgsz,
             "threshold": args.threshold,
+            "enable_uncertain_status": args.enable_uncertain_status,
+            "ambiguity_margin": args.ambiguity_margin,
             "thresholds": args.thresholds,
             "top_k": args.top_k,
             "max_sku": args.max_sku,
@@ -495,10 +524,15 @@ def _save_full_summary(
         f"- Crop-ов извлечено для gallery: {summary.extracted_gallery_crops_count}",
         f"- Query-объектов найдено: {summary.query_objects_count}",
         f"- Matched: {summary.matched}",
+        f"- Matched uncertain: {summary.matched_uncertain}",
         f"- Unknown: {summary.unknown}",
+        f"- Assigned total: {summary.assigned}",
         f"- Matched rate: {summary.matched_rate:.4f}",
+        f"- Matched uncertain rate: {summary.matched_uncertain_rate:.4f}",
         f"- Unknown rate: {summary.unknown_rate:.4f}",
+        f"- Assigned rate: {summary.assigned_rate:.4f}",
         f"- Avg similarity: {summary.avg_similarity:.4f}",
+        f"- Mean distinct margin: {summary.mean_distinct_margin:.4f}",
         f"- Общее время: {_format_eta(summary.elapsed_seconds)}",
         "",
         "## Основные файлы",
@@ -508,11 +542,13 @@ def _save_full_summary(
         f"- Gallery CSV: `{summary.gallery_csv}`",
         f"- Identification CSV: `{summary.identification_results_csv}`",
         f"- Threshold analysis: `{summary.threshold_analysis_csv}`",
+        f"- Assignment uncertainty report: `{summary.assignment_uncertainty_report_md}`",
+        f"- Segmentation + identification report: `{summary.segmentation_identification_report_md}`",
         f"- Visualized: `{summary.visualized_dir}`",
         "",
         "## Формулировка для ВКР",
         "",
-        "Для полноценной проверки модуля идентификации исходный набор изображений разделяется на две части: gallery и query. По gallery-части автоматически формируется демонстрационная SKU-галерея, а по query-части выполняется независимое сопоставление найденных объектов с данной галереей. Это позволяет показать работу контура идентификации без ручной подготовки эталонной базы для датасета, в котором отсутствует исходная SKU-разметка.",
+        "Для полноценной проверки модуля идентификации исходный набор изображений разделяется на две части: gallery и query. По gallery-части автоматически формируется демонстрационная SKU-галерея, а по query-части выполняется независимое сопоставление найденных объектов с данной галереей. Дополнительно формируется отчёт по связке сегментации/локализации и идентификации, который показывает соответствие реализации теме ВКР.",
         "",
         "## Параметры запуска",
         "",
@@ -563,6 +599,8 @@ def main() -> None:
         top_k=args.top_k,
         padding_ratio=args.padding,
         progress_every=args.progress_every,
+        enable_uncertain_status=bool(args.enable_uncertain_status),
+        ambiguity_margin=float(args.ambiguity_margin),
     )
     metrics = evaluate_with_ground_truth(results, gt_csv=args.gt_csv)
     save_identification_metrics(metrics, out_dir=identification_dir)
@@ -579,6 +617,18 @@ def main() -> None:
         limit=max(0, args.visualize_limit),
     )
     threshold_outputs = save_threshold_analysis(results, out_dir=reports_dir, thresholds=_parse_thresholds(args.thresholds))
+    assignment_outputs = save_assignment_audit_outputs(
+        results=results,
+        out_dir=identification_dir,
+        threshold=float(args.threshold),
+        ambiguity_margin=float(args.ambiguity_margin),
+    )
+    segmentation_identification_outputs = generate_segmentation_identification_report(
+        out_dir=out_dir,
+        query_predictions_json=query_predictions_json,
+        identification_dir=identification_dir,
+        reports_dir=reports_dir,
+    )
 
     print("Step 5/5: save full experiment report", flush=True)
     summary_outputs = _save_full_summary(
@@ -593,6 +643,8 @@ def main() -> None:
         metrics=metrics,
         elapsed_seconds=time.perf_counter() - started,
         threshold_outputs=threshold_outputs,
+        assignment_outputs=assignment_outputs,
+        segmentation_identification_outputs=segmentation_identification_outputs,
     )
     vkr_outputs = generate_vkr_experiment_report(out_dir)
 
@@ -600,11 +652,13 @@ def main() -> None:
     print(f"Output: {out_dir}", flush=True)
     print(f"Gallery CSV: {args.gallery_csv}", flush=True)
     print(f"Identification results: {identification_dir}", flush=True)
-    for name, path in {**threshold_outputs, **summary_outputs, **vkr_outputs}.items():
+    for name, path in {**threshold_outputs, **assignment_outputs, **segmentation_identification_outputs, **summary_outputs, **vkr_outputs}.items():
         print(f"Report {name}: {path}", flush=True)
     print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
     print(f"Matched: {metrics.get('matched', 0)}", flush=True)
+    print(f"Matched uncertain: {metrics.get('matched_uncertain', 0)}", flush=True)
     print(f"Unknown: {metrics.get('unknown', 0)}", flush=True)
+    print(f"Segmentation-identification report: {segmentation_identification_outputs.get('segmentation_identification_report_md')}", flush=True)
 
 
 if __name__ == "__main__":
