@@ -13,6 +13,7 @@ from src.identification.metrics import evaluate_with_ground_truth, save_identifi
 from src.identification.report import save_identification_outputs
 from src.identification.threshold_analysis import save_threshold_analysis
 from src.identification.visualization import visualize_identification_results
+from src.reporting.segmentation_identification_report import generate_segmentation_identification_report
 
 
 @dataclass
@@ -50,6 +51,8 @@ class ExistingIdentificationSummary:
     suspicious_absorber_sku_csv: str
     assignment_uncertainty_summary_json: str
     assignment_uncertainty_report_md: str
+    segmentation_identification_summary_json: str
+    segmentation_identification_report_md: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,6 +111,7 @@ def _save_summary(
     metrics: Dict[str, object],
     threshold_outputs: Dict[str, Path],
     assignment_outputs: Dict[str, Path],
+    segmentation_identification_outputs: Dict[str, Path],
     elapsed_seconds: float,
 ) -> Dict[str, Path]:
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -145,6 +149,8 @@ def _save_summary(
         suspicious_absorber_sku_csv=str(assignment_outputs.get("suspicious_absorber_sku_csv", "")),
         assignment_uncertainty_summary_json=str(assignment_outputs.get("assignment_uncertainty_summary_json", "")),
         assignment_uncertainty_report_md=str(assignment_outputs.get("assignment_uncertainty_report_md", "")),
+        segmentation_identification_summary_json=str(segmentation_identification_outputs.get("segmentation_identification_summary_json", "")),
+        segmentation_identification_report_md=str(segmentation_identification_outputs.get("segmentation_identification_report_md", "")),
     )
     summary_json = reports_dir / "existing_identification_summary.json"
     summary_md = reports_dir / "existing_identification_summary.md"
@@ -184,10 +190,13 @@ def _save_summary(
         f"- SKU assignment summary: `{summary.query_assignment_sku_summary_csv}`",
         f"- Suspicious absorber SKU: `{summary.suspicious_absorber_sku_csv}`",
         f"- Assignment uncertainty report: `{summary.assignment_uncertainty_report_md}`",
+        f"- Segmentation + identification report: `{summary.segmentation_identification_report_md}`",
         "",
         "## Примечание для ВКР",
         "",
         "Этот режим не выполняет повторный inference модели детекции. Он переиспользует уже рассчитанный `query predictions.json`, текущую demo SKU-галерею и feature cache. Если включён `matched_uncertain`, система дополнительно проверяет margin между лучшим и вторым различным SKU и помечает неоднозначные совпадения как диагностические, не считая их надёжным safe SKU.",
+        "",
+        "Дополнительно формируется отчёт по связке сегментации/локализации и идентификации, который явно показывает соответствие практической реализации теме ВКР.",
     ]
     summary_md.write_text("\n".join(lines), encoding="utf-8")
     return {"existing_identification_summary_json": summary_json, "existing_identification_summary_md": summary_md}
@@ -249,6 +258,12 @@ def main() -> None:
         threshold=float(args.threshold),
         ambiguity_margin=float(args.ambiguity_margin),
     )
+    segmentation_identification_outputs = generate_segmentation_identification_report(
+        out_dir=out_dir,
+        query_predictions_json=query_predictions_json,
+        identification_dir=identification_dir,
+        reports_dir=reports_dir,
+    )
     summary_outputs = _save_summary(
         args=args,
         query_predictions_json=query_predictions_json,
@@ -258,16 +273,18 @@ def main() -> None:
         metrics=metrics,
         threshold_outputs=threshold_outputs,
         assignment_outputs=assignment_outputs,
+        segmentation_identification_outputs=segmentation_identification_outputs,
         elapsed_seconds=time.perf_counter() - started,
     )
 
     print("=== Done ===", flush=True)
-    for name, path in {**threshold_outputs, **assignment_outputs, **summary_outputs}.items():
+    for name, path in {**threshold_outputs, **assignment_outputs, **segmentation_identification_outputs, **summary_outputs}.items():
         print(f"Report {name}: {path}", flush=True)
     print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
     print(f"Matched: {metrics.get('matched', 0)}", flush=True)
     print(f"Matched uncertain: {metrics.get('matched_uncertain', 0)}", flush=True)
     print(f"Unknown: {metrics.get('unknown', 0)}", flush=True)
+    print(f"Segmentation-identification report: {segmentation_identification_outputs.get('segmentation_identification_report_md')}", flush=True)
 
 
 if __name__ == "__main__":
