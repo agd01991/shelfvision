@@ -35,9 +35,9 @@ def _normalize_mode(value: Any) -> str:
 def get_settings_mode(config: Dict[str, Any], page_key: str | None = None) -> str:
     """Return settings mode for a page.
 
-    The previous implementation stored a single global `ui.settings_mode`, so the
-    radio button did not express page-specific behaviour.  New pages read from
-    `ui.settings_mode_by_page[page_key]` and fall back to the legacy global value.
+    Pages can store their own mode in `ui.settings_mode_by_page`.  The legacy
+    `ui.settings_mode` is kept for older nested panels that still call
+    `is_advanced(config)` without a page key.
     """
 
     ui = _ui_config(config)
@@ -82,6 +82,9 @@ def render_settings_mode_switch(config: Dict[str, Any], page_key: str | None = N
 
     if page_key:
         ui.setdefault("settings_mode_by_page", {})[page_key] = selected
+        # Backward compatibility: nested panels can still call is_advanced(config)
+        # without page_key, so keep the legacy global mode synchronized too.
+        ui["settings_mode"] = selected
     else:
         ui["settings_mode"] = selected
 
