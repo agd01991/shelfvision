@@ -37,7 +37,7 @@ def _select_experiment(results_root: Path, summary_csv: Path) -> Path | None:
     if df.empty or not {"experiment", "out_dir"}.issubset(df.columns):
         return None
     options = [str(x) for x in df["experiment"].tolist()]
-    selected = st.selectbox("Experiment", options, key="sku_audit_experiment")
+    selected = st.selectbox("Эксперимент", options, key="sku_audit_experiment")
     row = df[df["experiment"].astype(str).eq(selected)].iloc[0]
     return _p(str(row.get("out_dir") or results_root / selected))
 
@@ -70,9 +70,10 @@ def _audit_args(
 
 
 def page_sku_audit(config: Dict[str, Any]) -> None:
-    st.subheader("SKU-to-SKU similarity audit")
+    st.subheader("Аудит похожих SKU")
     st.caption(
-        "Find visually similar SKU folders and add merge operations to the manual editor."
+        "Модуль ищет визуально похожие папки SKU и помогает добавить операции объединения "
+        "в ручной редактор галереи."
     )
 
     night = config.setdefault("night_experiments", {})
@@ -83,12 +84,12 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
     )
     results_root = _p(
         st.text_input(
-            "Experiment series root", value=default_root, key="sku_audit_results_root"
+            "Папка серии экспериментов", value=default_root, key="sku_audit_results_root"
         )
     )
     summary_csv = _p(
         st.text_input(
-            "Summary CSV",
+            "Сводная таблица серии экспериментов",
             value=str(
                 night.get("summary_csv")
                 or results_root / "night_experiments_summary.csv"
@@ -100,35 +101,35 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
     experiment_dir = _select_experiment(results_root, summary_csv)
     if experiment_dir is None:
         raw_exp = st.text_input(
-            "Experiment dir", value="", key="sku_audit_experiment_dir"
+            "Папка эксперимента", value="", key="sku_audit_experiment_dir"
         )
         if not raw_exp.strip():
-            st.info("Provide summary CSV or experiment dir.")
+            st.info("Укажи сводную таблицу серии экспериментов или папку конкретного эксперимента.")
             return
         experiment_dir = _p(raw_exp)
 
-    st.caption(f"Experiment dir: `{experiment_dir}`")
+    st.caption(f"Папка эксперимента: `{experiment_dir}`")
     inferred_gallery = infer_gallery_dir_from_experiment(experiment_dir)
     gallery_dir = _p(
         st.text_input(
-            "Source SKU gallery",
+            "Исходная SKU-галерея",
             value=str(inferred_gallery or experiment_dir / "02_demo_gallery"),
             key="sku_audit_gallery_dir",
         )
     )
     if not gallery_dir.exists():
-        st.warning(f"Gallery not found: `{gallery_dir}`")
+        st.warning(f"SKU-галерея не найдена: `{gallery_dir}`")
         return
 
     audit_dir = experiment_dir / "07_sku_audit"
     manual_edits_csv = experiment_dir / "06_manual_gallery" / "manual_cluster_edits.csv"
-    st.caption(f"Audit dir: `{audit_dir}`")
-    st.caption(f"Manual edits CSV: `{manual_edits_csv}`")
+    st.caption(f"Папка аудита: `{audit_dir}`")
+    st.caption(f"Таблица ручных операций: `{manual_edits_csv}`")
 
     c1, c2, c3 = st.columns(3)
     with c1:
         pair_threshold = st.slider(
-            "Pair report threshold",
+            "Порог попадания пары в отчёт",
             0.50,
             0.99,
             0.75,
@@ -136,7 +137,7 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
             key="sku_audit_pair_threshold",
         )
         candidate_threshold = st.slider(
-            "Candidate threshold",
+            "Порог кандидата на объединение",
             0.50,
             0.99,
             0.82,
@@ -144,17 +145,17 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
             key="sku_audit_candidate_threshold",
         )
     with c2:
-        top_n = st.number_input("Top-N pairs", 1, 5000, 200, key="sku_audit_top_n")
+        top_n = st.number_input("Сколько лучших пар сохранить", 1, 5000, 200, key="sku_audit_top_n")
         sheet_limit = st.number_input(
-            "Contact sheet limit", 0, 500, 80, key="sku_audit_sheet_limit"
+            "Лимит контактных листов", 0, 500, 80, key="sku_audit_sheet_limit"
         )
     with c3:
         max_refs = st.number_input(
-            "Max refs per SKU", 1, 100, 10, key="sku_audit_max_refs"
+            "Максимум эталонов на SKU", 1, 100, 10, key="sku_audit_max_refs"
         )
 
     if st.button(
-        "Run SKU similarity audit", use_container_width=True, key="sku_audit_run"
+        "Запустить аудит похожих SKU", use_container_width=True, key="sku_audit_run"
     ):
         cmd = python_command(
             config,
@@ -172,33 +173,33 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
         run_steps_with_progress(
             [
                 CommandStep(
-                    title="SKU similarity audit",
+                    title="Аудит похожих SKU",
                     cmd=cmd,
                     cwd=ROOT,
-                    description="Computing similarities between SKU folders.",
+                    description="Вычисляется визуальная похожесть между папками SKU-галереи.",
                     estimated_seconds=None,
                 )
             ],
-            title="SKU similarity audit",
-            success_message="Audit finished.",
-            failure_message="Audit failed.",
+            title="Аудит похожих SKU",
+            success_message="Аудит завершён.",
+            failure_message="Ошибка выполнения аудита.",
         )
 
     candidates = _csv(audit_dir / "merge_candidates.csv")
     pairs = _csv(audit_dir / "sku_to_sku_similarity.csv")
     if candidates.empty:
-        st.info("No merge candidates yet. Run audit first or lower thresholds.")
+        st.info("Кандидаты на объединение пока не найдены. Запусти аудит или ослабь пороги.")
         if not pairs.empty:
             st.dataframe(pairs.head(300), use_container_width=True, hide_index=True)
         return
 
-    st.markdown("#### Merge candidates")
+    st.markdown("#### Кандидаты на объединение")
     st.dataframe(candidates.head(300), use_container_width=True, hide_index=True)
     options = [
-        f"{idx}: {row['sku_a']} / {row['sku_b']} | centroid={float(row.get('centroid_similarity', 0) or 0):.3f}"
+        f"{idx}: {row['sku_a']} / {row['sku_b']} | сходство центроидов={float(row.get('centroid_similarity', 0) or 0):.3f}"
         for idx, row in candidates.head(300).iterrows()
     ]
-    selected = st.selectbox("Candidate", options, key="sku_audit_candidate")
+    selected = st.selectbox("Кандидат", options, key="sku_audit_candidate")
     idx = int(str(selected).split(":", 1)[0])
     row = candidates.loc[idx]
     sku_a = str(row["sku_a"])
@@ -209,17 +210,17 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
     if sheet_path.exists():
         st.image(str(sheet_path), caption=sheet_path.name, use_container_width=True)
     else:
-        st.info(f"Contact sheet не найден: `{sheet_path}`")
+        st.info(f"Контактный лист не найден: `{sheet_path}`")
 
     target = st.radio(
-        "Target SKU", [sku_a, sku_b], horizontal=True, key="sku_audit_target"
+        "SKU, который оставить после объединения", [sku_a, sku_b], horizontal=True, key="sku_audit_target"
     )
     source = sku_b if target == sku_a else sku_a
     comment = st.text_input(
-        "Comment", value=f"audit candidate: {sku_a} / {sku_b}", key="sku_audit_comment"
+        "Комментарий", value=f"кандидат аудита: {sku_a} / {sku_b}", key="sku_audit_comment"
     )
     if st.button(
-        "Add merge operation to manual editor",
+        "Добавить операцию объединения в ручной редактор",
         use_container_width=True,
         key="sku_audit_add_merge",
     ):
@@ -232,4 +233,4 @@ def page_sku_audit(config: Dict[str, Any]) -> None:
                 comment=comment,
             ),
         )
-        st.success(f"Merge added: {source} -> {target}")
+        st.success(f"Операция объединения добавлена: {source} -> {target}")
