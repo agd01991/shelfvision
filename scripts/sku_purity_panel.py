@@ -128,7 +128,7 @@ def _render_ref_cards(candidates: pd.DataFrame, max_items: int = 40) -> List[str
     selected_refs: List[str] = []
 
     if candidates.empty:
-        st.info("Для выбранного SKU нет ref-кандидатов.")
+        st.info("Для выбранного SKU нет эталонов-кандидатов.")
         return selected_refs
 
     rows = list(candidates.head(max_items).iterrows())
@@ -145,14 +145,13 @@ def _render_ref_cards(candidates: pd.DataFrame, max_items: int = 40) -> List[str
                 st.caption(ref_file)
 
             st.caption(
-                f"decision: `{row.get('decision', '')}`\n\n"
-                f"own: `{_to_float(row.get('own_centroid_similarity')):.3f}` | "
-                f"other: `{_to_float(row.get('nearest_other_similarity')):.3f}`"
+                f"решение: `{row.get('decision', '')}`\n\n"
+                f"сходство со своим SKU: `{_to_float(row.get('own_centroid_similarity')):.3f}` | "
+                f"сходство с другим SKU: `{_to_float(row.get('nearest_other_similarity')):.3f}`"
             )
 
             if st.checkbox("Вынести в новый SKU", key=f"purity_select_{ref_file}_{index}"):
                 selected_refs.append(ref_file)
-
     return selected_refs
 
 
@@ -169,41 +168,44 @@ def _render_purity_results(experiment_dir: Path, gallery_dir: Path) -> None:
     if summary:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("SKU проверено", _to_int(summary.get("usable_sku_count")))
-        c2.metric("Refs проверено", _to_int(summary.get("checked_refs_count")))
-        c3.metric("Mixed SKU", _to_int(summary.get("mixed_sku_count")))
-        c4.metric("Wrong/outliers", _to_int(summary.get("likely_wrong_sku_count")) + _to_int(summary.get("possible_outliers_count")))
+        c2.metric("Эталонов проверено", _to_int(summary.get("checked_refs_count")))
+        c3.metric("Смешанных SKU", _to_int(summary.get("mixed_sku_count")))
+        c4.metric(
+            "Ошибочных/выбивающихся эталонов",
+            _to_int(summary.get("likely_wrong_sku_count")) + _to_int(summary.get("possible_outliers_count")),
+        )
 
     if report_md.exists():
-        with st.expander("Отчёт SKU purity audit", expanded=False):
+        with st.expander("Отчёт по чистоте SKU-галереи", expanded=False):
             st.markdown(_read_text(report_md))
 
     mixed_df = _read_csv(mixed_csv)
     outliers_df = _read_csv(outliers_csv)
 
     if mixed_df.empty and outliers_df.empty:
-        st.info("Кандидаты на split пока не найдены. Запусти audit или ослабь пороги.")
+        st.info("Кандидаты на разделение пока не найдены. Запусти аудит или ослабь пороги.")
         full_df = _read_csv(ref_purity_csv)
         if not full_df.empty:
-            with st.expander("Полная таблица sku_ref_purity.csv", expanded=False):
+            with st.expander("Полная таблица проверки эталонов", expanded=False):
                 st.dataframe(full_df.head(500), use_container_width=True, hide_index=True)
         return
 
     if not mixed_df.empty:
-        st.markdown("#### Mixed SKU candidates")
+        st.markdown("#### Кандидаты на смешанные SKU")
         st.dataframe(mixed_df.head(300), use_container_width=True, hide_index=True)
 
     if not outliers_df.empty:
-        st.markdown("#### Ref outlier candidates")
+        st.markdown("#### Эталоны, которые могут относиться к другому SKU")
         st.dataframe(outliers_df.head(500), use_container_width=True, hide_index=True)
 
     sku_options = sorted(outliers_df["sku_id"].astype(str).unique().tolist())
     if not sku_options:
         return
 
-    selected_sku = st.selectbox("SKU для split-проверки", sku_options, key="purity_selected_sku")
+    selected_sku = st.selectbox("SKU для проверки разделения", sku_options, key="purity_selected_sku")
     sku_candidates = outliers_df[outliers_df["sku_id"].astype(str).eq(selected_sku)].copy()
 
-    st.markdown(f"#### Проверка refs внутри `{selected_sku}`")
+    st.markdown(f"#### Проверка эталонов внутри `{selected_sku}`")
     selected_refs = _render_ref_cards(sku_candidates)
 
     suggested = ""
@@ -221,14 +223,14 @@ def _render_purity_results(experiment_dir: Path, gallery_dir: Path) -> None:
     with c2:
         comment = st.text_input(
             "Комментарий",
-            value="split from SKU purity audit",
+            value="разделение по результатам проверки чистоты SKU",
             key="purity_split_comment",
         )
 
     edits_csv = _manual_edits_csv(experiment_dir)
-    if st.button("Добавить split-операцию в manual editor", use_container_width=True, key="purity_add_split"):
+    if st.button("Добавить операцию разделения в ручной редактор", use_container_width=True, key="purity_add_split"):
         if not selected_refs:
-            st.warning("Выбери хотя бы один ref для split.")
+            st.warning("Выбери хотя бы один эталон для разделения.")
             return
 
         append_manual_edit(
@@ -242,14 +244,14 @@ def _render_purity_results(experiment_dir: Path, gallery_dir: Path) -> None:
             ),
         )
 
-        st.success(f"Split-операция добавлена в `{edits_csv}`")
+        st.success(f"Операция разделения добавлена в `{edits_csv}`")
 
 
 def page_sku_purity_audit(config: Dict[str, Any]) -> None:
     st.subheader("Проверка смешанных SKU")
     st.caption(
-        "Этот модуль ищет случаи, когда разные товары попали в один `sku_id`, "
-        "и помогает добавить split-операции в manual editor."
+        "Модуль ищет случаи, когда разные товары попали в один `sku_id`, "
+        "и помогает добавить операции разделения в ручной редактор."
     )
 
     night = config.setdefault("night_experiments", {})
@@ -261,7 +263,7 @@ def page_sku_purity_audit(config: Dict[str, Any]) -> None:
 
     results_root = _safe_path(
         st.text_input(
-            "Папка серии/экспериментов",
+            "Папка серии экспериментов",
             value=default_root,
             key="purity_results_root",
         )
@@ -269,7 +271,7 @@ def page_sku_purity_audit(config: Dict[str, Any]) -> None:
 
     summary_csv = _safe_path(
         st.text_input(
-            "Summary CSV",
+            "Сводная таблица серии экспериментов",
             value=str(night.get("summary_csv") or results_root / "night_experiments_summary.csv"),
             key="purity_summary_csv",
         )
@@ -283,7 +285,7 @@ def page_sku_purity_audit(config: Dict[str, Any]) -> None:
             key="purity_experiment_dir",
         )
         if not raw_experiment.strip():
-            st.info("Укажи summary CSV или папку конкретного эксперимента.")
+            st.info("Укажи сводную таблицу серии экспериментов или папку конкретного эксперимента.")
             return
         experiment_dir = _safe_path(raw_experiment)
 
@@ -292,33 +294,33 @@ def page_sku_purity_audit(config: Dict[str, Any]) -> None:
     inferred_gallery = infer_gallery_dir_from_experiment(experiment_dir)
     gallery_dir = _safe_path(
         st.text_input(
-            "Source SKU gallery",
+            "Исходная SKU-галерея",
             value=str(inferred_gallery or experiment_dir / "02_demo_gallery"),
             key="purity_gallery_dir",
         )
     )
 
     if not gallery_dir.exists():
-        st.warning(f"Source gallery не найдена: `{gallery_dir}`")
+        st.warning(f"Исходная SKU-галерея не найдена: `{gallery_dir}`")
         return
 
     out_dir = _purity_out_dir(experiment_dir)
-    st.caption(f"Purity audit out: `{out_dir}`")
-    st.caption(f"Manual edits CSV: `{_manual_edits_csv(experiment_dir)}`")
+    st.caption(f"Папка отчёта о чистоте SKU: `{out_dir}`")
+    st.caption(f"Таблица ручных операций: `{_manual_edits_csv(experiment_dir)}`")
 
     advanced = is_advanced(config, page_key="actions")
 
     if advanced:
-        with st.expander("Расширенные параметры purity audit", expanded=True):
+        with st.expander("Расширенные параметры проверки чистоты SKU", expanded=True):
             c1, c2, c3 = st.columns(3)
             with c1:
-                own_centroid_threshold = st.slider("Own centroid threshold", 0.30, 0.99, 0.65, 0.01)
-                own_mean_threshold = st.slider("Own mean threshold", 0.30, 0.99, 0.60, 0.01)
+                own_centroid_threshold = st.slider("Порог сходства с центром своего SKU", 0.30, 0.99, 0.65, 0.01)
+                own_mean_threshold = st.slider("Порог среднего сходства внутри своего SKU", 0.30, 0.99, 0.60, 0.01)
             with c2:
-                other_margin = st.slider("Other margin", 0.00, 0.50, 0.08, 0.01)
-                min_other_similarity = st.slider("Min other similarity", 0.30, 0.99, 0.68, 0.01)
+                other_margin = st.slider("Минимальный отрыв от другого SKU", 0.00, 0.50, 0.08, 0.01)
+                min_other_similarity = st.slider("Минимальное сходство с другим SKU", 0.30, 0.99, 0.68, 0.01)
             with c3:
-                max_refs_per_sku = st.number_input("Max refs per SKU", 1, 500, 50)
+                max_refs_per_sku = st.number_input("Максимум эталонов на SKU", 1, 500, 50)
     else:
         own_centroid_threshold = 0.65
         own_mean_threshold = 0.60
@@ -327,11 +329,11 @@ def page_sku_purity_audit(config: Dict[str, Any]) -> None:
         max_refs_per_sku = 50
 
         st.info(
-            "Используются рекомендованные пороги purity audit. "
+            "Используются рекомендованные пороги проверки чистоты SKU. "
             "Для изменения порогов включи режим «Для уверенных пользователей»."
         )
 
-    if st.button("Запустить SKU purity audit", use_container_width=True, key="run_sku_purity_audit"):
+    if st.button("Запустить проверку чистоты SKU", use_container_width=True, key="run_sku_purity_audit"):
         cmd = python_command(
             config,
             "run_sku_purity_audit.py",
@@ -349,16 +351,16 @@ def page_sku_purity_audit(config: Dict[str, Any]) -> None:
         run_steps_with_progress(
             [
                 CommandStep(
-                    title="SKU purity audit",
+                    title="Проверка чистоты SKU",
                     cmd=cmd,
                     cwd=ROOT,
-                    description="Проверяется чистота SKU-папок и ищутся refs, которые могут относиться к другому товару.",
+                    description="Проверяется чистота SKU-папок и ищутся эталоны, которые могут относиться к другому товару.",
                     estimated_seconds=None,
                 )
             ],
-            title="SKU purity audit",
-            success_message="SKU purity audit завершён.",
-            failure_message="Ошибка SKU purity audit",
+            title="Проверка чистоты SKU",
+            success_message="Проверка чистоты SKU завершена.",
+            failure_message="Ошибка проверки чистоты SKU.",
         )
 
     _render_purity_results(experiment_dir, gallery_dir)
