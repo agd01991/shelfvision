@@ -60,7 +60,7 @@ def _candidate_dirs(config: Dict[str, Any]) -> List[Tuple[str, Path | None, str]
     presentation = config.get("presentation_assets", {})
 
     return [
-        ("Основные результаты / старый pipeline", _as_path(paths.get("out_dir", "results/control_panel")), "paths.out_dir"),
+        ("Основные результаты / старый пайплайн", _as_path(paths.get("out_dir", "results/control_panel")), "paths.out_dir"),
         ("Фото-идентификация", _as_path(demo.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification")), "demo_sku_gallery.out_dir"),
         ("Полная фото-идентификация gallery/query", _as_path(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")), "full_photo_identification.out_dir"),
         ("Серия экспериментов SKU110K", _as_path(night.get("out_dir") or night.get("results_root", "")), "night_experiments.results_root / night_experiments.out_dir"),
@@ -70,7 +70,7 @@ def _candidate_dirs(config: Dict[str, Any]) -> List[Tuple[str, Path | None, str]
         ("Отчёты SKU-галереи", _as_path(sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/sku_gallery")), "sku_gallery.out_dir"),
         ("Материалы презентации", _as_path(presentation.get("out_dir", "D:/1Diplom/presentation_assets")), "presentation_assets.out_dir"),
         ("SKU-галерея", _as_path(demo.get("gallery_dir") or sku_gallery.get("gallery_dir", "D:/1Diplom/sku_gallery")), "demo_sku_gallery.gallery_dir / sku_gallery.gallery_dir"),
-        ("Full SKU-галерея", _as_path(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")), "full_photo_identification.gallery_dir"),
+        ("Полная SKU-галерея", _as_path(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")), "full_photo_identification.gallery_dir"),
     ]
 
 
@@ -336,7 +336,7 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
 
     st.success(f"Найдено рабочих папок: {len(existing)} из {len(candidates)}")
 
-    st.info("Подробный просмотр серии экспериментов SKU110K, audit и ручной редактор кластеров находятся в разделе `Запуск задач`.")
+    st.info("Подробный просмотр серии экспериментов SKU110K, аудита и ручного редактора кластеров находится в разделе `Запуск задач`.")
 
     if advanced:
         selected_titles = st.multiselect(
@@ -360,12 +360,12 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="ShelfVision Control Panel", page_icon="🧰", layout="wide")
+    st.set_page_config(page_title="Панель управления ShelfVision", page_icon="🧰", layout="wide")
     ensure_config_exists()
     config = load_config()
     config.setdefault("runtime", {}).setdefault("use_wsl_runtime", True)
 
-    st.title("🧰 ShelfVision Control Panel")
+    st.title("🧰 Панель управления ShelfVision")
     st.caption("Панель первого запуска и управления. Рабочие задачи по умолчанию запускаются через WSL .venv_wsl.")
 
     page = st.sidebar.radio("Раздел", ["Первый запуск", "Скачивание файлов", "Настройки", "Запуск задач", "Результаты", "config YAML"])
