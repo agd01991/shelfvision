@@ -7,6 +7,29 @@ from typing import Any, Dict, Iterable, List
 import pandas as pd
 
 
+MODE_LABELS_RU = {
+    "mask_segmentation": "сегментационный режим с масками",
+    "bbox_fallback": "резервный режим по ограничивающим прямоугольникам",
+    "not_found": "данные не найдены",
+}
+
+SOURCE_TYPE_LABELS_RU = {
+    "mask": "crop по маске",
+    "bbox": "crop по ограничивающему прямоугольнику",
+    "unknown": "не указан",
+}
+
+
+def _mode_label(mode: str | None) -> str:
+    value = str(mode or "")
+    return MODE_LABELS_RU.get(value, value or "не указан")
+
+
+def _source_type_label(source_type: str | None) -> str:
+    value = str(source_type or "unknown")
+    return SOURCE_TYPE_LABELS_RU.get(value, value)
+
+
 def _read_json(path: Path) -> Any:
     if not path.exists():
         return None
@@ -243,13 +266,13 @@ def _write_markdown_report(
     if mode == "mask_segmentation":
         mode_text = (
             "В предсказаниях обнаружены маски объектов. Это соответствует сегментационному режиму: "
-            "товарные области выделяются не только рамками, но и контурами/масками."
+            "товарные области выделяются не только рамками, но и контурами или масками."
         )
     elif mode == "bbox_fallback":
         mode_text = (
-            "В предсказаниях маски не обнаружены. Используется bbox-based fallback: товарные области "
-            "выделяются ограничивающими прямоугольниками. Такой режим сохраняет работоспособность "
-            "идентификации, но хуже соответствует строгой постановке сегментации."
+            "В предсказаниях маски не обнаружены. Используется резервный режим по ограничивающим прямоугольникам: "
+            "товарные области выделяются прямоугольными рамками. Такой режим сохраняет работоспособность идентификации, "
+            "но хуже соответствует строгой постановке сегментации."
         )
     else:
         mode_text = "Файл предсказаний не найден или не содержит объектов."
@@ -266,7 +289,7 @@ def _write_markdown_report(
         "## 1. Сегментация / выделение товарных объектов",
         "",
         f"- Файл предсказаний: `{segmentation.get('predictions_json', '')}`",
-        f"- Режим: `{segmentation.get('mode', '')}`",
+        f"- Режим: `{_mode_label(mode)}`",
         f"- Изображений: `{segmentation.get('images_count', 0)}`",
         f"- Выделено товарных объектов: `{segmentation.get('segmented_or_detected_objects_count', 0)}`",
         f"- Объектов с масками: `{segmentation.get('objects_with_masks_count', 0)}`",
@@ -282,13 +305,13 @@ def _write_markdown_report(
     ]
 
     if mask_metrics.get("available"):
-        lines.extend([f"- Файл mask-метрик: `{mask_metrics.get('path', '')}`", "", "| Метрика | Значение |", "|---|---:|"])
+        lines.extend([f"- Файл метрик масок: `{mask_metrics.get('path', '')}`", "", "| Метрика | Значение |", "|---|---:|"])
         for key, value in (mask_metrics.get("metrics") or {}).items():
             lines.append(f"| {key} | `{value}` |")
     else:
         lines.append(
-            "Отдельные mask-метрики в текущей папке результата не найдены. "
-            "Для строгой оценки сегментации нужен запуск на наборе с COCO segmentation-разметкой."
+            "Отдельные метрики масок в текущей папке результата не найдены. "
+            "Для строгой оценки сегментации нужен запуск на наборе с COCO-разметкой сегментации."
         )
 
     lines.extend(
@@ -298,20 +321,20 @@ def _write_markdown_report(
             "",
             f"- Файл идентификации: `{identification.get('identification_csv', '')}`",
             f"- Всего объектов в идентификации: `{identification.get('objects_count', 0)}`",
-            f"- Matched: `{identification.get('matched', 0)}`",
-            f"- Matched uncertain: `{identification.get('matched_uncertain', 0)}`",
-            f"- Unknown: `{identification.get('unknown', 0)}`",
-            f"- Matched rate: `{float(identification.get('matched_rate', 0.0)):.4f}`",
-            f"- Matched uncertain rate: `{float(identification.get('matched_uncertain_rate', 0.0)):.4f}`",
-            f"- Unknown rate: `{float(identification.get('unknown_rate', 0.0)):.4f}`",
-            f"- Safe SKU count: `{identification.get('safe_sku_count', 0)}`",
-            f"- Safe SKU rate: `{float(identification.get('safe_sku_rate', 0.0)):.4f}`",
-            f"- Mean SKU confidence: `{float(identification.get('mean_sku_confidence', 0.0)):.4f}`",
-            f"- Mean distinct margin: `{float(identification.get('mean_distinct_margin', 0.0)):.4f}`",
+            f"- Уверенные совпадения: `{identification.get('matched', 0)}`",
+            f"- Неоднозначные совпадения: `{identification.get('matched_uncertain', 0)}`",
+            f"- Неопределённые объекты: `{identification.get('unknown', 0)}`",
+            f"- Доля уверенных совпадений: `{float(identification.get('matched_rate', 0.0)):.4f}`",
+            f"- Доля неоднозначных совпадений: `{float(identification.get('matched_uncertain_rate', 0.0)):.4f}`",
+            f"- Доля неопределённых объектов: `{float(identification.get('unknown_rate', 0.0)):.4f}`",
+            f"- Безопасных назначений SKU: `{identification.get('safe_sku_count', 0)}`",
+            f"- Доля безопасных назначений SKU: `{float(identification.get('safe_sku_rate', 0.0)):.4f}`",
+            f"- Среднее визуальное сходство: `{float(identification.get('mean_sku_confidence', 0.0)):.4f}`",
+            f"- Средний отрыв между двумя лучшими SKU: `{float(identification.get('mean_distinct_margin', 0.0)):.4f}`",
             "",
             "### Источник crop-объектов",
             "",
-            "| source_type | count |",
+            "| Источник crop-объекта | Количество |",
             "|---|---:|",
         ]
     )
@@ -319,7 +342,7 @@ def _write_markdown_report(
     source_counts = identification.get("crop_source_type_counts") or {}
     if source_counts:
         for key, value in source_counts.items():
-            lines.append(f"| {key} | {value} |")
+            lines.append(f"| {_source_type_label(str(key))} | {value} |")
     else:
         lines.append("| нет данных | 0 |")
 
@@ -328,11 +351,11 @@ def _write_markdown_report(
             "",
             "## 4. Интерпретация для ВКР",
             "",
-            "Разработанная система выполняет два связанных этапа. На первом этапе выделяются товарные области на изображениях стеллажей. Если используется YOLO-Seg, объект представлен маской; если маски отсутствуют, применяется bbox fallback. На втором этапе каждый выделенный объект преобразуется в crop и сопоставляется с SKU-галереей.",
+            "Разработанная система выполняет два связанных этапа. На первом этапе выделяются товарные области на изображениях стеллажей. Если используется YOLO-Seg, объект представлен маской; если маски отсутствуют, применяется резервный режим по ограничивающим прямоугольникам. На втором этапе каждый выделенный объект преобразуется в crop и сопоставляется с SKU-галереей.",
             "",
-            "Для повышения надёжности идентификации используется статус `matched_uncertain`. Он означает, что лучший и второй лучший различные SKU имеют слишком близкие similarity-score. В таких случаях система сохраняет диагностическую информацию, но не считает назначение безопасным SKU.",
+            "Для повышения надёжности идентификации используется статус `matched_uncertain`. Он означает, что лучший и второй лучший различные SKU имеют слишком близкие значения визуального сходства. В таких случаях система сохраняет диагностическую информацию, но не считает назначение безопасным SKU.",
             "",
-            "Таким образом, отчёт подтверждает соответствие программной реализации теме ВКР: сегментация/выделение продукции используется как входной этап для последующей идентификации продукции.",
+            "В результате отчёт подтверждает соответствие программной реализации теме ВКР: сегментация или выделение продукции используется как входной этап для последующей идентификации продукции.",
         ]
     )
 
