@@ -27,6 +27,39 @@ from src.visualization.draw_boxes import draw_prediction
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
+PARAM_LABELS_RU = {
+    "model": "Модель",
+    "weights": "Файл весов модели",
+    "limit": "Общий лимит изображений",
+    "gallery_count": "Изображений для галереи",
+    "query_count": "Изображений для query",
+    "shuffle": "Случайное перемешивание",
+    "seed": "Начальное число генератора",
+    "conf": "Порог confidence детектора",
+    "imgsz": "Размер изображения для инференса",
+    "threshold": "Порог идентификации SKU",
+    "enable_uncertain_status": "Проверка неоднозначных совпадений",
+    "ambiguity_margin": "Минимальный отрыв между двумя лучшими SKU",
+    "thresholds": "Пороги для анализа качества",
+    "top_k": "Количество ближайших кандидатов",
+    "max_sku": "Максимум demo SKU",
+    "min_score": "Минимальная confidence для crop галереи",
+    "min_width": "Минимальная ширина crop",
+    "min_height": "Минимальная высота crop",
+    "padding": "Отступ вокруг crop",
+    "deduplicate_gallery": "Объединять похожие эталоны галереи",
+    "dedup_threshold": "Порог объединения эталонов",
+    "max_refs_per_sku": "Максимум эталонов на SKU",
+    "gallery_build_mode": "Режим построения галереи",
+    "cluster_merge_threshold": "Порог объединения кластеров",
+    "cluster_strong_merge_threshold": "Порог сильного совпадения кластеров",
+    "cluster_min_similarity": "Минимальное сходство внутри кластера",
+    "cluster_pair_report_threshold": "Порог пары для отчёта",
+    "cluster_max_candidates": "Максимум предварительных кандидатов",
+    "resume": "Продолжать по частичным результатам",
+    "skip_existing": "Переиспользовать существующие predictions.json",
+}
+
 
 @dataclass
 class ImageManifestRow:
@@ -68,68 +101,68 @@ class FullExperimentSummary:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ShelfVision full photo identification pipeline with gallery/query split")
-    parser.add_argument("--model", choices=["yolo", "yolo_seg", "rtdetr", "frcnn"], default="yolo")
-    parser.add_argument("--weights", required=True)
-    parser.add_argument("--images-dir", default=None, help="Full image directory. Used when gallery/query dirs are not specified")
-    parser.add_argument("--gallery-images-dir", default=None, help="Optional explicit gallery source image directory")
-    parser.add_argument("--query-images-dir", default=None, help="Optional explicit query image directory")
-    parser.add_argument("--out-dir", default="D:/1Diplom/shelfvision_results/full_photo_identification")
-    parser.add_argument("--gallery-dir", default="D:/1Diplom/sku_gallery_full")
-    parser.add_argument("--gallery-csv", default="D:/1Diplom/sku_gallery_full/gallery.csv")
+    parser = argparse.ArgumentParser(description="Полный пайплайн ShelfVision для фото-идентификации с разделением на gallery/query")
+    parser.add_argument("--model", choices=["yolo", "yolo_seg", "rtdetr", "frcnn"], default="yolo", help="Модель инференса")
+    parser.add_argument("--weights", required=True, help="Файл весов модели")
+    parser.add_argument("--images-dir", default=None, help="Общая папка изображений. Используется, если не заданы отдельные gallery/query папки")
+    parser.add_argument("--gallery-images-dir", default=None, help="Отдельная папка изображений для формирования галереи")
+    parser.add_argument("--query-images-dir", default=None, help="Отдельная папка query-изображений")
+    parser.add_argument("--out-dir", default="D:/1Diplom/shelfvision_results/full_photo_identification", help="Папка результатов полного эксперимента")
+    parser.add_argument("--gallery-dir", default="D:/1Diplom/sku_gallery_full", help="Папка создаваемой SKU-галереи")
+    parser.add_argument("--gallery-csv", default="D:/1Diplom/sku_gallery_full/gallery.csv", help="CSV-файл создаваемой SKU-галереи")
 
-    parser.add_argument("--limit", type=int, default=0, help="Limit total images from --images-dir before split. 0 means all")
-    parser.add_argument("--gallery-count", type=int, default=50, help="How many images from --images-dir go to gallery split")
-    parser.add_argument("--query-count", type=int, default=0, help="How many images go to query split. 0 means all remaining")
-    parser.add_argument("--gallery-limit", type=int, default=0, help="Limit explicit gallery-images-dir. 0 means all")
-    parser.add_argument("--query-limit", type=int, default=0, help="Limit explicit query-images-dir. 0 means all")
-    parser.add_argument("--shuffle", action="store_true", help="Shuffle images before gallery/query split")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for --shuffle")
+    parser.add_argument("--limit", type=int, default=0, help="Общий лимит изображений из --images-dir перед разделением. 0 означает все")
+    parser.add_argument("--gallery-count", type=int, default=50, help="Сколько изображений из --images-dir отправить в gallery split")
+    parser.add_argument("--query-count", type=int, default=0, help="Сколько изображений отправить в query split. 0 означает все оставшиеся")
+    parser.add_argument("--gallery-limit", type=int, default=0, help="Лимит для явной gallery-папки. 0 означает все")
+    parser.add_argument("--query-limit", type=int, default=0, help="Лимит для явной query-папки. 0 означает все")
+    parser.add_argument("--shuffle", action="store_true", help="Перемешать изображения перед разделением на gallery/query")
+    parser.add_argument("--seed", type=int, default=42, help="Начальное число для воспроизводимого перемешивания")
 
-    parser.add_argument("--conf", type=float, default=0.25)
-    parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--device", default=None)
-    parser.add_argument("--bbox-only", action="store_true")
+    parser.add_argument("--conf", type=float, default=0.25, help="Порог confidence для детектора")
+    parser.add_argument("--imgsz", type=int, default=640, help="Размер изображения для инференса")
+    parser.add_argument("--device", default=None, help="Устройство инференса, например 0 или cpu")
+    parser.add_argument("--bbox-only", action="store_true", help="Использовать только ограничивающие прямоугольники без масок")
 
-    parser.add_argument("--max-sku", type=int, default=100)
-    parser.add_argument("--min-score", type=float, default=0.35)
-    parser.add_argument("--min-width", type=int, default=20)
-    parser.add_argument("--min-height", type=int, default=20)
-    parser.add_argument("--padding", type=float, default=0.05)
-    parser.add_argument("--prefix", default="sku_demo_")
-    parser.add_argument("--keep-old-demo", action="store_true")
-    parser.add_argument("--no-deduplicate-gallery", action="store_true", help="Disable merging visually similar demo gallery crops into one SKU")
-    parser.add_argument("--dedup-threshold", type=float, default=0.86, help="Similarity threshold for greedy merging crops into one demo SKU")
-    parser.add_argument("--max-refs-per-sku", type=int, default=3, help="Maximum reference images per demo SKU after deduplication")
+    parser.add_argument("--max-sku", type=int, default=100, help="Максимальное число demo SKU")
+    parser.add_argument("--min-score", type=float, default=0.35, help="Минимальная confidence для crop-объекта галереи")
+    parser.add_argument("--min-width", type=int, default=20, help="Минимальная ширина crop-объекта")
+    parser.add_argument("--min-height", type=int, default=20, help="Минимальная высота crop-объекта")
+    parser.add_argument("--padding", type=float, default=0.05, help="Отступ вокруг crop-объекта")
+    parser.add_argument("--prefix", default="sku_demo_", help="Префикс для создаваемых demo SKU")
+    parser.add_argument("--keep-old-demo", action="store_true", help="Не удалять старые demo SKU перед сборкой новой галереи")
+    parser.add_argument("--no-deduplicate-gallery", action="store_true", help="Отключить объединение визуально похожих crop-объектов в один SKU")
+    parser.add_argument("--dedup-threshold", type=float, default=0.86, help="Порог сходства для жадного объединения crop-объектов в один demo SKU")
+    parser.add_argument("--max-refs-per-sku", type=int, default=3, help="Максимум эталонных изображений на demo SKU после объединения")
 
-    parser.add_argument("--gallery-build-mode", choices=["greedy", "cluster"], default="greedy")
-    parser.add_argument("--cluster-merge-threshold", type=float, default=0.82, help="Cluster gallery: centroid/pair threshold for merging provisional SKU candidates")
-    parser.add_argument("--cluster-strong-merge-threshold", type=float, default=0.88, help="Cluster gallery: strong single-pair threshold")
-    parser.add_argument("--cluster-min-similarity", type=float, default=0.72, help="Cluster gallery: minimum consistency similarity inside merged clusters")
-    parser.add_argument("--cluster-pair-report-threshold", type=float, default=0.75, help="Cluster gallery: save pairwise similarities above this value")
-    parser.add_argument("--cluster-max-candidates", type=int, default=0, help="Cluster gallery: maximum provisional candidates. 0 means auto")
+    parser.add_argument("--gallery-build-mode", choices=["greedy", "cluster"], default="greedy", help="Режим построения demo SKU-галереи")
+    parser.add_argument("--cluster-merge-threshold", type=float, default=0.82, help="Кластерная галерея: порог объединения по центроидам/парам")
+    parser.add_argument("--cluster-strong-merge-threshold", type=float, default=0.88, help="Кластерная галерея: порог сильного совпадения по одной паре")
+    parser.add_argument("--cluster-min-similarity", type=float, default=0.72, help="Кластерная галерея: минимальное сходство внутри объединённого кластера")
+    parser.add_argument("--cluster-pair-report-threshold", type=float, default=0.75, help="Кластерная галерея: сохранять пары SKU выше этого сходства")
+    parser.add_argument("--cluster-max-candidates", type=int, default=0, help="Кластерная галерея: максимум предварительных кандидатов. 0 означает автоматически")
 
-    parser.add_argument("--threshold", type=float, default=0.65)
+    parser.add_argument("--threshold", type=float, default=0.65, help="Порог уверенного совпадения SKU")
     parser.add_argument(
         "--enable-uncertain-status",
         action="store_true",
-        help="Enable matched_uncertain when top-1/top-2 distinct SKU margin is below --ambiguity-margin.",
+        help="Включить статус matched_uncertain, если отрыв между двумя лучшими разными SKU ниже --ambiguity-margin.",
     )
     parser.add_argument(
         "--ambiguity-margin",
         type=float,
         default=0.03,
-        help="If best distinct SKU score minus second distinct SKU score is below this margin, mark as matched_uncertain.",
+        help="Минимальный отрыв между лучшим и вторым лучшим разными SKU для уверенного назначения.",
     )
-    parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")
-    parser.add_argument("--top-k", type=int, default=3)
-    parser.add_argument("--gt-csv", default=None)
-    parser.add_argument("--visualize-limit", type=int, default=100)
+    parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90", help="Список порогов для анализа качества")
+    parser.add_argument("--top-k", type=int, default=3, help="Количество ближайших SKU-кандидатов")
+    parser.add_argument("--gt-csv", default=None, help="CSV с эталонными SKU, если он есть")
+    parser.add_argument("--visualize-limit", type=int, default=100, help="Сколько визуализаций идентификации сохранить")
 
-    parser.add_argument("--resume", action="store_true", help="Reuse partial predictions JSONL if present")
-    parser.add_argument("--skip-existing", action="store_true", help="Reuse final predictions.json for a split only if it matches current split images")
-    parser.add_argument("--progress-every", type=int, default=10)
-    parser.add_argument("--no-visualize-inference", action="store_true", help="Do not save detection visualizations for gallery/query inference")
+    parser.add_argument("--resume", action="store_true", help="Переиспользовать predictions_partial.jsonl при наличии")
+    parser.add_argument("--skip-existing", action="store_true", help="Переиспользовать итоговый predictions.json, если он соответствует текущему split")
+    parser.add_argument("--progress-every", type=int, default=10, help="Печатать прогресс каждые N изображений/объектов")
+    parser.add_argument("--no-visualize-inference", action="store_true", help="Не сохранять визуализации инференса для gallery/query")
     return parser.parse_args()
 
 
@@ -154,7 +187,7 @@ def _format_eta(seconds: float) -> str:
 def _list_images(images_dir: str | Path, limit: int = 0) -> List[Path]:
     root = Path(images_dir)
     if not root.exists():
-        raise FileNotFoundError(f"Images directory not found: {root}")
+        raise FileNotFoundError(f"Папка изображений не найдена: {root}")
     files = sorted([p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS])
     if limit and limit > 0:
         files = files[:limit]
@@ -172,23 +205,23 @@ def _maybe_shuffle(images: List[Path], args: argparse.Namespace) -> List[Path]:
 def _split_images(args: argparse.Namespace) -> tuple[List[Path], List[Path]]:
     if args.gallery_images_dir or args.query_images_dir:
         if not args.gallery_images_dir or not args.query_images_dir:
-            raise SystemExit("Specify both --gallery-images-dir and --query-images-dir, or only --images-dir")
+            raise SystemExit("Укажи одновременно --gallery-images-dir и --query-images-dir либо используй только --images-dir")
         gallery = _maybe_shuffle(_list_images(args.gallery_images_dir, args.gallery_limit), args)
         query = _maybe_shuffle(_list_images(args.query_images_dir, args.query_limit), args)
         return gallery, query
 
     if not args.images_dir:
-        raise SystemExit("Specify --images-dir or both --gallery-images-dir and --query-images-dir")
+        raise SystemExit("Укажи --images-dir или одновременно --gallery-images-dir и --query-images-dir")
     all_images = _maybe_shuffle(_list_images(args.images_dir, args.limit), args)
     if not all_images:
-        raise SystemExit("No images found")
+        raise SystemExit("Изображения не найдены")
     gallery_count = max(1, min(args.gallery_count, len(all_images)))
     gallery = all_images[:gallery_count]
     query = all_images[gallery_count:]
     if args.query_count and args.query_count > 0:
         query = query[: args.query_count]
     if not query:
-        raise SystemExit("Query split is empty. Increase --limit or reduce --gallery-count")
+        raise SystemExit("Query split пустой. Увеличь --limit или уменьши --gallery-count")
     return gallery, query
 
 
@@ -518,33 +551,33 @@ def _save_full_summary(
         "",
         "## Сводка",
         "",
-        f"- Изображений для формирования gallery: {summary.gallery_images_count}",
+        f"- Изображений для формирования галереи: {summary.gallery_images_count}",
         f"- Query-изображений: {summary.query_images_count}",
         f"- Создано demo SKU: {summary.created_demo_sku_count}",
-        f"- Crop-ов извлечено для gallery: {summary.extracted_gallery_crops_count}",
+        f"- Crop-объектов извлечено для галереи: {summary.extracted_gallery_crops_count}",
         f"- Query-объектов найдено: {summary.query_objects_count}",
-        f"- Matched: {summary.matched}",
-        f"- Matched uncertain: {summary.matched_uncertain}",
-        f"- Unknown: {summary.unknown}",
-        f"- Assigned total: {summary.assigned}",
-        f"- Matched rate: {summary.matched_rate:.4f}",
-        f"- Matched uncertain rate: {summary.matched_uncertain_rate:.4f}",
-        f"- Unknown rate: {summary.unknown_rate:.4f}",
-        f"- Assigned rate: {summary.assigned_rate:.4f}",
-        f"- Avg similarity: {summary.avg_similarity:.4f}",
-        f"- Mean distinct margin: {summary.mean_distinct_margin:.4f}",
+        f"- Уверенные совпадения: {summary.matched}",
+        f"- Неоднозначные совпадения: {summary.matched_uncertain}",
+        f"- Неопределённые объекты: {summary.unknown}",
+        f"- Всего назначений SKU: {summary.assigned}",
+        f"- Доля уверенных совпадений: {summary.matched_rate:.4f}",
+        f"- Доля неоднозначных совпадений: {summary.matched_uncertain_rate:.4f}",
+        f"- Доля неопределённых объектов: {summary.unknown_rate:.4f}",
+        f"- Доля всех назначений SKU: {summary.assigned_rate:.4f}",
+        f"- Среднее визуальное сходство: {summary.avg_similarity:.4f}",
+        f"- Средний отрыв между двумя лучшими SKU: {summary.mean_distinct_margin:.4f}",
         f"- Общее время: {_format_eta(summary.elapsed_seconds)}",
         "",
         "## Основные файлы",
         "",
-        f"- Gallery predictions: `{summary.gallery_predictions_json}`",
-        f"- Query predictions: `{summary.query_predictions_json}`",
-        f"- Gallery CSV: `{summary.gallery_csv}`",
-        f"- Identification CSV: `{summary.identification_results_csv}`",
-        f"- Threshold analysis: `{summary.threshold_analysis_csv}`",
-        f"- Assignment uncertainty report: `{summary.assignment_uncertainty_report_md}`",
-        f"- Segmentation + identification report: `{summary.segmentation_identification_report_md}`",
-        f"- Visualized: `{summary.visualized_dir}`",
+        f"- Предсказания gallery: `{summary.gallery_predictions_json}`",
+        f"- Предсказания query: `{summary.query_predictions_json}`",
+        f"- CSV-файл SKU-галереи: `{summary.gallery_csv}`",
+        f"- CSV-файл идентификации: `{summary.identification_results_csv}`",
+        f"- Анализ порогов: `{summary.threshold_analysis_csv}`",
+        f"- Отчёт аудита неоднозначности: `{summary.assignment_uncertainty_report_md}`",
+        f"- Отчёт по связке сегментации и идентификации: `{summary.segmentation_identification_report_md}`",
+        f"- Визуализации: `{summary.visualized_dir}`",
         "",
         "## Формулировка для ВКР",
         "",
@@ -554,7 +587,8 @@ def _save_full_summary(
         "",
     ]
     for key, value in summary.params.items():
-        lines.append(f"- {key}: `{value}`")
+        label = PARAM_LABELS_RU.get(key, key)
+        lines.append(f"- {label}: `{value}`")
     md_path.write_text("\n".join(lines), encoding="utf-8")
     return {"summary_json": json_path, "summary_csv": csv_path, "summary_md": md_path}
 
@@ -570,24 +604,24 @@ def main() -> None:
     reports_dir = out_dir / "05_reports"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("=== ShelfVision full photo identification pipeline ===", flush=True)
+    print("=== ShelfVision: полный пайплайн фото-идентификации ===", flush=True)
     gallery_images, query_images = _split_images(args)
     manifests = _save_manifest(out_dir, gallery_images, query_images)
-    print(f"Manifest saved: {manifests['all_images']}", flush=True)
-    print(f"Gallery images: {len(gallery_images)} | Query images: {len(query_images)}", flush=True)
+    print(f"Манифест сохранён: {manifests['all_images']}", flush=True)
+    print(f"Изображений для gallery: {len(gallery_images)} | изображений для query: {len(query_images)}", flush=True)
     if args.shuffle:
-        print(f"Shuffle enabled: seed={args.seed}", flush=True)
+        print(f"Перемешивание включено: seed={args.seed}", flush=True)
 
-    print("Step 1/5: gallery inference", flush=True)
+    print("Шаг 1/5: инференс gallery-части", flush=True)
     gallery_predictions_json = _run_split_inference("gallery", gallery_images, args, gallery_inference_dir)
 
-    print("Step 2/5: build demo SKU gallery from gallery split", flush=True)
+    print("Шаг 2/5: сборка demo SKU-галереи по gallery-части", flush=True)
     _build_demo_gallery(args=args, gallery_predictions_json=gallery_predictions_json, demo_dir=demo_dir)
 
-    print("Step 3/5: query inference", flush=True)
+    print("Шаг 3/5: инференс query-части", flush=True)
     query_predictions_json = _run_split_inference("query", query_images, args, query_inference_dir)
 
-    print("Step 4/5: identify query objects", flush=True)
+    print("Шаг 4/5: идентификация query-объектов", flush=True)
     results = run_sku_matching(
         predictions_json=query_predictions_json,
         images_dir=None,
@@ -630,7 +664,7 @@ def main() -> None:
         reports_dir=reports_dir,
     )
 
-    print("Step 5/5: save full experiment report", flush=True)
+    print("Шаг 5/5: сохранение итогового отчёта полного эксперимента", flush=True)
     summary_outputs = _save_full_summary(
         args=args,
         out_dir=out_dir,
@@ -648,17 +682,17 @@ def main() -> None:
     )
     vkr_outputs = generate_vkr_experiment_report(out_dir)
 
-    print("=== Done ===", flush=True)
-    print(f"Output: {out_dir}", flush=True)
-    print(f"Gallery CSV: {args.gallery_csv}", flush=True)
-    print(f"Identification results: {identification_dir}", flush=True)
+    print("=== Готово ===", flush=True)
+    print(f"Папка результата: {out_dir}", flush=True)
+    print(f"CSV-файл SKU-галереи: {args.gallery_csv}", flush=True)
+    print(f"Результаты идентификации: {identification_dir}", flush=True)
     for name, path in {**threshold_outputs, **assignment_outputs, **segmentation_identification_outputs, **summary_outputs, **vkr_outputs}.items():
-        print(f"Report {name}: {path}", flush=True)
-    print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
-    print(f"Matched: {metrics.get('matched', 0)}", flush=True)
-    print(f"Matched uncertain: {metrics.get('matched_uncertain', 0)}", flush=True)
-    print(f"Unknown: {metrics.get('unknown', 0)}", flush=True)
-    print(f"Segmentation-identification report: {segmentation_identification_outputs.get('segmentation_identification_report_md')}", flush=True)
+        print(f"Отчёт {name}: {path}", flush=True)
+    print(f"Объектов: {metrics.get('total_objects', 0)}", flush=True)
+    print(f"Уверенных совпадений: {metrics.get('matched', 0)}", flush=True)
+    print(f"Неоднозначных совпадений: {metrics.get('matched_uncertain', 0)}", flush=True)
+    print(f"Неопределённых объектов: {metrics.get('unknown', 0)}", flush=True)
+    print(f"Отчёт по связке сегментации и идентификации: {segmentation_identification_outputs.get('segmentation_identification_report_md')}", flush=True)
 
 
 if __name__ == "__main__":
