@@ -56,31 +56,31 @@ class ExistingIdentificationSummary:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Rerun ShelfVision photo identification from existing query predictions and SKU gallery")
-    parser.add_argument("--out-dir", required=True, help="Full experiment output directory")
-    parser.add_argument("--query-predictions-json", default=None, help="Existing query predictions.json. Defaults to <out-dir>/03_query_inference/predictions.json")
-    parser.add_argument("--gallery-dir", required=True)
-    parser.add_argument("--gallery-csv", required=True)
-    parser.add_argument("--threshold", type=float, default=0.65)
+    parser = argparse.ArgumentParser(description="Быстрый пересчёт идентификации ShelfVision по готовым query-предсказаниям и SKU-галерее")
+    parser.add_argument("--out-dir", required=True, help="Полная папка результата эксперимента")
+    parser.add_argument("--query-predictions-json", default=None, help="Готовый predictions.json для query. По умолчанию: <out-dir>/03_query_inference/predictions.json")
+    parser.add_argument("--gallery-dir", required=True, help="Папка SKU-галереи")
+    parser.add_argument("--gallery-csv", required=True, help="CSV-файл SKU-галереи")
+    parser.add_argument("--threshold", type=float, default=0.65, help="Порог уверенного совпадения SKU")
     parser.add_argument(
         "--enable-uncertain-status",
         action="store_true",
-        help="Enable matched_uncertain when top-1/top-2 distinct SKU margin is below --ambiguity-margin.",
+        help="Включить статус matched_uncertain, если отрыв между двумя лучшими разными SKU ниже --ambiguity-margin.",
     )
     parser.add_argument(
         "--ambiguity-margin",
         type=float,
         default=0.03,
-        help="If best distinct SKU score minus second distinct SKU score is below this margin, mark as matched_uncertain.",
+        help="Минимальный отрыв между лучшим и вторым лучшим разными SKU для уверенного назначения.",
     )
-    parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90")
-    parser.add_argument("--top-k", type=int, default=3)
-    parser.add_argument("--padding", type=float, default=0.05)
-    parser.add_argument("--gt-csv", default=None)
-    parser.add_argument("--visualize-limit", type=int, default=100)
-    parser.add_argument("--bbox-only", action="store_true")
-    parser.add_argument("--progress-every", type=int, default=10)
-    parser.add_argument("--cache-dir", default=None, help="Feature cache directory. Defaults to <out-dir>/04_identification/feature_cache")
+    parser.add_argument("--thresholds", default="0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90", help="Список порогов для анализа качества")
+    parser.add_argument("--top-k", type=int, default=3, help="Количество ближайших SKU-кандидатов")
+    parser.add_argument("--padding", type=float, default=0.05, help="Отступ вокруг crop-объекта")
+    parser.add_argument("--gt-csv", default=None, help="CSV с эталонными SKU, если он есть")
+    parser.add_argument("--visualize-limit", type=int, default=100, help="Сколько визуализаций сохранить")
+    parser.add_argument("--bbox-only", action="store_true", help="Использовать только ограничивающие прямоугольники без масок")
+    parser.add_argument("--progress-every", type=int, default=10, help="Печатать прогресс каждые N объектов")
+    parser.add_argument("--cache-dir", default=None, help="Папка кэша признаков. По умолчанию: <out-dir>/04_identification/feature_cache")
     return parser.parse_args()
 
 
@@ -158,43 +158,43 @@ def _save_summary(
     summary_json.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
 
     lines = [
-        "# Быстрый пересчёт идентификации по существующим predictions",
+        "# Быстрый пересчёт идентификации по готовым предсказаниям",
         "",
         "## Сводка",
         "",
-        f"- Query objects: {summary.total_objects}",
-        f"- Matched: {summary.matched}",
-        f"- Matched uncertain: {summary.matched_uncertain}",
-        f"- Unknown: {summary.unknown}",
-        f"- Assigned total: {summary.assigned}",
-        f"- Matched rate: {summary.matched_rate:.4f}",
-        f"- Matched uncertain rate: {summary.matched_uncertain_rate:.4f}",
-        f"- Unknown rate: {summary.unknown_rate:.4f}",
-        f"- Assigned rate: {summary.assigned_rate:.4f}",
-        f"- Avg similarity: {summary.avg_similarity:.4f}",
-        f"- Mean distinct margin: {summary.mean_distinct_margin:.4f}",
-        f"- Threshold: {summary.threshold:.2f}",
-        f"- Ambiguity margin: {summary.ambiguity_margin:.4f}",
-        f"- Enable uncertain status: {summary.enable_uncertain_status}",
+        f"- Объектов query: {summary.total_objects}",
+        f"- Уверенные совпадения: {summary.matched}",
+        f"- Неоднозначные совпадения: {summary.matched_uncertain}",
+        f"- Неопределённые объекты: {summary.unknown}",
+        f"- Всего назначений SKU: {summary.assigned}",
+        f"- Доля уверенных совпадений: {summary.matched_rate:.4f}",
+        f"- Доля неоднозначных совпадений: {summary.matched_uncertain_rate:.4f}",
+        f"- Доля неопределённых объектов: {summary.unknown_rate:.4f}",
+        f"- Доля всех назначений SKU: {summary.assigned_rate:.4f}",
+        f"- Среднее визуальное сходство: {summary.avg_similarity:.4f}",
+        f"- Средний отрыв между двумя лучшими SKU: {summary.mean_distinct_margin:.4f}",
+        f"- Порог идентификации: {summary.threshold:.2f}",
+        f"- Минимальный отрыв между SKU: {summary.ambiguity_margin:.4f}",
+        f"- Проверка неоднозначных совпадений включена: {summary.enable_uncertain_status}",
         f"- Время пересчёта: {_format_eta(summary.elapsed_seconds)}",
         "",
         "## Файлы",
         "",
-        f"- Query predictions: `{summary.query_predictions_json}`",
-        f"- Identification dir: `{summary.identification_dir}`",
-        f"- Feature cache: `{summary.cache_dir}`",
-        f"- Threshold CSV: `{summary.threshold_analysis_csv}`",
-        f"- Threshold plot: `{summary.threshold_analysis_plot_png}`",
-        f"- Assignment audit CSV: `{summary.assignment_audit_csv}`",
-        f"- Matched uncertain candidates: `{summary.matched_uncertain_candidates_csv}`",
-        f"- SKU assignment summary: `{summary.query_assignment_sku_summary_csv}`",
-        f"- Suspicious absorber SKU: `{summary.suspicious_absorber_sku_csv}`",
-        f"- Assignment uncertainty report: `{summary.assignment_uncertainty_report_md}`",
-        f"- Segmentation + identification report: `{summary.segmentation_identification_report_md}`",
+        f"- Предсказания query: `{summary.query_predictions_json}`",
+        f"- Папка идентификации: `{summary.identification_dir}`",
+        f"- Кэш признаков: `{summary.cache_dir}`",
+        f"- CSV анализа порогов: `{summary.threshold_analysis_csv}`",
+        f"- График анализа порогов: `{summary.threshold_analysis_plot_png}`",
+        f"- Полная таблица аудита назначений: `{summary.assignment_audit_csv}`",
+        f"- Кандидаты с неоднозначным совпадением: `{summary.matched_uncertain_candidates_csv}`",
+        f"- Сводка назначений по SKU: `{summary.query_assignment_sku_summary_csv}`",
+        f"- Подозрительные SKU-поглотители: `{summary.suspicious_absorber_sku_csv}`",
+        f"- Отчёт аудита неоднозначности: `{summary.assignment_uncertainty_report_md}`",
+        f"- Отчёт по связке сегментации и идентификации: `{summary.segmentation_identification_report_md}`",
         "",
         "## Примечание для ВКР",
         "",
-        "Этот режим не выполняет повторный inference модели детекции. Он переиспользует уже рассчитанный `query predictions.json`, текущую demo SKU-галерею и feature cache. Если включён `matched_uncertain`, система дополнительно проверяет margin между лучшим и вторым различным SKU и помечает неоднозначные совпадения как диагностические, не считая их надёжным safe SKU.",
+        "Этот режим не выполняет повторный inference модели детекции. Он переиспользует уже рассчитанный `query predictions.json`, текущую demo SKU-галерею и кэш признаков. Если включён `matched_uncertain`, система дополнительно проверяет отрыв между лучшим и вторым различным SKU и помечает неоднозначные совпадения как диагностические, не считая их надёжным safe SKU.",
         "",
         "Дополнительно формируется отчёт по связке сегментации/локализации и идентификации, который явно показывает соответствие практической реализации теме ВКР.",
     ]
@@ -212,15 +212,15 @@ def main() -> None:
     cache_dir = Path(args.cache_dir) if args.cache_dir else identification_dir / "feature_cache"
 
     if not query_predictions_json.exists():
-        raise FileNotFoundError(f"Query predictions not found: {query_predictions_json}")
+        raise FileNotFoundError(f"Файл предсказаний query не найден: {query_predictions_json}")
     if not Path(args.gallery_csv).exists():
-        raise FileNotFoundError(f"Gallery CSV not found: {args.gallery_csv}")
+        raise FileNotFoundError(f"CSV-файл SKU-галереи не найден: {args.gallery_csv}")
 
-    print("=== ShelfVision existing photo identification rerun ===", flush=True)
-    print(f"Query predictions: {query_predictions_json}", flush=True)
-    print(f"Gallery CSV: {args.gallery_csv}", flush=True)
-    print(f"Feature cache: {cache_dir}", flush=True)
-    print(f"Uncertain status: {bool(args.enable_uncertain_status)} margin={float(args.ambiguity_margin):.4f}", flush=True)
+    print("=== ShelfVision: быстрый пересчёт фото-идентификации ===", flush=True)
+    print(f"Предсказания query: {query_predictions_json}", flush=True)
+    print(f"CSV-файл SKU-галереи: {args.gallery_csv}", flush=True)
+    print(f"Кэш признаков: {cache_dir}", flush=True)
+    print(f"Проверка неоднозначности: {bool(args.enable_uncertain_status)}; минимальный отрыв={float(args.ambiguity_margin):.4f}", flush=True)
 
     results = run_sku_matching(
         predictions_json=query_predictions_json,
@@ -277,14 +277,14 @@ def main() -> None:
         elapsed_seconds=time.perf_counter() - started,
     )
 
-    print("=== Done ===", flush=True)
+    print("=== Готово ===", flush=True)
     for name, path in {**threshold_outputs, **assignment_outputs, **segmentation_identification_outputs, **summary_outputs}.items():
-        print(f"Report {name}: {path}", flush=True)
-    print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
-    print(f"Matched: {metrics.get('matched', 0)}", flush=True)
-    print(f"Matched uncertain: {metrics.get('matched_uncertain', 0)}", flush=True)
-    print(f"Unknown: {metrics.get('unknown', 0)}", flush=True)
-    print(f"Segmentation-identification report: {segmentation_identification_outputs.get('segmentation_identification_report_md')}", flush=True)
+        print(f"Отчёт {name}: {path}", flush=True)
+    print(f"Объектов: {metrics.get('total_objects', 0)}", flush=True)
+    print(f"Уверенных совпадений: {metrics.get('matched', 0)}", flush=True)
+    print(f"Неоднозначных совпадений: {metrics.get('matched_uncertain', 0)}", flush=True)
+    print(f"Неопределённых объектов: {metrics.get('unknown', 0)}", flush=True)
+    print(f"Отчёт по связке сегментации и идентификации: {segmentation_identification_outputs.get('segmentation_identification_report_md')}", flush=True)
 
 
 if __name__ == "__main__":
