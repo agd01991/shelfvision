@@ -99,7 +99,7 @@ def _select_experiment_from_summary(results_root: Path, summary_csv: Path) -> Pa
 def _render_refs_grid(refs: List[Path], key_prefix: str, selectable: bool = True) -> List[str]:
     selected: List[str] = []
     if not refs:
-        st.info("В выбранном SKU нет ref-изображений.")
+        st.info("В выбранном SKU нет эталонных изображений.")
         return selected
 
     cols = st.columns(4)
@@ -134,22 +134,22 @@ def _render_merge_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        source_sku = st.selectbox("Source SKU: откуда забрать refs", sku_ids, key="manual_merge_source")
+        source_sku = st.selectbox("SKU-источник: откуда забрать эталоны", sku_ids, key="manual_merge_source")
     with c2:
         target_options = [sku for sku in sku_ids if sku != source_sku]
-        target_sku = st.selectbox("Target SKU: куда объединить", target_options, key="manual_merge_target")
+        target_sku = st.selectbox("SKU-приёмник: куда объединить", target_options, key="manual_merge_target")
 
-    st.caption("Source будет объединён в target при сборке manual gallery. Исходная gallery не изменяется.")
+    st.caption("SKU-источник будет объединён в SKU-приёмник при сборке ручной галереи. Исходная галерея не изменяется.")
     preview_cols = st.columns(2)
     with preview_cols[0]:
-        st.markdown(f"#### Source `{source_sku}`")
+        st.markdown(f"#### SKU-источник `{source_sku}`")
         _render_refs_grid(sku_refs.get(source_sku, []), key_prefix="merge_source_preview", selectable=False)
     with preview_cols[1]:
-        st.markdown(f"#### Target `{target_sku}`")
+        st.markdown(f"#### SKU-приёмник `{target_sku}`")
         _render_refs_grid(sku_refs.get(target_sku, []), key_prefix="merge_target_preview", selectable=False)
 
-    comment = st.text_input("Комментарий к merge", value="", placeholder="например: один и тот же товар", key="manual_merge_comment")
-    if st.button("Добавить операцию merge", use_container_width=True, key="manual_add_merge"):
+    comment = st.text_input("Комментарий к объединению", value="", placeholder="например: один и тот же товар", key="manual_merge_comment")
+    if st.button("Добавить операцию объединения", use_container_width=True, key="manual_add_merge"):
         append_manual_edit(
             _safe_path(edits_csv),
             ManualGalleryEdit(
@@ -159,7 +159,7 @@ def _render_merge_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
                 comment=comment,
             ),
         )
-        st.success(f"Операция merge добавлена: {source_sku} → {target_sku}")
+        st.success(f"Операция объединения добавлена: {source_sku} -> {target_sku}")
 
 
 def _render_split_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
@@ -169,20 +169,20 @@ def _render_split_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
         st.info("SKU не найдены.")
         return
 
-    source_sku = st.selectbox("Source SKU: какой кластер разделить", sku_ids, key="manual_split_source")
+    source_sku = st.selectbox("SKU для разделения", sku_ids, key="manual_split_source")
     refs = sku_refs.get(source_sku, [])
-    st.caption("Выбранные refs будут вынесены в новый SKU при сборке manual gallery. Исходная gallery не изменяется.")
+    st.caption("Выбранные эталоны будут вынесены в новый SKU при сборке ручной галереи. Исходная галерея не изменяется.")
     selected_refs = _render_refs_grid(refs, key_prefix="manual_split_refs", selectable=True)
 
     c1, c2 = st.columns(2)
     with c1:
-        new_sku_id = st.text_input("Новый SKU ID, опционально", value="", placeholder="sku_demo_manual_001", key="manual_split_new_sku")
+        new_sku_id = st.text_input("Новый SKU ID, необязательно", value="", placeholder="sku_demo_manual_001", key="manual_split_new_sku")
     with c2:
-        comment = st.text_input("Комментарий к split", value="", placeholder="например: другой товар внутри кластера", key="manual_split_comment")
+        comment = st.text_input("Комментарий к разделению", value="", placeholder="например: другой товар внутри кластера", key="manual_split_comment")
 
-    if st.button("Добавить операцию split", use_container_width=True, key="manual_add_split"):
+    if st.button("Добавить операцию разделения", use_container_width=True, key="manual_add_split"):
         if not selected_refs:
-            st.warning("Выбери хотя бы один ref для разделения.")
+            st.warning("Выбери хотя бы один эталон для разделения.")
             return
         append_manual_edit(
             _safe_path(edits_csv),
@@ -194,7 +194,7 @@ def _render_split_tab(source_gallery_dir: Path, edits_csv: Path) -> None:
                 comment=comment,
             ),
         )
-        st.success(f"Операция split добавлена: {source_sku}, refs: {', '.join(selected_refs)}")
+        st.success(f"Операция разделения добавлена: {source_sku}, эталоны: {', '.join(selected_refs)}")
 
 
 def _manual_paths(experiment_dir: Path) -> tuple[Path, Path, Path, Path]:
@@ -277,22 +277,22 @@ def _find_manual_summary(manual_root: Path) -> tuple[Path | None, Dict[str, Any]
 def _comparison_rows(original: Dict[str, Any], manual: Dict[str, Any]) -> pd.DataFrame:
     rows = []
     labels = {
-        "objects": "Query objects",
-        "matched": "Matched",
-        "unknown": "Unknown",
-        "matched_rate": "Matched rate",
-        "unknown_rate": "Unknown rate",
-        "avg_similarity": "Avg similarity",
+        "objects": "Объекты query",
+        "matched": "Уверенные совпадения",
+        "unknown": "Неопределённые объекты",
+        "matched_rate": "Доля уверенных совпадений",
+        "unknown_rate": "Доля неопределённых объектов",
+        "avg_similarity": "Среднее визуальное сходство",
     }
     for key, label in labels.items():
         before = original.get(key, 0)
         after = manual.get(key, 0)
         rows.append(
             {
-                "metric": label,
-                "original": before,
-                "manual": after,
-                "delta": after - before,
+                "метрика": label,
+                "исходная галерея": before,
+                "ручная галерея": after,
+                "изменение": after - before,
             }
         )
     return pd.DataFrame(rows)
@@ -307,31 +307,31 @@ def _write_before_after_report(experiment_dir: Path, manual_root: Path, original
     delta_unknown_rate = manual.get("unknown_rate", 0.0) - original.get("unknown_rate", 0.0)
     delta_similarity = manual.get("avg_similarity", 0.0) - original.get("avg_similarity", 0.0)
 
-    verdict = "manual gallery улучшила matched_rate" if delta_matched_rate > 0 else "manual gallery не улучшила matched_rate"
+    verdict = "ручная галерея улучшила долю уверенных совпадений" if delta_matched_rate > 0 else "ручная галерея не улучшила долю уверенных совпадений"
     lines = [
-        "# ShelfVision: сравнение original vs manual gallery",
+        "# ShelfVision: сравнение исходной и ручной SKU-галереи",
         "",
-        f"- Experiment dir: `{_safe_path(experiment_dir)}`",
-        f"- Manual root: `{manual_root}`",
+        f"- Папка эксперимента: `{_safe_path(experiment_dir)}`",
+        f"- Папка ручной галереи: `{manual_root}`",
         "",
         "## Итог",
         "",
         f"- Вывод: **{verdict}**",
-        f"- Δ matched_rate: `{delta_matched_rate:.4f}`",
-        f"- Δ unknown_rate: `{delta_unknown_rate:.4f}`",
-        f"- Δ avg_similarity: `{delta_similarity:.4f}`",
+        f"- Изменение доли уверенных совпадений: `{delta_matched_rate:.4f}`",
+        f"- Изменение доли неопределённых объектов: `{delta_unknown_rate:.4f}`",
+        f"- Изменение среднего визуального сходства: `{delta_similarity:.4f}`",
         "",
         "## Метрики",
         "",
-        "| metric | original | manual | delta |",
+        "| Метрика | Исходная галерея | Ручная галерея | Изменение |",
         "|---|---:|---:|---:|",
     ]
     for _, row in rows.iterrows():
-        metric = row["metric"]
-        original_value = row["original"]
-        manual_value = row["manual"]
-        delta = row["delta"]
-        if "rate" in metric.lower() or "similarity" in metric.lower():
+        metric = row["метрика"]
+        original_value = row["исходная галерея"]
+        manual_value = row["ручная галерея"]
+        delta = row["изменение"]
+        if "доля" in str(metric).lower() or "сходство" in str(metric).lower():
             lines.append(f"| {metric} | {original_value:.4f} | {manual_value:.4f} | {delta:.4f} |")
         else:
             lines.append(f"| {metric} | {int(original_value)} | {int(manual_value)} | {int(delta)} |")
@@ -341,8 +341,8 @@ def _write_before_after_report(experiment_dir: Path, manual_root: Path, original
             "## Формулировка для ВКР",
             "",
             "После автоматического формирования SKU-галереи была выполнена ручная экспертная корректировка кластеров. "
-            "Для проверки влияния корректировки идентификация была пересчитана на той же query-части, но с использованием manual gallery. "
-            "Такой подход позволяет оценивать эффект ручных merge/split-операций без повторного запуска детектора.",
+            "Для проверки влияния корректировки идентификация была пересчитана на той же query-части, но с использованием ручной галереи. "
+            "Такой подход позволяет оценивать эффект операций объединения и разделения без повторного запуска детектора.",
         ]
     )
     report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -356,27 +356,27 @@ def _render_before_after_tab(experiment_dir: Path) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("#### Original")
+        st.markdown("#### Исходная галерея")
         if original_metrics:
-            st.metric("matched_rate", f"{original_metrics['matched_rate']:.4f}")
+            st.metric("Доля уверенных совпадений", f"{original_metrics['matched_rate']:.4f}")
             st.caption(f"Источник: `{original_path}`")
-            st.write(f"unknown_rate: `{original_metrics['unknown_rate']:.4f}`")
-            st.write(f"avg_similarity: `{original_metrics['avg_similarity']:.4f}`")
-            st.write(f"matched: `{original_metrics['matched']}`")
-            st.write(f"unknown: `{original_metrics['unknown']}`")
+            st.write(f"Доля неопределённых объектов: `{original_metrics['unknown_rate']:.4f}`")
+            st.write(f"Среднее визуальное сходство: `{original_metrics['avg_similarity']:.4f}`")
+            st.write(f"Уверенные совпадения: `{original_metrics['matched']}`")
+            st.write(f"Неопределённые объекты: `{original_metrics['unknown']}`")
         else:
-            st.info("Original summary не найден.")
+            st.info("Сводка исходной галереи не найдена.")
     with c2:
-        st.markdown("#### Manual")
+        st.markdown("#### Ручная галерея")
         if manual_metrics:
-            st.metric("matched_rate", f"{manual_metrics['matched_rate']:.4f}")
+            st.metric("Доля уверенных совпадений", f"{manual_metrics['matched_rate']:.4f}")
             st.caption(f"Источник: `{manual_path}`")
-            st.write(f"unknown_rate: `{manual_metrics['unknown_rate']:.4f}`")
-            st.write(f"avg_similarity: `{manual_metrics['avg_similarity']:.4f}`")
-            st.write(f"matched: `{manual_metrics['matched']}`")
-            st.write(f"unknown: `{manual_metrics['unknown']}`")
+            st.write(f"Доля неопределённых объектов: `{manual_metrics['unknown_rate']:.4f}`")
+            st.write(f"Среднее визуальное сходство: `{manual_metrics['avg_similarity']:.4f}`")
+            st.write(f"Уверенные совпадения: `{manual_metrics['matched']}`")
+            st.write(f"Неопределённые объекты: `{manual_metrics['unknown']}`")
         else:
-            st.info("Manual summary пока не найден. Сначала нажми `Пересчитать идентификацию с manual gallery`.")
+            st.info("Сводка ручной галереи пока не найдена. Сначала нажми `Пересчитать идентификацию с ручной галереей`.")
 
     if not original_metrics or not manual_metrics:
         return
@@ -387,11 +387,11 @@ def _render_before_after_tab(experiment_dir: Path) -> None:
 
     delta = manual_metrics["matched_rate"] - original_metrics["matched_rate"]
     if delta > 0:
-        st.success(f"Manual gallery улучшила matched_rate на `{delta:.4f}`.")
+        st.success(f"Ручная галерея улучшила долю уверенных совпадений на `{delta:.4f}`.")
     elif delta < 0:
-        st.warning(f"Manual gallery ухудшила matched_rate на `{abs(delta):.4f}`. Проверь merge/split-операции.")
+        st.warning(f"Ручная галерея ухудшила долю уверенных совпадений на `{abs(delta):.4f}`. Проверь операции объединения и разделения.")
     else:
-        st.info("Matched rate не изменился.")
+        st.info("Доля уверенных совпадений не изменилась.")
 
     if st.button("Сформировать markdown-отчёт до/после", use_container_width=True, key="manual_write_before_after_report"):
         report_path = _write_before_after_report(experiment_dir, manual_root, original_metrics, manual_metrics)
@@ -399,20 +399,20 @@ def _render_before_after_tab(experiment_dir: Path) -> None:
 
     report_path = manual_root / "manual_vs_original_report.md"
     if report_path.exists():
-        with st.expander("manual_vs_original_report.md", expanded=True):
+        with st.expander("Отчёт сравнения исходной и ручной галереи", expanded=True):
             _write_text_preview(report_path)
 
 
 def _render_apply_tab(config: Dict[str, Any], experiment_dir: Path, source_gallery_dir: Path, edits_csv: Path) -> None:
     manual_root, _, manual_gallery_dir, manual_gallery_csv = _manual_paths(experiment_dir)
-    st.markdown("#### Сборка manual gallery")
-    st.write(f"Manual root: `{manual_root}`")
-    st.write(f"Manual gallery: `{manual_gallery_dir}`")
-    st.write(f"Manual gallery.csv: `{manual_gallery_csv}`")
+    st.markdown("#### Сборка ручной галереи")
+    st.write(f"Папка ручной галереи: `{manual_root}`")
+    st.write(f"Изображения ручной галереи: `{manual_gallery_dir}`")
+    st.write(f"CSV-файл ручной галереи: `{manual_gallery_csv}`")
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Применить ручные правки и собрать manual gallery", use_container_width=True, key="manual_apply_edits"):
+        if st.button("Применить ручные правки и собрать ручную галерею", use_container_width=True, key="manual_apply_edits"):
             try:
                 outputs = build_manual_gallery_from_edits(
                     source_gallery_dir=_safe_path(source_gallery_dir),
@@ -421,76 +421,76 @@ def _render_apply_tab(config: Dict[str, Any], experiment_dir: Path, source_galle
                     edits_csv=_safe_path(edits_csv),
                     out_dir=manual_root,
                 )
-                st.success("Manual gallery собрана.")
+                st.success("Ручная галерея собрана.")
                 for name, path in outputs.items():
                     st.caption(f"{name}: `{_safe_path(path)}`")
             except Exception as exc:
-                st.error(f"Ошибка сборки manual gallery: {exc}")
+                st.error(f"Ошибка сборки ручной галереи: {exc}")
     with c2:
-        if st.button("Пересчитать идентификацию с manual gallery", use_container_width=True, key="manual_rerun_identification"):
+        if st.button("Пересчитать идентификацию с ручной галереей", use_container_width=True, key="manual_rerun_identification"):
             if not manual_gallery_csv.exists():
-                st.warning("Сначала собери manual gallery.")
+                st.warning("Сначала собери ручную галерею.")
             else:
                 cmd = python_command(config, "run_existing_photo_identification.py", _build_rerun_args(experiment_dir, manual_gallery_dir, manual_gallery_csv))
                 run_steps_with_progress(
                     [
                         CommandStep(
-                            title="Manual gallery identification rerun",
+                            title="Пересчёт идентификации с ручной галереей",
                             cmd=cmd,
                             cwd=ROOT,
-                            description="Переиспользуется существующий query predictions.json, но gallery берётся из manual_gallery.",
+                            description="Переиспользуется существующий query predictions.json, но галерея берётся из ручной версии.",
                             estimated_seconds=None,
                         )
                     ],
-                    title="Пересчёт идентификации с manual gallery",
-                    success_message="Идентификация с manual gallery пересчитана.",
-                    failure_message="Ошибка пересчёта идентификации с manual gallery",
+                    title="Пересчёт идентификации с ручной галереей",
+                    success_message="Идентификация с ручной галереей пересчитана.",
+                    failure_message="Ошибка пересчёта идентификации с ручной галереей",
                 )
 
     report_path = manual_root / "manual_gallery_report.md"
     if report_path.exists():
-        with st.expander("Manual gallery report", expanded=True):
+        with st.expander("Отчёт по ручной галерее", expanded=True):
             _write_text_preview(report_path)
     summary_json = manual_root / "manual_gallery_summary.json"
     if summary_json.exists():
-        with st.expander("Manual gallery summary.json", expanded=False):
+        with st.expander("Сводка ручной галереи", expanded=False):
             st.json(_read_json(summary_json))
 
     manual_items = manual_root / "manual_gallery_items.csv"
     if manual_items.exists():
-        with st.expander("Manual gallery items", expanded=False):
+        with st.expander("Элементы ручной галереи", expanded=False):
             st.dataframe(_read_csv(manual_items), use_container_width=True, hide_index=True)
 
     manual_identification = manual_root / "manual_identification"
     identification_csv = manual_identification / "04_identification" / "identification_results.csv"
     if identification_csv.exists():
-        with st.expander("Manual identification results", expanded=False):
+        with st.expander("Результаты идентификации с ручной галереей", expanded=False):
             st.dataframe(_read_csv(identification_csv).head(500), use_container_width=True, hide_index=True)
 
 
 def page_manual_cluster_editor(config: Dict[str, Any]) -> None:
-    st.subheader("Ручное объединение/разделение SKU-кластеров")
-    st.caption("Редактор создаёт отдельную manual gallery и не изменяет исходные результаты эксперимента.")
+    st.subheader("Ручное объединение и разделение SKU-кластеров")
+    st.caption("Редактор создаёт отдельную ручную галерею и не изменяет исходные результаты эксперимента.")
 
     night = config.setdefault("night_experiments", {})
     default_results = str(night.get("out_dir") or night.get("results_root") or "D:/1Diplom/shelfvision_results/cluster_compare_sku110k_2026-05-29_23-35-48")
-    results_root = _safe_path(st.text_input("Папка серии/экспериментов", value=default_results, key="manual_editor_results_root"))
-    summary_csv = _safe_path(st.text_input("Summary CSV, опционально", value=str(night.get("summary_csv") or results_root / "night_experiments_summary.csv"), key="manual_editor_summary_csv"))
+    results_root = _safe_path(st.text_input("Папка серии экспериментов", value=default_results, key="manual_editor_results_root"))
+    summary_csv = _safe_path(st.text_input("Сводная таблица серии экспериментов, необязательно", value=str(night.get("summary_csv") or results_root / "night_experiments_summary.csv"), key="manual_editor_summary_csv"))
 
     experiment_dir = _select_experiment_from_summary(results_root, summary_csv)
     if experiment_dir is None:
         raw_experiment = st.text_input("Папка конкретного эксперимента", value="", key="manual_editor_experiment_dir")
         if not raw_experiment.strip():
-            st.info("Укажи summary CSV или папку конкретного эксперимента.")
+            st.info("Укажи сводную таблицу серии экспериментов или папку конкретного эксперимента.")
             return
         experiment_dir = _safe_path(raw_experiment)
 
     st.caption(f"Папка эксперимента: `{experiment_dir}`")
     inferred_gallery = infer_gallery_dir_from_experiment(experiment_dir)
     gallery_default = str(inferred_gallery or experiment_dir / "02_demo_gallery")
-    source_gallery_dir = _safe_path(st.text_input("Исходная SKU gallery", value=gallery_default, key="manual_editor_source_gallery"))
+    source_gallery_dir = _safe_path(st.text_input("Исходная SKU-галерея", value=gallery_default, key="manual_editor_source_gallery"))
     if not source_gallery_dir.exists():
-        st.warning(f"Исходная gallery не найдена: `{source_gallery_dir}`")
+        st.warning(f"Исходная галерея не найдена: `{source_gallery_dir}`")
         return
 
     manual_root, edits_csv, manual_gallery_dir, manual_gallery_csv = _manual_paths(experiment_dir)
@@ -498,11 +498,11 @@ def page_manual_cluster_editor(config: Dict[str, Any]) -> None:
 
     sku_refs = list_sku_refs(source_gallery_dir)
     c1, c2, c3 = st.columns(3)
-    c1.metric("SKU в исходной gallery", len(sku_refs))
-    c2.metric("Refs в исходной gallery", sum(len(refs) for refs in sku_refs.values()))
-    c3.metric("Manual edits", len(read_manual_edits(edits_csv)))
+    c1.metric("SKU в исходной галерее", len(sku_refs))
+    c2.metric("Эталонов в исходной галерее", sum(len(refs) for refs in sku_refs.values()))
+    c3.metric("Ручных операций", len(read_manual_edits(edits_csv)))
 
-    tabs = st.tabs(["Merge", "Split", "Текущие операции", "Применить и пересчитать", "Сравнение до/после"])
+    tabs = st.tabs(["Объединение", "Разделение", "Текущие операции", "Применить и пересчитать", "Сравнение до/после"])
     with tabs[0]:
         _render_merge_tab(source_gallery_dir, edits_csv)
     with tabs[1]:
