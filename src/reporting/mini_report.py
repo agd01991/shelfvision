@@ -9,6 +9,23 @@ import pandas as pd
 
 DEFAULT_TITLE = "ShelfVision: итоговый мини-отчёт"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+COLUMN_LABELS_RU = {
+    "model": "Модель",
+    "model_name": "Модель",
+    "pipeline": "Пайплайн",
+    "score": "Интегральная оценка",
+    "best_score": "Лучшая оценка",
+    "precision": "Точность",
+    "recall": "Полнота",
+    "f1": "F1-мера",
+    "map": "mAP",
+    "mAP": "mAP",
+    "objects_count": "Количество объектов",
+    "total_objects": "Всего объектов",
+    "images_count": "Количество изображений",
+    "zone_name": "Зона",
+    "density": "Плотность",
+}
 
 
 def _read_json(path: str | Path | None) -> Optional[Dict[str, Any]]:
@@ -46,16 +63,29 @@ def _rel(path: Path, base: Path) -> str:
         return str(path).replace("\\", "/")
 
 
-def _df_to_markdown(df: Optional[pd.DataFrame], max_rows: int = 8) -> str:
+def _display_df(df: Optional[pd.DataFrame], max_rows: int = 8) -> Optional[pd.DataFrame]:
     if df is None or df.empty:
+        return None
+    return df.head(max_rows).rename(columns=COLUMN_LABELS_RU)
+
+
+def _df_to_markdown(df: Optional[pd.DataFrame], max_rows: int = 8) -> str:
+    display_df = _display_df(df, max_rows=max_rows)
+    if display_df is None or display_df.empty:
         return "Нет данных."
-    return df.head(max_rows).to_markdown(index=False)
+    return display_df.to_markdown(index=False)
 
 
 def _df_to_html(df: Optional[pd.DataFrame], max_rows: int = 8) -> str:
-    if df is None or df.empty:
+    display_df = _display_df(df, max_rows=max_rows)
+    if display_df is None or display_df.empty:
         return "<p>Нет данных.</p>"
-    return df.head(max_rows).to_html(index=False, classes="table", border=0)
+    return display_df.to_html(index=False, classes="table", border=0)
+
+
+def _best_model_text(raw_model: Any) -> str:
+    value = str(raw_model or "")
+    return value if value else "нет данных"
 
 
 def _build_markdown(
@@ -73,7 +103,7 @@ def _build_markdown(
     lines.extend([
         "## 1. Назначение системы",
         "",
-        "ShelfVision предназначена для анализа изображений товарных полок: система обнаруживает товары, визуализирует результаты, считает метрики качества и помогает выбрать наиболее подходящий pipeline.",
+        "ShelfVision предназначена для анализа изображений товарных стеллажей: система выделяет продукцию, визуализирует результаты, считает метрики качества и помогает выбрать наиболее подходящий пайплайн обработки.",
         "",
     ])
 
@@ -93,11 +123,11 @@ def _build_markdown(
         if reason:
             highlights = [reason]
 
-    lines.extend(["## 2. Рекомендуемый pipeline", ""])
+    lines.extend(["## 2. Рекомендуемый пайплайн", ""])
     if best_model:
-        lines.append(f"**Рекомендуемая модель:** {best_model}")
+        lines.append(f"**Рекомендуемая модель:** {_best_model_text(best_model)}")
         if best_score is not None:
-            lines.append(f"**Интегральный score:** {float(best_score):.4f}")
+            lines.append(f"**Интегральная оценка:** {float(best_score):.4f}")
         lines.append("")
     else:
         lines.append("Данные рекомендации не найдены.")
@@ -148,7 +178,7 @@ def _build_markdown(
         "- визуализацию найденных товаров;",
         "- таблицу найденных объектов;",
         "- сравнение YOLO, RT-DETR-L, Faster R-CNN и WBF;",
-        "- рекомендацию лучшего pipeline;",
+        "- рекомендацию лучшего пайплайна;",
         "- анализ плотности товаров по зонам полки.",
         "",
     ])
@@ -224,11 +254,11 @@ def _build_html(
 </head>
 <body>
   <h1>{title}</h1>
-  <p>ShelfVision предназначена для анализа изображений товарных полок: система обнаруживает товары, визуализирует результаты, считает метрики качества и помогает выбрать наиболее подходящий pipeline.</p>
+  <p>ShelfVision предназначена для анализа изображений товарных стеллажей: система выделяет продукцию, визуализирует результаты, считает метрики качества и помогает выбрать наиболее подходящий пайплайн обработки.</p>
 
   <div class="cards">
-    <div class="card"><div>Рекомендуемый pipeline</div><div class="metric">{best_model}</div></div>
-    <div class="card"><div>Интегральный score</div><div class="metric">{best_score}</div></div>
+    <div class="card"><div>Рекомендуемый пайплайн</div><div class="metric">{best_model}</div></div>
+    <div class="card"><div>Интегральная оценка</div><div class="metric">{best_score}</div></div>
     <div class="card"><div>Плотность</div><div>{density_summary}</div></div>
   </div>
 
@@ -250,7 +280,7 @@ def _build_html(
     <li>визуализацию найденных товаров;</li>
     <li>таблицу найденных объектов;</li>
     <li>сравнение YOLO, RT-DETR-L, Faster R-CNN и WBF;</li>
-    <li>рекомендацию лучшего pipeline;</li>
+    <li>рекомендацию лучшего пайплайна;</li>
     <li>анализ плотности товаров по зонам полки.</li>
   </ul>
 </body>
@@ -312,7 +342,7 @@ def build_mini_report(
         "density_json": str(density_json) if density_json else None,
         "density_csv": str(density_csv) if density_csv else None,
         "images_dir": str(images_dir) if images_dir else None,
-        "images_used": [str(path) for path in images],
+        "image_limit": image_limit,
         "outputs": {"markdown": str(md_path), "html": str(html_path)},
     }
     manifest_path = out_dir / "mini_report_manifest.json"
