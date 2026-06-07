@@ -10,6 +10,19 @@ from .matcher import IdentificationResult
 
 DEFAULT_THRESHOLDS = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90]
 
+THRESHOLD_ANALYSIS_COLUMNS_RU = {
+    "threshold": "Порог идентификации",
+    "total_objects": "Всего объектов",
+    "matched": "Уверенные совпадения",
+    "unknown": "Неопределённые объекты",
+    "matched_rate": "Доля уверенных совпадений",
+    "unknown_rate": "Доля неопределённых объектов",
+    "avg_similarity_all": "Среднее сходство по всем объектам",
+    "avg_similarity_matched": "Среднее сходство уверенных совпадений",
+    "min_similarity_matched": "Минимальное сходство среди уверенных совпадений",
+    "max_similarity_unknown": "Максимальное сходство среди неопределённых объектов",
+}
+
 
 def build_threshold_analysis(
     results: List[IdentificationResult],
@@ -40,11 +53,18 @@ def build_threshold_analysis(
     return pd.DataFrame(rows)
 
 
-def _save_threshold_plot(df: pd.DataFrame, out_dir: Path) -> dict[str, Path]:
-    """Saves a VKR-ready plot for threshold analysis.
+def _display_threshold_analysis(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    return df.rename(columns=THRESHOLD_ANALYSIS_COLUMNS_RU)
 
-    The project uses Streamlit/CLI scripts, so plotting must work headlessly.
-    If matplotlib is unavailable, the table files are still produced.
+
+def _save_threshold_plot(df: pd.DataFrame, out_dir: Path) -> dict[str, Path]:
+    """Сохраняет график анализа порогов для отчёта ВКР.
+
+    Проект запускается как из Streamlit, так и из CLI, поэтому график должен
+    строиться без открытого окна. Если matplotlib недоступен, табличные отчёты
+    всё равно будут сохранены.
     """
 
     if df.empty:
@@ -62,10 +82,10 @@ def _save_threshold_plot(df: pd.DataFrame, out_dir: Path) -> dict[str, Path]:
     svg_path = out_dir / "threshold_analysis_plot.svg"
 
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.plot(df["threshold"], df["matched_rate"], marker="o", label="matched_rate")
-    ax.plot(df["threshold"], df["unknown_rate"], marker="o", label="unknown_rate")
-    ax.set_title("Влияние порога similarity на идентификацию")
-    ax.set_xlabel("Similarity threshold")
+    ax.plot(df["threshold"], df["matched_rate"], marker="o", label="доля уверенных совпадений")
+    ax.plot(df["threshold"], df["unknown_rate"], marker="o", label="доля неопределённых объектов")
+    ax.set_title("Влияние порога сходства на идентификацию")
+    ax.set_xlabel("Порог визуального сходства")
     ax.set_ylabel("Доля объектов")
     ax.set_ylim(0, 1.05)
     ax.grid(True, alpha=0.3)
@@ -81,10 +101,10 @@ def _recommended_threshold_text(df: pd.DataFrame) -> str:
     if df.empty:
         return "Недостаточно данных для выбора порога."
 
-    # Prefer the lowest threshold that does not match absolutely everything,
-    # because it demonstrates rejection of questionable objects while keeping
-    # most useful matches. If there is no such threshold, fall back to 0.65 or
-    # the nearest available value.
+    # Предпочитаем минимальный порог, который не сопоставляет абсолютно всё:
+    # так в отчёте видно, что сомнительные объекты отбрасываются, но при этом
+    # сохраняется большая часть полезных совпадений. Если такого порога нет,
+    # используем 0.65 или ближайшее доступное значение.
     candidates = df[(df["matched_rate"] >= 0.90) & (df["unknown"] > 0)]
     if candidates.empty:
         nearest = df.iloc[(df["threshold"] - 0.65).abs().argsort()[:1]]
@@ -94,9 +114,9 @@ def _recommended_threshold_text(df: pd.DataFrame) -> str:
 
     return (
         "Рекомендуемый рабочий порог по текущей таблице: "
-        f"`{row['threshold']:.2f}`. При нём matched = {int(row['matched'])} "
-        f"из {int(row['total_objects'])}, unknown = {int(row['unknown'])}, "
-        f"matched_rate = {row['matched_rate']:.4f}."
+        f"`{row['threshold']:.2f}`. При нём уверенно сопоставлено {int(row['matched'])} "
+        f"из {int(row['total_objects'])} объектов, неопределённых объектов = {int(row['unknown'])}, "
+        f"доля уверенных совпадений = {row['matched_rate']:.4f}."
     )
 
 
@@ -112,22 +132,23 @@ def save_threshold_analysis(
     md_path = out_dir / "threshold_analysis.md"
     df.to_csv(csv_path, index=False)
     plot_outputs = _save_threshold_plot(df, out_dir)
+    display_df = _display_threshold_analysis(df)
 
     lines = [
-        "# Анализ влияния порога similarity на идентификацию",
+        "# Анализ влияния порога визуального сходства на идентификацию",
         "",
-        "Порог `threshold` определяет, при каком значении похожести найденный объект считается сопоставленным с SKU-галереей.",
+        "Порог идентификации определяет, при каком значении визуального сходства найденный объект считается сопоставленным с SKU-галереей.",
         "",
-        "Чем ниже порог, тем больше объектов получают статус `matched`, но выше риск менее надёжных совпадений. Чем выше порог, тем больше объектов получают статус `unknown`, но совпадения становятся строже.",
+        "Чем ниже порог, тем больше объектов получают статус уверенного совпадения, но выше риск менее надёжных назначений. Чем выше порог, тем больше объектов остаются неопределёнными, но совпадения становятся строже.",
         "",
-        df.to_markdown(index=False),
+        display_df.to_markdown(index=False),
         "",
         "## График",
         "",
     ]
     if "threshold_analysis_plot_png" in plot_outputs:
         lines.extend([
-            "![График влияния threshold на matched_rate и unknown_rate](threshold_analysis_plot.png)",
+            "![График влияния порога на долю уверенных совпадений и неопределённых объектов](threshold_analysis_plot.png)",
             "",
         ])
     else:
@@ -144,7 +165,7 @@ def save_threshold_analysis(
             "",
             "## Формулировка для ВКР",
             "",
-            "Для оценки устойчивости модуля идентификации проведён анализ влияния порога similarity. Результаты показывают, как изменение порога сопоставления влияет на долю объектов, которым был присвоен идентификатор SKU, и на долю объектов, отнесённых к unknown.",
+            "Для оценки устойчивости модуля идентификации проведён анализ влияния порога визуального сходства. Результаты показывают, как изменение порога сопоставления влияет на долю объектов, которым был присвоен идентификатор SKU, и на долю объектов, оставшихся неопределёнными.",
         ]
     )
     md_path.write_text("\n".join(lines), encoding="utf-8")
