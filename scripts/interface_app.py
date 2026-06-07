@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -28,7 +27,7 @@ except Exception:
 
 
 # -----------------------------------------------------------------------------
-# ShelfVision visual interface
+# Визуальный интерфейс ShelfVision
 # -----------------------------------------------------------------------------
 
 APP_TITLE = "ShelfVision: интерфейс экспериментов"
@@ -42,9 +41,42 @@ CSV_FILES = {
 }
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
+COLUMN_LABELS_RU = {
+    "model": "Модель",
+    "system": "Система",
+    "name": "Название",
+    "exp": "Эксперимент",
+    "mode": "Режим",
+    "is_best": "Лучшая конфигурация",
+    "AP": "AP",
+    "AP50": "AP50",
+    "AP75": "AP75",
+    "AP50-95": "AP50-95",
+    "AR100": "AR100",
+    "P": "Точность",
+    "R": "Полнота",
+    "mAP50-95": "mAP50-95",
+    "minutes_total": "Время обучения, мин",
+    "ms_per_image": "Время на изображение, мс",
+    "time_ms": "Время, мс",
+    "AP_delta": "Изменение AP",
+    "AP_delta_%": "Изменение AP, %",
+    "P_box": "Точность bbox",
+    "R_box": "Полнота bbox",
+    "mAP5095_box": "mAP50-95 bbox",
+    "mAP5095_mask": "mAP50-95 mask",
+    "mAP50_box": "mAP50 bbox",
+    "mAP50_mask": "mAP50 mask",
+    "mAP5095_mask": "mAP50-95 mask",
+}
+
+
+def _display_df(df: pd.DataFrame) -> pd.DataFrame:
+    return df.rename(columns=COLUMN_LABELS_RU)
+
 
 # -----------------------------------------------------------------------------
-# Helpers
+# Вспомогательные функции
 # -----------------------------------------------------------------------------
 
 @st.cache_data(show_spinner=False)
@@ -53,27 +85,26 @@ def read_csv_cached(path: str) -> pd.DataFrame:
 
 
 def repo_root() -> Path:
-    # scripts/interface_app.py -> repository root
     return Path(__file__).resolve().parents[1]
 
 
 def existing_csvs(root: Path) -> Dict[str, Path]:
     result: Dict[str, Path] = {}
     for name, rel in CSV_FILES.items():
-        p = root / rel
-        if p.exists():
-            result[name] = p
+        path = root / rel
+        if path.exists():
+            result[name] = path
     return result
 
 
 def load_table(root: Path, name: str) -> Optional[pd.DataFrame]:
-    p = root / CSV_FILES[name]
-    if not p.exists():
+    path = root / CSV_FILES[name]
+    if not path.exists():
         return None
     try:
-        return read_csv_cached(str(p))
+        return read_csv_cached(str(path))
     except Exception as exc:
-        st.error(f"Не удалось прочитать {p}: {exc}")
+        st.error(f"Не удалось прочитать {path}: {exc}")
         return None
 
 
@@ -82,14 +113,14 @@ def to_number(series: pd.Series) -> pd.Series:
 
 
 def pick_metric_column(df: pd.DataFrame, *candidates: str) -> Optional[str]:
-    for c in candidates:
-        if c in df.columns:
-            return c
+    for column in candidates:
+        if column in df.columns:
+            return column
     return None
 
 
 def show_dataframe(df: pd.DataFrame, height: int = 420) -> None:
-    st.dataframe(df, use_container_width=True, height=height)
+    st.dataframe(_display_df(df), use_container_width=True, height=height)
 
 
 def metric_card(label: str, value: object, help_text: str = "") -> None:
@@ -120,11 +151,11 @@ def find_images(root: Path, max_images: int = 200) -> List[Path]:
     for folder in preferred_dirs:
         if not folder.exists():
             continue
-        for p in folder.rglob("*"):
-            if p.suffix.lower() in IMAGE_EXTS and p.is_file():
-                key = str(p.resolve())
+        for path in folder.rglob("*"):
+            if path.suffix.lower() in IMAGE_EXTS and path.is_file():
+                key = str(path.resolve())
                 if key not in seen:
-                    images.append(p)
+                    images.append(path)
                     seen.add(key)
             if len(images) >= max_images:
                 return images
@@ -183,12 +214,12 @@ def package_status() -> pd.DataFrame:
 
 
 # -----------------------------------------------------------------------------
-# Sidebar
+# Боковая панель
 # -----------------------------------------------------------------------------
 
 def render_sidebar(root: Path) -> None:
     st.sidebar.title("ShelfVision")
-    st.sidebar.caption("Визуальный интерфейс курсового проекта")
+    st.sidebar.caption("Визуальный интерфейс экспериментов")
 
     st.sidebar.markdown("### Статус данных")
     csvs = existing_csvs(root)
@@ -205,14 +236,14 @@ def render_sidebar(root: Path) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Pages
+# Страницы
 # -----------------------------------------------------------------------------
 
 def page_home(root: Path) -> None:
     st.header("Главная панель")
     st.write(
         "Интерфейс показывает, какие экспериментальные материалы есть в проекте, "
-        "какие модели сравнивались и какие результаты используются в отчете по курсовому проекту."
+        "какие модели сравнивались и какие результаты используются в отчётах по проекту и ВКР."
     )
 
     if px is None:
@@ -228,7 +259,7 @@ def page_home(root: Path) -> None:
         metric_card("CSV-файлов найдено", f"{len(csvs)}/{len(CSV_FILES)}")
     with c2:
         img_count = len(find_images(root, max_images=500))
-        metric_card("Картинок найдено", img_count)
+        metric_card("Изображений найдено", img_count)
     with c3:
         overall = load_table(root, "OVERALL_detection_min")
         best_ap = None
@@ -250,7 +281,7 @@ def page_home(root: Path) -> None:
         1. Изображения и аннотации SKU110K загружаются в проект.
         2. Модели строят предсказания: рамки, confidence и дополнительные значения.
         3. Предсказания сравниваются с эталонными аннотациями.
-        4. Считаются AP50-95, AP50, AP75, precision, recall, AR100 и скорость.
+        4. Считаются AP50-95, AP50, AP75, точность, полнота, AR100 и скорость.
         5. Результаты сохраняются в CSV и JSON.
         6. Интерфейс показывает таблицы, графики и визуальные примеры.
         """
@@ -259,12 +290,12 @@ def page_home(root: Path) -> None:
     st.subheader("Файлы экспериментов")
     rows = []
     for name, rel in CSV_FILES.items():
-        p = root / rel
+        path = root / rel
         rows.append({
             "Эксперимент": name,
             "Путь": rel,
-            "Найден": "да" if p.exists() else "нет",
-            "Размер, КБ": round(p.stat().st_size / 1024, 2) if p.exists() else None,
+            "Найден": "да" if path.exists() else "нет",
+            "Размер, КБ": round(path.stat().st_size / 1024, 2) if path.exists() else None,
         })
     show_dataframe(pd.DataFrame(rows), height=260)
 
@@ -326,9 +357,9 @@ def page_yolo_ablations(root: Path) -> None:
             st.success("Лучшая конфигурация: " + str(best.iloc[0].get("exp", "-")))
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                metric_card("Precision", format_float(best.iloc[0].get("P")))
+                metric_card("Точность", format_float(best.iloc[0].get("P")))
             with c2:
-                metric_card("Recall", format_float(best.iloc[0].get("R")))
+                metric_card("Полнота", format_float(best.iloc[0].get("R")))
             with c3:
                 metric_card("mAP50-95", format_float(best.iloc[0].get("mAP50-95")))
             with c4:
@@ -404,7 +435,7 @@ def page_robustness(root: Path) -> None:
 
             c1, c2, c3 = st.columns(3)
             with c1:
-                metric_card("Clean AP", format_float(clean_ap))
+                metric_card("AP без искажений", format_float(clean_ap))
             with c2:
                 worst = df.sort_values("AP_delta").iloc[0]
                 metric_card("Худший режим", worst.get("mode"))
@@ -416,7 +447,7 @@ def page_robustness(root: Path) -> None:
                 fig.update_traces(texttemplate="%{text:.4f}", textposition="outside")
                 st.plotly_chart(fig, use_container_width=True)
 
-                fig = px.bar(df.sort_values("AP_delta"), x="mode", y="AP_delta", title="Изменение AP относительно clean")
+                fig = px.bar(df.sort_values("AP_delta"), x="mode", y="AP_delta", title="Изменение AP относительно режима без искажений")
                 st.plotly_chart(fig, use_container_width=True)
 
     st.info(
@@ -437,11 +468,11 @@ def page_segmentation(root: Path) -> None:
         row = df.iloc[0]
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            metric_card("P box", format_float(row.get("P_box")))
+            metric_card("Точность bbox", format_float(row.get("P_box")))
         with c2:
-            metric_card("R box", format_float(row.get("R_box")))
+            metric_card("Полнота bbox", format_float(row.get("R_box")))
         with c3:
-            metric_card("mAP50-95 box", format_float(row.get("mAP5095_box")))
+            metric_card("mAP50-95 bbox", format_float(row.get("mAP5095_box")))
         with c4:
             metric_card("mAP50-95 mask", format_float(row.get("mAP5095_mask")))
 
@@ -454,7 +485,7 @@ def page_segmentation(root: Path) -> None:
             st.plotly_chart(fig, use_container_width=True)
 
     st.info(
-        "Этот блок связывает курсовой проект с ВКР: после детекции можно перейти к сегментации товаров."
+        "Этот блок связывает проект с ВКР: после детекции можно перейти к сегментации товаров."
     )
 
 
@@ -514,7 +545,7 @@ def page_hardware(root: Path) -> None:
     st.subheader("Программные компоненты")
     show_dataframe(package_status(), height=420)
 
-    st.subheader("Что демонстрируется на зачёте")
+    st.subheader("Что демонстрируется на зачёте/защите")
     st.markdown(
         """
         - проект ShelfVision как программная основа;
@@ -566,7 +597,7 @@ def page_commands(root: Path) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Main
+# Основная функция
 # -----------------------------------------------------------------------------
 
 def main() -> None:
@@ -575,7 +606,7 @@ def main() -> None:
     render_sidebar(root)
 
     st.title(APP_TITLE)
-    st.caption("Интерфейс добавлен в основной проект для демонстрации курсового проекта и ВКР-задела.")
+    st.caption("Интерфейс добавлен в основной проект для демонстрации экспериментов и задела для ВКР.")
 
     tabs = st.tabs([
         "Главная",
