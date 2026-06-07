@@ -6,6 +6,21 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
+PARAM_LABELS_RU = {
+    "model": "Модель",
+    "weights": "Файл весов модели",
+    "conf": "Порог confidence детектора",
+    "imgsz": "Размер изображения для инференса",
+    "threshold": "Порог идентификации SKU",
+    "top_k": "Количество ближайших кандидатов",
+    "padding": "Отступ вокруг crop",
+    "dedup_threshold": "Порог объединения эталонов",
+    "max_refs_per_sku": "Максимум эталонов на SKU",
+    "max_sku": "Максимум demo SKU",
+    "bbox_only": "Только ограничивающие прямоугольники",
+    "use_masks": "Использовать маски",
+}
+
 
 def _read_json(path: str | Path) -> Dict[str, Any] | List[Any]:
     path = Path(path)
@@ -60,10 +75,15 @@ def build_photo_identification_experiment_summary(
     images_count = len(predictions) if isinstance(predictions, list) else 1 if predictions else 0
     total_objects = _safe_int(metrics.get("total_objects", 0) if isinstance(metrics, dict) else 0)
     matched = _safe_int(metrics.get("matched", 0) if isinstance(metrics, dict) else 0)
+    matched_uncertain = _safe_int(metrics.get("matched_uncertain", 0) if isinstance(metrics, dict) else 0)
     unknown = _safe_int(metrics.get("unknown", 0) if isinstance(metrics, dict) else 0)
+    assigned = _safe_int(metrics.get("assigned", matched + matched_uncertain) if isinstance(metrics, dict) else 0)
     matched_rate = _safe_float(metrics.get("matched_rate", 0.0) if isinstance(metrics, dict) else 0.0)
+    matched_uncertain_rate = _safe_float(metrics.get("matched_uncertain_rate", 0.0) if isinstance(metrics, dict) else 0.0)
     unknown_rate = _safe_float(metrics.get("unknown_rate", 0.0) if isinstance(metrics, dict) else 0.0)
+    assigned_rate = _safe_float(metrics.get("assigned_rate", 0.0) if isinstance(metrics, dict) else 0.0)
     avg_similarity = _safe_float(metrics.get("avg_similarity", 0.0) if isinstance(metrics, dict) else 0.0)
+    mean_distinct_margin = _safe_float(metrics.get("mean_distinct_margin", 0.0) if isinstance(metrics, dict) else 0.0)
 
     created_sku_count = _safe_int(demo_summary.get("created_sku_count", 0) if isinstance(demo_summary, dict) else 0)
     extracted_crops_count = _safe_int(demo_summary.get("extracted_crops_count", 0) if isinstance(demo_summary, dict) else 0)
@@ -79,10 +99,15 @@ def build_photo_identification_experiment_summary(
         "images_count": images_count,
         "total_objects": total_objects,
         "matched": matched,
+        "matched_uncertain": matched_uncertain,
         "unknown": unknown,
+        "assigned": assigned,
         "matched_rate": matched_rate,
+        "matched_uncertain_rate": matched_uncertain_rate,
         "unknown_rate": unknown_rate,
+        "assigned_rate": assigned_rate,
         "avg_similarity": avg_similarity,
+        "mean_distinct_margin": mean_distinct_margin,
         "created_demo_sku_count": created_sku_count,
         "extracted_crops_count": extracted_crops_count,
         "visualized_images_count": visualized_count,
@@ -127,13 +152,18 @@ def save_photo_identification_experiment_summary(
         "",
         f"- Обработано изображений: {summary['images_count']}",
         f"- Найдено объектов: {summary['total_objects']}",
-        f"- Сопоставлено с demo SKU: {summary['matched']}",
-        f"- Unknown: {summary['unknown']}",
-        f"- Доля matched: {summary['matched_rate']:.4f}",
-        f"- Доля unknown: {summary['unknown_rate']:.4f}",
-        f"- Средняя similarity: {summary['avg_similarity']:.4f}",
+        f"- Уверенные совпадения: {summary['matched']}",
+        f"- Неоднозначные совпадения: {summary['matched_uncertain']}",
+        f"- Неопределённые объекты: {summary['unknown']}",
+        f"- Всего назначений SKU: {summary['assigned']}",
+        f"- Доля уверенных совпадений: {summary['matched_rate']:.4f}",
+        f"- Доля неоднозначных совпадений: {summary['matched_uncertain_rate']:.4f}",
+        f"- Доля неопределённых объектов: {summary['unknown_rate']:.4f}",
+        f"- Доля всех назначений SKU: {summary['assigned_rate']:.4f}",
+        f"- Среднее визуальное сходство: {summary['avg_similarity']:.4f}",
+        f"- Средний отрыв между двумя лучшими SKU: {summary['mean_distinct_margin']:.4f}",
         f"- Создано demo SKU: {summary['created_demo_sku_count']}",
-        f"- Извлечено crop-ов: {summary['extracted_crops_count']}",
+        f"- Извлечено crop-объектов: {summary['extracted_crops_count']}",
         f"- Визуализировано изображений: {summary['visualized_images_count']}",
         "",
         "## Основные файлы",
@@ -147,13 +177,14 @@ def save_photo_identification_experiment_summary(
         "",
         "## Формулировка для ВКР",
         "",
-        "Поскольку используемый датасет не содержит полноценной SKU-разметки, для проверки модуля идентификации автоматически формируется демонстрационная SKU-галерея на основе crop-изображений найденных объектов. Каждый выбранный crop рассматривается как условная эталонная товарная позиция, после чего найденные объекты сопоставляются с данной галереей и получают статус matched или unknown.",
+        "Поскольку используемый датасет не содержит полноценной SKU-разметки, для проверки модуля идентификации автоматически формируется демонстрационная SKU-галерея на основе crop-изображений найденных объектов. Каждый выбранный crop рассматривается как условная эталонная товарная позиция, после чего найденные объекты сопоставляются с данной галереей и получают статус уверенного совпадения, неоднозначного совпадения или неопределённого объекта.",
     ]
 
     if summary.get("params"):
         lines.extend(["", "## Параметры запуска", ""])
         for key, value in summary["params"].items():
-            lines.append(f"- {key}: `{value}`")
+            label = PARAM_LABELS_RU.get(key, key)
+            lines.append(f"- {label}: `{value}`")
 
     md_path.write_text("\n".join(lines), encoding="utf-8")
     return {"experiment_summary_json": json_path, "experiment_summary_csv": csv_path, "experiment_summary_md": md_path}
