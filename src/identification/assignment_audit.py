@@ -109,46 +109,46 @@ def save_assignment_audit_outputs(
 
     report_md = out_dir / "assignment_uncertainty_report.md"
     lines = [
-        "# ShelfVision: assignment uncertainty audit",
+        "# ShelfVision: аудит неоднозначных назначений SKU",
         "",
-        "## Parameters",
+        "## Параметры",
         "",
-        f"- threshold: `{threshold}`",
-        f"- ambiguity_margin: `{ambiguity_margin}`",
+        f"- Порог идентификации: `{threshold}`",
+        f"- Минимальный отрыв между двумя лучшими SKU: `{ambiguity_margin}`",
         "",
-        "## Summary",
+        "## Сводка",
         "",
-        f"- objects: `{summary['objects']}`",
-        f"- matched: `{summary['matched']}`",
-        f"- matched_uncertain: `{summary['matched_uncertain']}`",
-        f"- unknown: `{summary['unknown']}`",
-        f"- matched_rate: `{summary['matched_rate']:.4f}`",
-        f"- matched_uncertain_rate: `{summary['matched_uncertain_rate']:.4f}`",
-        f"- unknown_rate: `{summary['unknown_rate']:.4f}`",
-        f"- assigned_rate: `{summary['assigned_rate']:.4f}`",
-        f"- mean_sku_confidence: `{summary['mean_sku_confidence']:.4f}`",
-        f"- mean_distinct_margin: `{summary['mean_distinct_margin']:.4f}`",
+        f"- Всего объектов: `{summary['objects']}`",
+        f"- Уверенные совпадения: `{summary['matched']}`",
+        f"- Неоднозначные совпадения: `{summary['matched_uncertain']}`",
+        f"- Неопределённые объекты: `{summary['unknown']}`",
+        f"- Доля уверенных совпадений: `{summary['matched_rate']:.4f}`",
+        f"- Доля неоднозначных совпадений: `{summary['matched_uncertain_rate']:.4f}`",
+        f"- Доля неопределённых объектов: `{summary['unknown_rate']:.4f}`",
+        f"- Доля всех назначений SKU: `{summary['assigned_rate']:.4f}`",
+        f"- Среднее визуальное сходство: `{summary['mean_sku_confidence']:.4f}`",
+        f"- Средний отрыв между двумя лучшими SKU: `{summary['mean_distinct_margin']:.4f}`",
         "",
-        "## Files",
+        "## Файлы",
         "",
-        f"- query assignment audit: `{audit_csv}`",
-        f"- SKU summary: `{sku_summary_csv}`",
-        f"- matched uncertain candidates: `{uncertain_csv}`",
-        f"- suspicious absorber SKU: `{suspicious_csv}`",
-        f"- summary JSON: `{summary_json}`",
+        f"- Полная таблица назначений: `{audit_csv}`",
+        f"- Сводка по SKU: `{sku_summary_csv}`",
+        f"- Кандидаты с неоднозначным совпадением: `{uncertain_csv}`",
+        f"- Подозрительные SKU-поглотители: `{suspicious_csv}`",
+        f"- JSON-сводка: `{summary_json}`",
         "",
-        "## Interpretation",
+        "## Интерпретация",
         "",
         "`matched` означает уверенное назначение SKU. "
-        "`matched_uncertain` означает, что top-1 и top-2 разные SKU слишком близки по similarity, "
+        "`matched_uncertain` означает, что лучший и второй лучший разные SKU слишком близки по визуальному сходству, "
         "поэтому для безопасного результата `safe_sku_id` не заполняется. "
-        "`unknown` означает, что score ниже threshold или совпадение не найдено.",
+        "`unknown` означает, что score ниже порога идентификации или совпадение не найдено.",
         "",
         "## Формулировка для ВКР",
         "",
         "Для снижения риска ошибочного присвоения разных товаров одному SKU в модуль идентификации добавлен анализ неоднозначности. "
-        "После расчёта top-k кандидатов определяется лучший и второй лучший различные SKU, затем вычисляется margin между ними. "
-        "Если margin ниже заданного порога, объект получает статус `matched_uncertain`, что позволяет сохранить диагностическую информацию, "
+        "После расчёта ближайших кандидатов определяется лучший и второй лучший различные SKU, затем вычисляется отрыв между ними. "
+        "Если отрыв ниже заданного порога, объект получает статус `matched_uncertain`, что позволяет сохранить диагностическую информацию, "
         "но не использовать такое назначение как надёжное.",
     ]
     report_md.write_text("\n".join(lines), encoding="utf-8")
