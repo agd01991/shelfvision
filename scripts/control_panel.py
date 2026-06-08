@@ -69,7 +69,7 @@ MODEL_LABELS = {
     "yolo": "YOLO",
     "rtdetr": "RT-DETR-L",
     "frcnn": "Faster R-CNN",
-    "wbf": "WBF(YOLO + RT-DETR)",
+    "wbf": "WBF (YOLO + RT-DETR)",
 }
 
 
@@ -255,10 +255,10 @@ def page_setup(config: Dict[str, Any]) -> None:
     check_path("requirements.txt", config["setup"].get("requirements", "requirements.txt"))
     check_path("Python .venv", str(venv_python(config)))
     check_path("WSL venv", config["setup"].get("venv_dir_wsl", ".venv_wsl"))
-    check_path("YOLO weights", config["weights"].get("yolo", ""))
-    check_path("RT-DETR weights", config["weights"].get("rtdetr", ""))
-    check_path("Faster R-CNN weights", config["weights"].get("frcnn", ""))
-    check_path("Images dir", config["paths"].get("images_dir", ""))
+    check_path("Веса YOLO", config["weights"].get("yolo", ""))
+    check_path("Веса RT-DETR", config["weights"].get("rtdetr", ""))
+    check_path("Веса Faster R-CNN", config["weights"].get("frcnn", ""))
+    check_path("Папка изображений", config["paths"].get("images_dir", ""))
 
 
 def page_downloads(config: Dict[str, Any]) -> None:
@@ -291,7 +291,7 @@ def page_downloads(config: Dict[str, Any]) -> None:
 
     st.divider()
     for item in edited:
-        name = item.get("name") or "file"
+        name = item.get("name") or "файл"
         url = item.get("url") or ""
         output = item.get("output") or ""
         expanded = advanced
@@ -300,18 +300,19 @@ def page_downloads(config: Dict[str, Any]) -> None:
                 st.write(f"URL: `{url or 'не указан'}`")
             elif not url:
                 st.caption("URL не задан. Включи расширенный режим, чтобы отредактировать список загрузок.")
-            st.write(f"Output: `{output or 'не указан'}`")
+            st.write(f"Куда сохранить: `{output or 'не указан'}`")
             if output:
                 check_path("Файл", output, should_exist=True)
             if st.button(f"Скачать {name}", key=f"download_{name}_{output}"):
                 if not url or not output:
-                    st.error("Для скачивания нужно указать URL и output.")
+                    st.error("Для скачивания нужно указать URL и путь сохранения.")
                 else:
                     try:
                         saved = download_file(url, resolve_path(output))
                         st.success(f"Файл скачан: {rel_path(saved)}")
                     except Exception as exc:
                         st.error(f"Ошибка скачивания: {exc}")
+
 
 def page_config(config: Dict[str, Any]) -> Dict[str, Any]:
     st.header("3. Настройки проекта")
@@ -321,47 +322,47 @@ def page_config(config: Dict[str, Any]) -> Dict[str, Any]:
         paths = config["paths"]
         paths["image"] = st.text_input("Одно изображение", value=str(paths.get("image", "")))
         paths["images_dir"] = st.text_input("Папка изображений", value=str(paths.get("images_dir", "")))
-        paths["gt_coco"] = st.text_input("COCO annotations.json", value=str(paths.get("gt_coco", "")))
-        paths["gt_yolo_labels"] = st.text_input("YOLO labels", value=str(paths.get("gt_yolo_labels", "")))
+        paths["gt_coco"] = st.text_input("Файл COCO annotations.json", value=str(paths.get("gt_coco", "")))
+        paths["gt_yolo_labels"] = st.text_input("Папка YOLO labels", value=str(paths.get("gt_yolo_labels", "")))
         paths["out_dir"] = st.text_input("Папка результатов", value=str(paths.get("out_dir", "")))
 
-        st.subheader("Веса")
+        st.subheader("Веса моделей")
         weights = config["weights"]
-        weights["yolo"] = st.text_input("YOLO weights", value=str(weights.get("yolo", "")))
-        weights["rtdetr"] = st.text_input("RT-DETR weights", value=str(weights.get("rtdetr", "")))
-        weights["frcnn"] = st.text_input("Faster R-CNN weights", value=str(weights.get("frcnn", "")))
+        weights["yolo"] = st.text_input("Веса YOLO", value=str(weights.get("yolo", "")))
+        weights["rtdetr"] = st.text_input("Веса RT-DETR", value=str(weights.get("rtdetr", "")))
+        weights["frcnn"] = st.text_input("Веса Faster R-CNN", value=str(weights.get("frcnn", "")))
 
-        st.subheader("Setup")
+        st.subheader("Настройка окружения")
         setup = config["setup"]
         setup["venv_dir"] = st.text_input("Windows/local venv", value=str(setup.get("venv_dir", ".venv")))
         setup["venv_dir_wsl"] = st.text_input("WSL venv", value=str(setup.get("venv_dir_wsl", ".venv_wsl")))
-        setup["requirements"] = st.text_input("requirements.txt", value=str(setup.get("requirements", "requirements.txt")))
+        setup["requirements"] = st.text_input("Файл requirements.txt", value=str(setup.get("requirements", "requirements.txt")))
 
-        st.subheader("Runtime")
+        st.subheader("Параметры инференса")
         runtime = config["runtime"]
-        runtime["conf"] = st.slider("Confidence", 0.01, 0.95, float(runtime.get("conf", 0.25)), 0.01)
-        runtime["imgsz"] = st.selectbox("imgsz", [416, 512, 640, 768, 1024], index=[416, 512, 640, 768, 1024].index(int(runtime.get("imgsz", 640))) if int(runtime.get("imgsz", 640)) in [416, 512, 640, 768, 1024] else 2)
-        runtime["device"] = st.text_input("device", value=str(runtime.get("device", "0")))
+        runtime["conf"] = st.slider("Порог confidence", 0.01, 0.95, float(runtime.get("conf", 0.25)), 0.01)
+        runtime["imgsz"] = st.selectbox("Размер изображения", [416, 512, 640, 768, 1024], index=[416, 512, 640, 768, 1024].index(int(runtime.get("imgsz", 640))) if int(runtime.get("imgsz", 640)) in [416, 512, 640, 768, 1024] else 2)
+        runtime["device"] = st.text_input("Устройство запуска", value=str(runtime.get("device", "0")))
         runtime["models"] = st.multiselect(
-            "Модели для полного pipeline",
+            "Модели для полного пайплайна",
             options=list(MODEL_LABELS.keys()),
             default=[m for m in runtime.get("models", ["yolo", "rtdetr", "wbf"]) if m in MODEL_LABELS],
             format_func=lambda x: MODEL_LABELS[x],
         )
 
-        st.subheader("WBF")
+        st.subheader("Объединение предсказаний WBF")
         wbf = config["wbf"]
-        wbf["iou"] = st.slider("WBF IoU", 0.1, 0.9, float(wbf.get("iou", 0.55)), 0.01)
-        wbf["skip"] = st.slider("WBF skip", 0.0, 0.5, float(wbf.get("skip", 0.001)), 0.001)
-        wbf["yolo_weight"] = st.number_input("YOLO weight", 0.1, 5.0, float(wbf.get("yolo_weight", 1.0)), 0.1)
-        wbf["rtdetr_weight"] = st.number_input("RT-DETR weight", 0.1, 5.0, float(wbf.get("rtdetr_weight", 1.0)), 0.1)
+        wbf["iou"] = st.slider("IoU-порог WBF", 0.1, 0.9, float(wbf.get("iou", 0.55)), 0.01)
+        wbf["skip"] = st.slider("Порог пропуска WBF", 0.0, 0.5, float(wbf.get("skip", 0.001)), 0.001)
+        wbf["yolo_weight"] = st.number_input("Вес YOLO", 0.1, 5.0, float(wbf.get("yolo_weight", 1.0)), 0.1)
+        wbf["rtdetr_weight"] = st.number_input("Вес RT-DETR", 0.1, 5.0, float(wbf.get("rtdetr_weight", 1.0)), 0.1)
 
         st.subheader("Плотность")
         density = config["density"]
-        density["model"] = st.selectbox("Модель для density", list(MODEL_LABELS.keys()), index=list(MODEL_LABELS.keys()).index(density.get("model", "yolo")) if density.get("model", "yolo") in MODEL_LABELS else 0, format_func=lambda x: MODEL_LABELS[x])
-        density["rows"] = st.number_input("Rows", 1, 10, int(density.get("rows", 3)))
-        density["cols"] = st.number_input("Cols", 1, 10, int(density.get("cols", 3)))
-        density["limit"] = st.number_input("Visualize limit", 0, 1000, int(density.get("limit", 20)))
+        density["model"] = st.selectbox("Модель для анализа плотности", list(MODEL_LABELS.keys()), index=list(MODEL_LABELS.keys()).index(density.get("model", "yolo")) if density.get("model", "yolo") in MODEL_LABELS else 0, format_func=lambda x: MODEL_LABELS[x])
+        density["rows"] = st.number_input("Строк сетки", 1, 10, int(density.get("rows", 3)))
+        density["cols"] = st.number_input("Столбцов сетки", 1, 10, int(density.get("cols", 3)))
+        density["limit"] = st.number_input("Лимит визуализаций", 0, 1000, int(density.get("limit", 20)))
 
         submitted = st.form_submit_button("Сохранить настройки")
         if submitted:
@@ -413,8 +414,8 @@ def page_actions(config: Dict[str, Any]) -> None:
         result = run_command(cmd)
         render_command_result(result)
 
-    st.subheader("Полный pipeline")
-    if st.button("Запустить полный pipeline", use_container_width=True):
+    st.subheader("Полный пайплайн")
+    if st.button("Запустить полный пайплайн", use_container_width=True):
         models = runtime.get("models", ["yolo", "rtdetr", "wbf"])
         cmd = [
             str(py),
@@ -482,11 +483,11 @@ def page_results(config: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="ShelfVision Control Panel", page_icon="🧰", layout="wide")
+    st.set_page_config(page_title="Панель управления ShelfVision", page_icon="🧰", layout="wide")
     ensure_config_exists()
     config = load_config()
 
-    st.title("🧰 ShelfVision Control Panel")
+    st.title("🧰 Панель управления ShelfVision")
     st.caption("Мастер первого запуска, настройки и кнопки для основных сценариев ВКР-программы.")
 
     page = st.sidebar.radio(
