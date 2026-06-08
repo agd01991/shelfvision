@@ -37,6 +37,37 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
 }
 
+OUTPUT_LABELS_RU = {
+    "output_video": "Размеченное видео",
+    "summary_json": "JSON-сводка",
+    "frame_stats_csv": "CSV-статистика по кадрам",
+    "sample_frames_dir": "Папка кадров-примеров",
+    "frames_for_identification_dir": "Папка кадров для идентификации",
+    "predictions_json": "JSON-предсказания",
+    "video_predictions_json": "JSON-предсказания видео",
+}
+
+FRAME_STATS_COLUMNS_RU = {
+    "frame_index": "Номер кадра",
+    "frame_id": "ID кадра",
+    "timestamp_sec": "Время, сек",
+    "objects_count": "Количество объектов",
+    "average_confidence": "Средний confidence",
+    "min_confidence": "Минимальный confidence",
+    "max_confidence": "Максимальный confidence",
+    "fps": "FPS",
+    "processing_time": "Время обработки",
+    "processing_time_sec": "Время обработки, сек",
+}
+
+
+def _label_output(name: str) -> str:
+    return OUTPUT_LABELS_RU.get(str(name), str(name))
+
+
+def _display_frame_stats(df: pd.DataFrame) -> pd.DataFrame:
+    return df.rename(columns=FRAME_STATS_COLUMNS_RU)
+
 
 def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     result = dict(base)
@@ -73,7 +104,7 @@ def save_uploaded_video(uploaded_file) -> Path:
 def show_saved_outputs(outputs: Dict[str, Path]) -> None:
     st.subheader("Сохранённые результаты")
     for name, path in outputs.items():
-        st.write(f"**{name}:** `{path}`")
+        st.write(f"**{_label_output(name)}:** `{path}`")
 
     output_video = outputs.get("output_video")
     if output_video and output_video.exists():
@@ -83,13 +114,16 @@ def show_saved_outputs(outputs: Dict[str, Path]) -> None:
     summary_json = outputs.get("summary_json")
     if summary_json and summary_json.exists():
         st.subheader("Сводка")
-        st.json(summary_json.read_text(encoding="utf-8"))
+        try:
+            st.json(yaml.safe_load(summary_json.read_text(encoding="utf-8")))
+        except Exception:
+            st.code(summary_json.read_text(encoding="utf-8"), language="json")
 
     stats_csv = outputs.get("frame_stats_csv")
     if stats_csv and stats_csv.exists():
         st.subheader("Статистика по кадрам")
         df = pd.read_csv(stats_csv)
-        st.dataframe(df, use_container_width=True, height=420)
+        st.dataframe(_display_frame_stats(df), use_container_width=True, height=420)
 
         if not df.empty:
             c1, c2, c3, c4 = st.columns(4)
@@ -125,12 +159,12 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Настройки")
-        yolo_weights = resolve_path(st.text_input("YOLO weights", value=str(weights.get("yolo", "models/yolo/best.pt"))))
-        conf = st.slider("Confidence", 0.01, 0.95, float(runtime.get("conf", 0.25)), 0.01)
+        yolo_weights = resolve_path(st.text_input("Веса YOLO", value=str(weights.get("yolo", "models/yolo/best.pt"))))
+        conf = st.slider("Порог confidence", 0.01, 0.95, float(runtime.get("conf", 0.25)), 0.01)
         imgsz_options = [416, 512, 640, 768, 1024]
         imgsz_value = int(runtime.get("imgsz", 640))
-        imgsz = st.selectbox("imgsz", imgsz_options, index=imgsz_options.index(imgsz_value) if imgsz_value in imgsz_options else 2)
-        device = st.text_input("device", value=str(runtime.get("device", "0")))
+        imgsz = st.selectbox("Размер изображения", imgsz_options, index=imgsz_options.index(imgsz_value) if imgsz_value in imgsz_options else 2)
+        device = st.text_input("Устройство запуска", value=str(runtime.get("device", "0")))
         device = device.strip() or None
 
         st.divider()
@@ -139,7 +173,7 @@ def main() -> None:
         max_frames = st.number_input("Максимум кадров, 0 — всё видео", min_value=0, max_value=100000, value=int(video_config.get("max_frames", 0)))
         save_video = st.checkbox("Сохранять размеченное видео", value=bool(video_config.get("save_video", True)))
         sample_frames = st.number_input("Сколько кадров-примеров сохранить", min_value=0, max_value=100, value=int(video_config.get("sample_frames", 8)))
-        show_masks = st.checkbox("Показывать masks, если модель их вернула", value=bool(video_config.get("show_masks", True)))
+        show_masks = st.checkbox("Показывать маски, если модель их вернула", value=bool(video_config.get("show_masks", True)))
         codec = st.text_input("Кодек", value=str(video_config.get("codec", "mp4v")))
         out_dir = resolve_path(st.text_input("Папка результатов", value=str(video_config.get("output_dir", DEFAULT_OUT_DIR))))
 
