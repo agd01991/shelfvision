@@ -30,7 +30,7 @@ MODEL_OPTIONS = {
     "YOLO": "yolo",
     "RT-DETR-L": "rtdetr",
     "Faster R-CNN": "frcnn",
-    "WBF(YOLO + RT-DETR)": "wbf",
+    "WBF (YOLO + RT-DETR)": "wbf",
 }
 
 
@@ -131,7 +131,7 @@ def run_selected_model(
             skip_box_thr=wbf_skip,
             yolo_weight=yolo_weight,
             rtdetr_weight=rtdetr_weight,
-            model_name="WBF(YOLO + RT-DETR)",
+            model_name="WBF (YOLO + RT-DETR)",
         )
 
     raise ValueError(f"Неизвестная модель: {model_key}")
@@ -145,7 +145,7 @@ def render_metrics(prediction: ImagePrediction) -> None:
     with c2:
         st.metric("Средний confidence", f"{summary['average_confidence']:.4f}")
     with c3:
-        st.metric("Мин. confidence", f"{summary['min_confidence']:.4f}")
+        st.metric("Минимальный confidence", f"{summary['min_confidence']:.4f}")
     with c4:
         st.metric("Время обработки", f"{summary['inference_time']:.3f} сек")
 
@@ -168,37 +168,37 @@ def save_outputs(prediction: ImagePrediction, show_masks: bool) -> tuple[Path, P
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, page_icon="📦", layout="wide")
     st.title(APP_TITLE)
-    st.caption("Интерактивный запуск моделей ShelfVision на одном изображении товарной полки.")
+    st.caption("Интерактивный запуск моделей ShelfVision на одном изображении товарного стеллажа.")
 
     with st.sidebar:
         st.header("Параметры")
         selected_model_title = st.selectbox("Модель", list(MODEL_OPTIONS.keys()))
         model_key = MODEL_OPTIONS[selected_model_title]
 
-        conf = st.slider("Confidence threshold", 0.01, 0.95, 0.25, 0.01)
-        imgsz = st.selectbox("imgsz", [416, 512, 640, 768, 1024], index=2)
-        device = st.text_input("device", value="0", help="Например: 0, cpu, cuda:0")
+        conf = st.slider("Порог confidence", 0.01, 0.95, 0.25, 0.01)
+        imgsz = st.selectbox("Размер изображения", [416, 512, 640, 768, 1024], index=2)
+        device = st.text_input("Устройство запуска", value="0", help="Например: 0, cpu, cuda:0")
         device = device.strip() or None
-        show_masks = st.checkbox("Показывать masks, если модель их вернула", value=True)
+        show_masks = st.checkbox("Показывать маски, если модель их вернула", value=True)
 
         st.divider()
         st.subheader("Веса моделей")
-        yolo_weights = resolve_path(st.text_input("YOLO weights", value=DEFAULT_WEIGHTS["yolo"]))
-        rtdetr_weights = resolve_path(st.text_input("RT-DETR weights", value=DEFAULT_WEIGHTS["rtdetr"]))
-        frcnn_weights = resolve_path(st.text_input("Faster R-CNN weights", value=DEFAULT_WEIGHTS["frcnn"]))
+        yolo_weights = resolve_path(st.text_input("Веса YOLO", value=DEFAULT_WEIGHTS["yolo"]))
+        rtdetr_weights = resolve_path(st.text_input("Веса RT-DETR", value=DEFAULT_WEIGHTS["rtdetr"]))
+        frcnn_weights = resolve_path(st.text_input("Веса Faster R-CNN", value=DEFAULT_WEIGHTS["frcnn"]))
 
         st.divider()
-        st.subheader("WBF")
-        wbf_iou = st.slider("WBF IoU", 0.1, 0.9, 0.55, 0.01)
-        wbf_skip = st.slider("WBF skip score", 0.0, 0.5, 0.001, 0.001)
-        yolo_weight = st.number_input("YOLO weight", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
-        rtdetr_weight = st.number_input("RT-DETR weight", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+        st.subheader("Объединение предсказаний WBF")
+        wbf_iou = st.slider("IoU-порог WBF", 0.1, 0.9, 0.55, 0.01)
+        wbf_skip = st.slider("Порог пропуска WBF", 0.0, 0.5, 0.001, 0.001)
+        yolo_weight = st.number_input("Вес YOLO", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+        rtdetr_weight = st.number_input("Вес RT-DETR", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
 
     input_mode = st.radio("Источник изображения", ["Загрузить файл", "Указать путь"], horizontal=True)
     image_path: Optional[Path] = None
 
     if input_mode == "Загрузить файл":
-        uploaded_file = st.file_uploader("Изображение полки", type=["jpg", "jpeg", "png", "webp", "bmp"])
+        uploaded_file = st.file_uploader("Изображение стеллажа", type=["jpg", "jpeg", "png", "webp", "bmp"])
         if uploaded_file is not None:
             image_path = save_uploaded_image(uploaded_file)
     else:
@@ -227,7 +227,6 @@ def main() -> None:
         if missing:
             st.error("Не найдены веса модели:\n" + "\n".join(missing))
             return
-
         with st.spinner(f"Запуск модели: {selected_model_title}..."):
             try:
                 prediction = run_selected_model(
@@ -265,7 +264,7 @@ def main() -> None:
                 [
                     f"JSON: {json_path}",
                     f"CSV:  {table_path}",
-                    f"IMG:  {visualized_path}",
+                    f"Изображение:  {visualized_path}",
                 ]
             ),
             language="text",
