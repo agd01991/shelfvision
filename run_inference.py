@@ -14,7 +14,7 @@ from src.visualization.draw_boxes import draw_prediction
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ShelfVision inference runner")
+    parser = argparse.ArgumentParser(description="Запуск инференса ShelfVision")
     parser.add_argument(
         "--model",
         choices=["yolo", "yolo_seg", "rtdetr", "frcnn", "wbf"],
@@ -27,11 +27,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image", help="Путь к одному изображению")
     parser.add_argument("--images-dir", help="Путь к папке с изображениями для пакетной обработки")
     parser.add_argument("--out-dir", default="results/inference", help="Папка для результатов")
-    parser.add_argument("--conf", type=float, default=0.25, help="Порог уверенности")
+    parser.add_argument("--conf", type=float, default=0.25, help="Порог confidence")
     parser.add_argument("--imgsz", type=int, default=640, help="Размер изображения для модели")
     parser.add_argument("--device", default=None, help="Устройство: 0, cpu, cuda:0 и т.д.")
     parser.add_argument("--no-masks", action="store_true", help="Не отрисовывать маски")
-    parser.add_argument("--wbf-iou", type=float, default=0.55, help="IoU threshold для WBF")
+    parser.add_argument("--wbf-iou", type=float, default=0.55, help="IoU-порог для WBF")
     parser.add_argument("--wbf-skip", type=float, default=0.001, help="Минимальный score для WBF")
     parser.add_argument("--yolo-weight", type=float, default=1.0, help="Вес YOLO в WBF")
     parser.add_argument("--rtdetr-weight", type=float, default=1.0, help="Вес RT-DETR в WBF")
@@ -97,8 +97,12 @@ def run_wbf(args: argparse.Namespace, out_dir: Path, visualized_dir: Path) -> No
             show_masks=not args.no_masks,
         )
         save_summary_csv([prediction], out_dir / "summary.csv")
-        print(f"Done: model={prediction.model_name}, objects={prediction.objects_count}, avg_conf={prediction.average_confidence:.3f}")
-        print(f"Results saved to: {out_dir}")
+        print(
+            f"Готово: модель={prediction.model_name}, объектов={prediction.objects_count}, "
+            f"средний confidence={prediction.average_confidence:.3f}",
+            flush=True,
+        )
+        print(f"Результаты сохранены в: {out_dir}", flush=True)
         return
 
     if not args.images_dir:
@@ -127,8 +131,8 @@ def run_wbf(args: argparse.Namespace, out_dir: Path, visualized_dir: Path) -> No
             show_masks=not args.no_masks,
         )
 
-    print(f"Done: model=WBF(YOLO + RT-DETR), images={len(predictions)}")
-    print(f"Results saved to: {out_dir}")
+    print(f"Готово: модель=WBF (YOLO + RT-DETR), изображений={len(predictions)}", flush=True)
+    print(f"Результаты сохранены в: {out_dir}", flush=True)
 
 
 def main() -> None:
@@ -164,8 +168,12 @@ def main() -> None:
             show_masks=not args.no_masks,
         )
         save_summary_csv([prediction], out_dir / "summary.csv")
-        print(f"Done: model={model_name}, objects={prediction.objects_count}, avg_conf={prediction.average_confidence:.3f}")
-        print(f"Results saved to: {out_dir}")
+        print(
+            f"Готово: модель={model_name}, объектов={prediction.objects_count}, "
+            f"средний confidence={prediction.average_confidence:.3f}",
+            flush=True,
+        )
+        print(f"Результаты сохранены в: {out_dir}", flush=True)
         return
 
     predictions = predict_folder(
@@ -187,8 +195,8 @@ def main() -> None:
             show_masks=not args.no_masks,
         )
 
-    print(f"Done: model={model_name}, images={len(predictions)}")
-    print(f"Results saved to: {out_dir}")
+    print(f"Готово: модель={model_name}, изображений={len(predictions)}", flush=True)
+    print(f"Результаты сохранены в: {out_dir}", flush=True)
 
 
 if __name__ == "__main__":
