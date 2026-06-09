@@ -14,31 +14,31 @@ from src.reporting.experiment_summary import save_photo_identification_experimen
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ShelfVision photo identification pipeline")
-    parser.add_argument("--model", choices=["yolo", "yolo_seg", "rtdetr", "frcnn"], default="yolo", help="Detection/segmentation model")
-    parser.add_argument("--weights", required=True, help="Model weights path")
-    parser.add_argument("--image", default=None, help="Single image path")
-    parser.add_argument("--images-dir", default=None, help="Images directory")
-    parser.add_argument("--out-dir", default="D:/1Diplom/shelfvision_results/photo_identification", help="Pipeline output directory")
-    parser.add_argument("--conf", type=float, default=0.25, help="Detection confidence threshold")
-    parser.add_argument("--imgsz", type=int, default=640, help="Model image size")
-    parser.add_argument("--device", default=None, help="Device: 0, cpu, cuda:0")
-    parser.add_argument("--bbox-only", action="store_true", help="Use bbox crops even if masks exist")
+    parser = argparse.ArgumentParser(description="Пайплайн ShelfVision для фото-идентификации")
+    parser.add_argument("--model", choices=["yolo", "yolo_seg", "rtdetr", "frcnn"], default="yolo", help="Модель детекции/сегментации")
+    parser.add_argument("--weights", required=True, help="Путь к весам модели")
+    parser.add_argument("--image", default=None, help="Путь к одному изображению")
+    parser.add_argument("--images-dir", default=None, help="Папка изображений")
+    parser.add_argument("--out-dir", default="D:/1Diplom/shelfvision_results/photo_identification", help="Папка результатов пайплайна")
+    parser.add_argument("--conf", type=float, default=0.25, help="Порог confidence детектора")
+    parser.add_argument("--imgsz", type=int, default=640, help="Размер изображения для модели")
+    parser.add_argument("--device", default=None, help="Устройство: 0, cpu, cuda:0")
+    parser.add_argument("--bbox-only", action="store_true", help="Использовать bbox-crop даже при наличии масок")
 
-    parser.add_argument("--gallery-dir", default="D:/1Diplom/sku_gallery", help="Demo SKU gallery directory")
-    parser.add_argument("--gallery-csv", default="D:/1Diplom/sku_gallery/gallery.csv", help="Demo SKU gallery.csv path")
-    parser.add_argument("--max-sku", type=int, default=30, help="Maximum demo SKU count")
-    parser.add_argument("--min-score", type=float, default=0.35, help="Minimum detection score for demo SKU reference")
-    parser.add_argument("--min-width", type=int, default=20, help="Minimum reference crop width")
-    parser.add_argument("--min-height", type=int, default=20, help="Minimum reference crop height")
-    parser.add_argument("--padding", type=float, default=0.05, help="Crop padding ratio")
-    parser.add_argument("--prefix", default="sku_demo_", help="Demo SKU prefix")
-    parser.add_argument("--keep-old-demo", action="store_true", help="Keep previous demo SKU folders")
+    parser.add_argument("--gallery-dir", default="D:/1Diplom/sku_gallery", help="Папка demo SKU-галереи")
+    parser.add_argument("--gallery-csv", default="D:/1Diplom/sku_gallery/gallery.csv", help="Путь к gallery.csv demo SKU-галереи")
+    parser.add_argument("--max-sku", type=int, default=30, help="Максимальное число demo SKU")
+    parser.add_argument("--min-score", type=float, default=0.35, help="Минимальная confidence детекции для эталона demo SKU")
+    parser.add_argument("--min-width", type=int, default=20, help="Минимальная ширина эталонного crop")
+    parser.add_argument("--min-height", type=int, default=20, help="Минимальная высота эталонного crop")
+    parser.add_argument("--padding", type=float, default=0.05, help="Отступ вокруг crop")
+    parser.add_argument("--prefix", default="sku_demo_", help="Префикс demo SKU")
+    parser.add_argument("--keep-old-demo", action="store_true", help="Не удалять предыдущие папки demo SKU")
 
-    parser.add_argument("--threshold", type=float, default=0.65, help="SKU matching threshold")
-    parser.add_argument("--top-k", type=int, default=3, help="Top-k SKU candidates")
-    parser.add_argument("--gt-csv", default=None, help="Optional GT CSV for identification metrics")
-    parser.add_argument("--visualize-limit", type=int, default=50, help="Visualization image limit")
+    parser.add_argument("--threshold", type=float, default=0.65, help="Порог идентификации SKU")
+    parser.add_argument("--top-k", type=int, default=3, help="Количество ближайших SKU-кандидатов")
+    parser.add_argument("--gt-csv", default=None, help="Необязательный GT CSV для метрик идентификации")
+    parser.add_argument("--visualize-limit", type=int, default=50, help="Лимит визуализаций")
     return parser.parse_args()
 
 
@@ -76,7 +76,7 @@ def _run_inference(args: argparse.Namespace, inference_dir: Path) -> Path:
 
     prediction_file = inference_dir / ("prediction.json" if args.image else "predictions.json")
     if not prediction_file.exists():
-        raise FileNotFoundError(f"Inference finished, but prediction file not found: {prediction_file}")
+        raise FileNotFoundError(f"Инференс завершился, но файл предсказаний не найден: {prediction_file}")
     return prediction_file
 
 
@@ -109,7 +109,7 @@ def _summary_params(args: argparse.Namespace) -> dict:
 def main() -> None:
     args = parse_args()
     if not args.image and not args.images_dir:
-        raise SystemExit("Specify --image or --images-dir")
+        raise SystemExit("Укажи --image или --images-dir")
 
     out_dir = Path(args.out_dir)
     inference_dir = out_dir / "01_inference"
@@ -117,12 +117,12 @@ def main() -> None:
     identification_dir = out_dir / "03_identification"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("=== ShelfVision photo identification pipeline ===", flush=True)
-    print("Step 1/3: inference", flush=True)
+    print("=== ShelfVision: пайплайн фото-идентификации ===", flush=True)
+    print("Шаг 1/3: инференс", flush=True)
     predictions_json = _run_inference(args, inference_dir=inference_dir)
     images_dir_for_matching = args.images_dir if args.images_dir else None
 
-    print("Step 2/3: build demo SKU gallery", flush=True)
+    print("Шаг 2/3: сборка demo SKU-галереи", flush=True)
     demo_outputs = build_demo_sku_gallery_from_predictions(
         predictions_json=predictions_json,
         images_dir=images_dir_for_matching,
@@ -139,7 +139,7 @@ def main() -> None:
         clear_old_demo=not args.keep_old_demo,
     )
 
-    print("Step 3/3: identify photo objects", flush=True)
+    print("Шаг 3/3: идентификация объектов на фото", flush=True)
     results = run_sku_matching(
         predictions_json=predictions_json,
         images_dir=images_dir_for_matching,
@@ -172,19 +172,20 @@ def main() -> None:
         params=_summary_params(args),
     )
 
-    print("=== Done ===", flush=True)
-    print(f"Pipeline output: {out_dir}", flush=True)
-    print(f"Predictions: {predictions_json}", flush=True)
-    print(f"Demo gallery: {args.gallery_dir}", flush=True)
-    print(f"Gallery CSV: {args.gallery_csv}", flush=True)
+    print("=== Готово ===", flush=True)
+    print(f"Папка результата пайплайна: {out_dir}", flush=True)
+    print(f"Файл предсказаний: {predictions_json}", flush=True)
+    print(f"Demo-галерея: {args.gallery_dir}", flush=True)
+    print(f"CSV-файл галереи: {args.gallery_csv}", flush=True)
     for name, path in demo_outputs.items():
-        print(f"Demo {name}: {path}", flush=True)
+        print(f"Demo-артефакт {name}: {path}", flush=True)
     for name, path in summary_outputs.items():
-        print(f"Summary {name}: {path}", flush=True)
-    print(f"Identification results: {identification_dir}", flush=True)
-    print(f"Objects: {metrics.get('total_objects', 0)}", flush=True)
-    print(f"Matched: {metrics.get('matched', 0)}", flush=True)
-    print(f"Unknown: {metrics.get('unknown', 0)}", flush=True)
+        print(f"Сводка {name}: {path}", flush=True)
+    print(f"Результаты идентификации: {identification_dir}", flush=True)
+    print(f"Объектов: {metrics.get('total_objects', 0)}", flush=True)
+    print(f"Уверенных совпадений: {metrics.get('matched', 0)}", flush=True)
+    print(f"Неоднозначных совпадений: {metrics.get('matched_uncertain', 0)}", flush=True)
+    print(f"Неопределённых объектов: {metrics.get('unknown', 0)}", flush=True)
 
 
 if __name__ == "__main__":
