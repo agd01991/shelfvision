@@ -17,6 +17,35 @@ VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 WEIGHT_EXTS = {".pt", ".pth", ".onnx"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
+STATUS_LABELS_RU = {
+    "ok": "готово",
+    "warning": "предупреждение",
+    "error": "ошибка",
+    "ready": "готово",
+    "ready_with_warnings": "готово с предупреждениями",
+    "not_ready": "не готово",
+}
+
+CHECK_NAME_LABELS_RU = {
+    "Video input": "Входное видео",
+    "Video output dir": "Папка результатов видео",
+    "SKU gallery.csv": "CSV-файл SKU-галереи",
+    "SKU gallery dir": "Папка SKU-галереи",
+    "SKU gallery report dir": "Папка отчётов SKU-галереи",
+    "Identification output dir": "Папка результатов идентификации",
+    "Runtime": "Режим запуска",
+    "WSL .venv_wsl": "WSL .venv_wsl",
+}
+
+PATH_COMPATIBILITY_LABELS_RU = {
+    "video": "видео",
+    "weights": "веса модели",
+    "gallery_dir": "папка SKU-галереи",
+    "gallery_csv": "CSV-файл SKU-галереи",
+    "video_out": "папка результатов видео",
+    "identification_out": "папка результатов идентификации",
+}
+
 
 @dataclass
 class ReadinessCheck:
@@ -35,6 +64,19 @@ class ReadinessSummary:
     warning_count: int
     error_count: int
     out_dir: str
+
+
+def _status_label(status: str) -> str:
+    return STATUS_LABELS_RU.get(str(status), str(status))
+
+
+def _check_name_label(name: str) -> str:
+    if str(name).startswith("Video weights"):
+        return str(name).replace("Video weights", "Веса модели видео")
+    if str(name).startswith("WSL path compatibility:"):
+        raw = str(name).split(":", 1)[1].strip()
+        return f"Совместимость пути WSL: {PATH_COMPATIBILITY_LABELS_RU.get(raw, raw)}"
+    return CHECK_NAME_LABELS_RU.get(str(name), str(name))
 
 
 def _load_config(path: str | Path) -> Dict[str, Any]:
@@ -180,7 +222,7 @@ def _check_wsl_venv(config: Dict[str, Any]) -> ReadinessCheck:
     candidate = Path(venv_dir) / "bin" / "python"
     if candidate.exists():
         return ReadinessCheck(name="WSL .venv_wsl", status="ok", message="WSL python найден", path=str(candidate))
-    return ReadinessCheck(name="WSL .venv_wsl", status="warning", message="WSL python не найден из текущего процесса", path=str(candidate), suggestion="Проверить через Control Panel кнопку проверки WSL-зависимостей")
+    return ReadinessCheck(name="WSL .venv_wsl", status="warning", message="WSL python не найден из текущего процесса", path=str(candidate), suggestion="Проверить через панель управления кнопку проверки WSL-зависимостей")
 
 
 def _check_windows_path_in_wsl(name: str, path_value: str, use_wsl_runtime: bool) -> Optional[ReadinessCheck]:
@@ -262,19 +304,22 @@ def build_readiness_report(config_path: str | Path, out_dir: str | Path) -> Dict
     lines = [
         "# ShelfVision: диагностика готовности видео-идентификации",
         "",
-        f"- Статус: **{summary.status}**",
-        f"- OK: {summary.ok_count}",
-        f"- Warning: {summary.warning_count}",
-        f"- Error: {summary.error_count}",
+        f"- Статус: **{_status_label(summary.status)}** (`{summary.status}`)",
+        f"- Успешных проверок: {summary.ok_count}",
+        f"- Предупреждений: {summary.warning_count}",
+        f"- Ошибок: {summary.error_count}",
         f"- ОС/среда: {platform.platform()}",
         "",
         "## Проверки",
         "",
-        "| check | status | message | path | suggestion |",
+        "| Проверка | Статус | Сообщение | Путь | Рекомендация |",
         "|---|---|---|---|---|",
     ]
     for item in checks:
-        lines.append(f"| {item.name} | {item.status} | {item.message} | `{item.path}` | {item.suggestion} |")
+        lines.append(
+            f"| {_check_name_label(item.name)} | {_status_label(item.status)} (`{item.status}`) | "
+            f"{item.message} | `{item.path}` | {item.suggestion} |"
+        )
     report_md.write_text("\n".join(lines), encoding="utf-8")
 
     return {"report_json": report_json, "checks_csv": checks_csv, "report_md": report_md}
