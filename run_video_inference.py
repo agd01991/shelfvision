@@ -7,26 +7,37 @@ from typing import Any, Dict
 from src.inference.video_inference import process_yolo_video_file
 
 
+OUTPUT_LABELS_RU = {
+    "output_video": "размеченное видео",
+    "summary_json": "JSON-сводка",
+    "frame_stats_csv": "CSV-статистика по кадрам",
+    "sample_frames_dir": "папка кадров-примеров",
+    "frames_for_identification_dir": "папка кадров для идентификации",
+    "predictions_json": "JSON-предсказания",
+    "video_predictions_json": "JSON-предсказания видео",
+}
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ShelfVision video inference runner")
-    parser.add_argument("--model", choices=["yolo", "yolo_seg"], default="yolo", help="Video model")
-    parser.add_argument("--weights", required=True, help="YOLO or YOLO-Seg weights path")
-    parser.add_argument("--video", required=True, help="Input video file")
-    parser.add_argument("--out-dir", default="results/video/yolo", help="Output directory")
-    parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
-    parser.add_argument("--imgsz", type=int, default=640, help="Image size")
-    parser.add_argument("--device", default=None, help="Device: 0, cpu, cuda:0")
-    parser.add_argument("--frame-skip", type=int, default=1, help="Process each N-th frame")
-    parser.add_argument("--max-frames", type=int, default=0, help="Max processed frames, 0 means full video")
-    parser.add_argument("--no-save-video", action="store_true", help="Do not save output video")
-    parser.add_argument("--sample-frames", type=int, default=8, help="How many sample frames to save")
-    parser.add_argument("--no-masks", action="store_true", help="Do not draw masks")
-    parser.add_argument("--codec", default="mp4v", help="Video codec")
-    parser.add_argument("--save-frames-for-identification", action="store_true", help="Save processed frames and compatible video_predictions.json")
-    parser.add_argument("--no-tracking", action="store_true", help="Disable simple IoU tracking")
-    parser.add_argument("--tracking-iou", type=float, default=0.30, help="IoU threshold for tracking")
-    parser.add_argument("--tracking-max-missing", type=int, default=5, help="Max missing processed frames for one track")
-    parser.add_argument("--progress-every", type=int, default=10, help="Print progress every N processed frames")
+    parser = argparse.ArgumentParser(description="Запуск видеоинференса ShelfVision")
+    parser.add_argument("--model", choices=["yolo", "yolo_seg"], default="yolo", help="Модель для видео")
+    parser.add_argument("--weights", required=True, help="Путь к весам YOLO или YOLO-Seg")
+    parser.add_argument("--video", required=True, help="Входной видеофайл")
+    parser.add_argument("--out-dir", default="results/video/yolo", help="Папка результатов")
+    parser.add_argument("--conf", type=float, default=0.25, help="Порог confidence")
+    parser.add_argument("--imgsz", type=int, default=640, help="Размер изображения")
+    parser.add_argument("--device", default=None, help="Устройство: 0, cpu, cuda:0")
+    parser.add_argument("--frame-skip", type=int, default=1, help="Обрабатывать каждый N-й кадр")
+    parser.add_argument("--max-frames", type=int, default=0, help="Максимум обработанных кадров, 0 означает всё видео")
+    parser.add_argument("--no-save-video", action="store_true", help="Не сохранять размеченное видео")
+    parser.add_argument("--sample-frames", type=int, default=8, help="Сколько кадров-примеров сохранить")
+    parser.add_argument("--no-masks", action="store_true", help="Не отрисовывать маски")
+    parser.add_argument("--codec", default="mp4v", help="Видеокодек")
+    parser.add_argument("--save-frames-for-identification", action="store_true", help="Сохранить обработанные кадры и совместимый video_predictions.json")
+    parser.add_argument("--no-tracking", action="store_true", help="Отключить простой IoU tracking")
+    parser.add_argument("--tracking-iou", type=float, default=0.30, help="IoU-порог для tracking")
+    parser.add_argument("--tracking-max-missing", type=int, default=5, help="Максимум пропущенных обработанных кадров для одного трека")
+    parser.add_argument("--progress-every", type=int, default=10, help="Печатать прогресс каждые N обработанных кадров")
     return parser.parse_args()
 
 
@@ -71,8 +82,8 @@ def _build_progress_callback(progress_every: int, frame_skip: int, max_frames: i
             progress = min(100.0, processed / expected * 100.0)
             progress_text = f"{progress:.1f}%"
         else:
-            eta = "unknown"
-            progress_text = "unknown"
+            eta = "неизвестно"
+            progress_text = "неизвестно"
 
         print(
             "VIDEO_PROGRESS "
@@ -90,15 +101,23 @@ def _build_progress_callback(progress_every: int, frame_skip: int, max_frames: i
     return callback
 
 
+def _label_output(name: str) -> str:
+    return OUTPUT_LABELS_RU.get(str(name), str(name))
+
+
 def main() -> None:
     args = parse_args()
-    print("=== ShelfVision video inference started ===", flush=True)
-    print(f"model: {args.model}", flush=True)
-    print(f"video: {args.video}", flush=True)
-    print(f"weights: {args.weights}", flush=True)
-    print(f"out_dir: {args.out_dir}", flush=True)
+    print("=== ShelfVision: видеоинференс запущен ===", flush=True)
+    print(f"Модель: {args.model}", flush=True)
+    print(f"Видео: {args.video}", flush=True)
+    print(f"Веса: {args.weights}", flush=True)
+    print(f"Папка результатов: {args.out_dir}", flush=True)
     print(f"frame_skip: {max(1, args.frame_skip)}, max_frames: {max(0, args.max_frames)}", flush=True)
-    print(f"tracking: {not args.no_tracking}, tracking_iou: {args.tracking_iou}, max_missing: {max(0, args.tracking_max_missing)}", flush=True)
+    print(
+        f"tracking: {not args.no_tracking}, tracking_iou: {args.tracking_iou}, "
+        f"max_missing: {max(0, args.tracking_max_missing)}",
+        flush=True,
+    )
 
     outputs = process_yolo_video_file(
         model_path=args.weights,
@@ -121,9 +140,9 @@ def main() -> None:
         progress_callback=_build_progress_callback(args.progress_every, args.frame_skip, args.max_frames),
     )
 
-    print("=== ShelfVision video inference done ===", flush=True)
+    print("=== ShelfVision: видеоинференс завершён ===", flush=True)
     for name, path in outputs.items():
-        print(f"- {name}: {path}", flush=True)
+        print(f"- {_label_output(name)}: {path}", flush=True)
 
 
 if __name__ == "__main__":
