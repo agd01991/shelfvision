@@ -17,6 +17,12 @@ from src.identification.sku_gallery import IMAGE_EXTS
 WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
 WSL_MOUNT_RE = re.compile(r"^/mnt/([a-zA-Z])/(.*)$")
 
+DECISION_LABELS_RU = {
+    "ok": "эталон согласуется со своим SKU",
+    "possible_outlier": "возможный выброс внутри SKU",
+    "likely_wrong_sku": "вероятно относится к другому SKU",
+}
+
 
 @dataclass
 class SkuPurityAuditSummary:
@@ -195,6 +201,10 @@ def _decision(
     return "ok"
 
 
+def _decision_label(value: str) -> str:
+    return DECISION_LABELS_RU.get(str(value), str(value))
+
+
 def run_sku_purity_audit(
     gallery_dir: str | Path,
     out_dir: str | Path,
@@ -332,7 +342,7 @@ def run_sku_purity_audit(
 
     report_md = out_dir / "sku_purity_audit_report.md"
     lines = [
-        "# ShelfVision: SKU purity audit",
+        "# ShelfVision: аудит чистоты SKU-галереи",
         "",
         "## Назначение",
         "",
@@ -340,33 +350,48 @@ def run_sku_purity_audit(
         "",
         "## Сводка",
         "",
-        f"- Gallery dir: `{summary.gallery_dir}`",
+        f"- Папка галереи: `{summary.gallery_dir}`",
         f"- SKU всего: {summary.sku_count}",
         f"- SKU с доступными признаками: {summary.usable_sku_count}",
-        f"- Refs всего: {summary.refs_count}",
-        f"- Refs проверено: {summary.checked_refs_count}",
-        f"- OK refs: {summary.ok_refs_count}",
-        f"- Possible outliers: {summary.possible_outliers_count}",
-        f"- Likely wrong SKU: {summary.likely_wrong_sku_count}",
-        f"- Mixed SKU candidates: {summary.mixed_sku_count}",
+        f"- Эталонов всего: {summary.refs_count}",
+        f"- Эталонов с доступными признаками: {summary.usable_refs_count}",
+        f"- Эталонов проверено: {summary.checked_refs_count}",
+        f"- Эталонов без признаков ошибки: {summary.ok_refs_count}",
+        f"- Возможных выбросов внутри SKU: {summary.possible_outliers_count}",
+        f"- Эталонов, вероятно относящихся к другому SKU: {summary.likely_wrong_sku_count}",
+        f"- Кандидатов на смешанные SKU: {summary.mixed_sku_count}",
+        "",
+        "## Пороговые параметры",
+        "",
+        f"- Порог сходства с центром своего SKU: {summary.own_centroid_threshold}",
+        f"- Порог среднего сходства внутри своего SKU: {summary.own_mean_threshold}",
+        f"- Минимальный отрыв от ближайшего другого SKU: {summary.other_margin}",
+        f"- Минимальное сходство с другим SKU: {summary.min_other_similarity}",
+        f"- Максимум эталонов на один SKU: {summary.max_refs_per_sku}",
+        "",
+        "## Типы решений",
+        "",
+        "| Машинное значение | Отображение |",
+        "|---|---|",
+        *[f"| `{key}` | {_decision_label(key)} |" for key in ["ok", "possible_outlier", "likely_wrong_sku"]],
         "",
         "## Основные файлы",
         "",
-        f"- `sku_ref_purity.csv`: `{ref_purity_csv}`",
-        f"- `ref_outlier_candidates.csv`: `{outliers_csv}`",
-        f"- `mixed_sku_candidates.csv`: `{mixed_csv}`",
-        f"- `sku_purity_audit_summary.json`: `{summary_json}`",
+        f"- Полная таблица проверки эталонов: `{ref_purity_csv}`",
+        f"- Эталоны-кандидаты на вынос в другой SKU: `{outliers_csv}`",
+        f"- Кандидаты на смешанные SKU: `{mixed_csv}`",
+        f"- JSON-сводка аудита: `{summary_json}`",
         "",
         "## Интерпретация",
         "",
-        "`possible_outlier` означает, что ref слабо похож на остальные refs своего SKU. "
-        "`likely_wrong_sku` означает, что ref больше похож на другой SKU, чем на собственный.",
+        "`possible_outlier` означает, что эталон слабо похож на остальные эталоны своего SKU. "
+        "`likely_wrong_sku` означает, что эталон больше похож на другой SKU, чем на собственный.",
         "",
         "## Формулировка для ВКР",
         "",
         "Для выявления ошибок, при которых разные товары попадают в один SKU-кластер, был реализован аудит чистоты SKU. "
         "Для каждого эталонного изображения рассчитывается сходство с центроидом собственного SKU и ближайшим другим SKU. "
-        "Изображения с низкой внутренней похожестью или более высокой похожестью к другому SKU предлагаются пользователю как кандидаты на split.",
+        "Изображения с низкой внутренней похожестью или более высокой похожестью к другому SKU предлагаются пользователю как кандидаты на разделение кластера.",
     ]
     report_md.write_text("\n".join(lines), encoding="utf-8")
 
