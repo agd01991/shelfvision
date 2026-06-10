@@ -5,8 +5,19 @@ import argparse
 from src.analytics.density import analyze_density_file
 
 
+OUTPUT_LABELS_RU = {
+    "zones_csv": "CSV плотности по зонам",
+    "summary_csv": "CSV-сводка плотности",
+    "report_json": "JSON-отчёт плотности",
+}
+
+
+def _label_output(name: str) -> str:
+    return OUTPUT_LABELS_RU.get(str(name), str(name))
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ShelfVision shelf density analysis")
+    parser = argparse.ArgumentParser(description="Анализ плотности товаров на стеллаже в ShelfVision")
     parser.add_argument("--predictions", required=True, help="prediction.json или predictions.json из run_inference.py")
     parser.add_argument("--out-dir", default="results/density", help="Папка для отчёта плотности")
     parser.add_argument("--rows", type=int, default=3, help="Количество зон по вертикали")
@@ -27,9 +38,9 @@ def main() -> None:
         limit=args.limit,
     )
 
-    print("=== ShelfVision density analysis ===")
+    print("=== ShelfVision: анализ плотности товаров ===")
     for name, path in paths.items():
-        print(f"- {name}: {path}")
+        print(f"- {_label_output(name)}: {path}")
 
 
 if __name__ == "__main__":
