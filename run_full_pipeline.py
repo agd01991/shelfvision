@@ -4,7 +4,7 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 
 MODEL_LABELS = {
@@ -17,7 +17,7 @@ MODEL_LABELS = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ShelfVision full pipeline runner")
+    parser = argparse.ArgumentParser(description="Полный пайплайн ShelfVision")
 
     parser.add_argument("--images-dir", required=True, help="Папка изображений для пакетного инференса")
     parser.add_argument("--out-dir", default="results/full_pipeline", help="Корневая папка для всех результатов")
@@ -39,13 +39,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gt-yolo-labels", help="Папка YOLO labels для bbox-оценки")
     parser.add_argument("--gt-yolo-images", help="Папка изображений для YOLO labels. Если не указана, используется --images-dir")
 
-    parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
+    parser.add_argument("--conf", type=float, default=0.25, help="Порог confidence")
     parser.add_argument("--imgsz", type=int, default=640, help="Размер изображения для модели")
     parser.add_argument("--device", default=None, help="Устройство: 0, cpu, cuda:0")
-    parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold для bbox/mask оценки")
+    parser.add_argument("--iou", type=float, default=0.5, help="IoU-порог для bbox/mask оценки")
 
-    parser.add_argument("--wbf-iou", type=float, default=0.55, help="IoU threshold для WBF")
-    parser.add_argument("--wbf-skip", type=float, default=0.001, help="Skip score threshold для WBF")
+    parser.add_argument("--wbf-iou", type=float, default=0.55, help="IoU-порог для WBF")
+    parser.add_argument("--wbf-skip", type=float, default=0.001, help="Порог пропуска для WBF")
     parser.add_argument("--yolo-weight", type=float, default=1.0, help="Вес YOLO в WBF")
     parser.add_argument("--rtdetr-weight", type=float, default=1.0, help="Вес RT-DETR в WBF")
 
@@ -68,11 +68,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--sku-gallery-csv", default=None, help="CSV SKU-галереи: sku_id, sku_name, category, image_path")
     parser.add_argument("--sku-gallery-dir", default=None, help="Папка SKU-галереи вида <sku_id>/*.jpg")
-    parser.add_argument("--sku-gt-csv", default=None, help="Опциональный GT CSV: image_name, object_id, true_sku_id")
-    parser.add_argument("--sku-threshold", type=float, default=0.65, help="Порог similarity для matched/unknown")
+    parser.add_argument("--sku-gt-csv", default=None, help="Необязательный GT CSV: image_name, object_id, true_sku_id")
+    parser.add_argument("--sku-threshold", type=float, default=0.65, help="Порог визуального сходства для matched/unknown")
     parser.add_argument("--sku-top-k", type=int, default=3, help="Сколько кандидатов SKU сохранять")
-    parser.add_argument("--sku-padding", type=float, default=0.05, help="Padding вокруг bbox при crop extraction")
-    parser.add_argument("--sku-use-masks", action="store_true", help="Использовать masks для crop, если они есть")
+    parser.add_argument("--sku-padding", type=float, default=0.05, help="Отступ вокруг bbox при извлечении crop")
+    parser.add_argument("--sku-use-masks", action="store_true", help="Использовать mask-crop, если маски есть")
 
     parser.add_argument("--skip-evaluation", action="store_true", help="Пропустить bbox-оценку качества")
     parser.add_argument("--skip-segmentation-evaluation", action="store_true", help="Пропустить mask-оценку YOLO-Seg")
@@ -154,12 +154,12 @@ def main() -> None:
     density_dir = out_dir / "density"
     mini_report_dir = out_dir / "mini_report"
 
-    print("=== ShelfVision full pipeline ===")
-    print(f"Models: {', '.join(args.models)}")
-    print(f"Images: {args.images_dir}")
-    print(f"Output: {out_dir}")
+    print("=== ShelfVision: полный пайплайн ===")
+    print(f"Модели: {', '.join(args.models)}")
+    print(f"Изображения: {args.images_dir}")
+    print(f"Папка результатов: {out_dir}")
 
-    # 1. Inference
+    # 1. Инференс
     for model in args.models:
         model_out = inference_root / model
         cmd = [
@@ -181,7 +181,7 @@ def main() -> None:
             cmd.extend(["--device", args.device])
         run(cmd, cwd=root)
 
-    # 2. BBox evaluation
+    # 2. BBox-оценка
     metrics_files: List[Path] = []
     labels: List[str] = []
     if not args.skip_evaluation:
@@ -206,7 +206,7 @@ def main() -> None:
             metrics_files.append(eval_out / "metrics_summary.csv")
             labels.append(MODEL_LABELS[model])
 
-    # 2b. Mask evaluation for YOLO-Seg
+    # 2b. Mask-оценка YOLO-Seg
     if not args.skip_segmentation_evaluation and "yolo_seg" in args.models:
         require(bool(args.gt_coco), "Для mask-оценки YOLO-Seg нужен --gt-coco с segmentation-разметкой")
         run(
@@ -225,7 +225,7 @@ def main() -> None:
             cwd=root,
         )
 
-    # 2c. SKU identification
+    # 2c. SKU-идентификация
     if args.run_identification:
         require(args.identification_model in args.models, "Модель для идентификации должна быть указана в --models")
         require(bool(args.sku_gallery_csv or args.sku_gallery_dir), "Для идентификации укажите --sku-gallery-csv или --sku-gallery-dir")
@@ -255,7 +255,7 @@ def main() -> None:
             cmd.append("--use-masks")
         run(cmd, cwd=root)
 
-    # 3. Recommendation and comparison
+    # 3. Рекомендация и сравнение моделей
     if metrics_files:
         run(
             [
@@ -284,7 +284,7 @@ def main() -> None:
             cwd=root,
         )
 
-    # 4. Density
+    # 4. Анализ плотности
     density_report = None
     density_summary = None
     density_images_dir = None
@@ -311,7 +311,7 @@ def main() -> None:
         density_summary = density_dir / args.density_model / "density_summary.csv"
         density_images_dir = density_dir / args.density_model / "visualized"
 
-    # 5. Mini report
+    # 5. Мини-отчёт
     if not args.skip_mini_report:
         cmd = [
             sys.executable,
@@ -319,7 +319,7 @@ def main() -> None:
             "--out-dir",
             str(mini_report_dir),
             "--title",
-            "ShelfVision: итоговый отчёт полного pipeline",
+            "ShelfVision: итоговый отчёт полного пайплайна",
         ]
         if metrics_files:
             cmd.extend(
@@ -338,12 +338,12 @@ def main() -> None:
             cmd.extend(["--images-dir", str(density_images_dir)])
         run(cmd, cwd=root)
 
-    print("\n=== DONE ===")
-    print(f"All results saved to: {out_dir}")
+    print("\n=== Готово ===")
+    print(f"Все результаты сохранены в: {out_dir}")
     if args.run_identification:
-        print(f"Identification: {identification_dir / args.identification_model}")
+        print(f"Идентификация: {identification_dir / args.identification_model}")
     if not args.skip_mini_report:
-        print(f"Mini report: {mini_report_dir / 'mini_report.html'}")
+        print(f"Мини-отчёт: {mini_report_dir / 'mini_report.html'}")
 
 
 if __name__ == "__main__":
