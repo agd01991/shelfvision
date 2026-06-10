@@ -38,7 +38,7 @@ def _zone_name(row: int, col: int, rows: int, cols: int) -> str:
 
     if rows == 3 and cols == 3:
         return f"{vertical}, {horizontal}"
-    return f"row_{row + 1}_col_{col + 1}"
+    return f"строка_{row + 1}_столбец_{col + 1}"
 
 
 def _load_image_size(prediction: Dict[str, Any]) -> Tuple[int, int]:
@@ -147,7 +147,7 @@ def visualize_density(
 
     cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, dst=image)
 
-    footer = f"Density: total={int(density_df['objects_count'].sum())}, max_zone={max_count}"
+    footer = f"Objects: total={int(density_df['objects_count'].sum())}, max_zone={max_count}"
     cv2.putText(
         image,
         footer,
