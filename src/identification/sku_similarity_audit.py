@@ -1,5 +1,4 @@
 from __future__ import annotations
-from src.identification.sku_audit_contact_sheets import write_pair_contact_sheet
 
 import json
 import os
@@ -12,10 +11,17 @@ import numpy as np
 import pandas as pd
 
 from src.identification.feature_extractor import VisualFeatureExtractor
+from src.identification.sku_audit_contact_sheets import write_pair_contact_sheet
 from src.identification.sku_gallery import IMAGE_EXTS
 
 WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
 WSL_MOUNT_RE = re.compile(r"^/mnt/([a-zA-Z])/(.*)$")
+
+RECOMMENDATION_LABELS_RU = {
+    "merge_candidate": "кандидат на объединение",
+    "review_candidate": "кандидат на ручную проверку",
+    "similar_pair": "похожая пара",
+}
 
 
 @dataclass
@@ -136,6 +142,10 @@ def _recommendation(scores: dict, candidate_threshold: float) -> str:
     return "similar_pair"
 
 
+def _recommendation_label(value: str) -> str:
+    return RECOMMENDATION_LABELS_RU.get(str(value), str(value))
+
+
 def run_sku_similarity_audit(
     gallery_dir: str | Path,
     out_dir: str | Path,
@@ -238,33 +248,39 @@ def run_sku_similarity_audit(
 
     report_md = out_dir / "sku_similarity_audit_report.md"
     lines = [
-        "# ShelfVision: SKU-to-SKU similarity audit",
+        "# ShelfVision: аудит визуально похожих SKU",
         "",
         "## Назначение",
         "",
-        "Модуль анализирует уже сформированную SKU-галерею и ищет пары SKU-папок, визуально похожие друг на друга. Такие пары можно использовать как кандидаты для ручного merge в Control Panel.",
+        "Модуль анализирует уже сформированную SKU-галерею и ищет пары SKU-папок, визуально похожие друг на друга. Такие пары можно использовать как кандидаты для ручного объединения или дополнительной проверки в панели управления.",
         "",
         "## Сводка",
         "",
-        f"- Gallery dir: `{summary.gallery_dir}`",
+        f"- Папка галереи: `{summary.gallery_dir}`",
         f"- SKU всего: {summary.sku_count}",
         f"- SKU с доступными признаками: {summary.usable_sku_count}",
-        f"- Refs всего: {summary.refs_count}",
-        f"- Refs с доступными признаками: {summary.usable_refs_count}",
+        f"- Эталонов всего: {summary.refs_count}",
+        f"- Эталонов с доступными признаками: {summary.usable_refs_count}",
         f"- Пары в отчёте: {summary.pairs_reported_count}",
-        f"- Merge/review candidates: {summary.merge_candidates_count}",
-        f"- Pair report threshold: {summary.pair_report_threshold}",
-        f"- Candidate threshold: {summary.candidate_threshold}",
+        f"- Кандидаты на объединение/проверку: {summary.merge_candidates_count}",
+        f"- Порог попадания пары в отчёт: {summary.pair_report_threshold}",
+        f"- Порог кандидата на объединение: {summary.candidate_threshold}",
+        "",
+        "## Типы рекомендаций",
+        "",
+        "| Машинное значение | Отображение |",
+        "|---|---|",
+        *[f"| `{key}` | {_recommendation_label(key)} |" for key in ["merge_candidate", "review_candidate", "similar_pair"]],
         "",
         "## Основные файлы",
         "",
-        f"- `sku_to_sku_similarity.csv`: `{pairs_csv}`",
-        f"- `merge_candidates.csv`: `{candidates_csv}`",
-        f"- `sku_pair_contact_sheets/`: `{contact_sheets_dir}`",
+        f"- Таблица похожих пар SKU: `{pairs_csv}`",
+        f"- Таблица кандидатов на объединение: `{candidates_csv}`",
+        f"- Контактные листы пар SKU: `{contact_sheets_dir}`",
         "",
         "## Формулировка для ВКР",
         "",
-        "После автоматического формирования SKU-галереи выполняется дополнительный аудит похожести между SKU. Для каждой пары SKU рассчитываются centroid similarity, best pair similarity и mean pair similarity. Пары с высокой похожестью предлагаются пользователю как кандидаты для ручного объединения.",
+        "После автоматического формирования SKU-галереи выполняется дополнительный аудит похожести между SKU. Для каждой пары SKU рассчитываются сходство центроидов, лучшее попарное сходство и среднее попарное сходство. Пары с высокой похожестью предлагаются пользователю как кандидаты для ручной проверки или объединения, что снижает риск появления нескольких визуально одинаковых SKU в галерее.",
     ]
     report_md.write_text("\n".join(lines), encoding="utf-8")
 
