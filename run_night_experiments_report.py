@@ -9,6 +9,44 @@ from typing import Any, Dict, List
 import pandas as pd
 
 
+COLUMN_LABELS_RU = {
+    "experiment": "Эксперимент",
+    "quick_score": "Интегральная оценка",
+    "matched_rate": "Доля уверенных совпадений",
+    "unknown_rate": "Доля неопределённых объектов",
+    "avg_similarity": "Среднее визуальное сходство",
+    "query_objects": "Объектов query",
+    "created_demo_sku": "Создано demo SKU",
+    "gallery_refs": "Эталонов в галерее",
+    "conf": "Порог confidence",
+    "gallery_count": "Изображений gallery",
+    "max_sku": "Максимум demo SKU",
+    "dedup_threshold": "Порог дедупликации",
+    "max_refs_per_sku": "Максимум эталонов на SKU",
+    "min_crop": "Минимальный crop",
+    "padding": "Отступ вокруг crop",
+    "factor": "Параметр",
+    "value": "Значение",
+    "runs": "Запусков",
+    "best_experiment": "Лучший эксперимент",
+    "best_quick_score": "Лучшая интегральная оценка",
+    "best_matched_rate": "Лучшая доля уверенных совпадений",
+    "best_unknown_rate": "Лучшая доля неопределённых объектов",
+    "best_avg_similarity": "Лучшее среднее визуальное сходство",
+    "avg_matched_rate": "Средняя доля уверенных совпадений",
+}
+
+OUTPUT_LABELS_RU = {
+    "ranked_csv": "ранжированная таблица",
+    "impact_csv": "таблица влияния параметров",
+    "best_json": "JSON с рекомендациями",
+    "report_md": "подробный Markdown-отчёт",
+    "vkr_md": "раздел для ВКР",
+    "top_matched_rate_plot": "график лучших экспериментов",
+    "parameter_impact_plot": "график влияния параметров",
+}
+
+
 @dataclass
 class NightExperimentRecommendation:
     experiment: str
@@ -23,11 +61,11 @@ class NightExperimentRecommendation:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate analytical reports for ShelfVision SKU110K night experiments")
-    parser.add_argument("--results-root", default=None, help="Night experiment root directory")
-    parser.add_argument("--summary-csv", default=None, help="Path to night_experiments_summary.csv")
-    parser.add_argument("--out-dir", default=None, help="Directory for generated reports. Defaults to results root")
-    parser.add_argument("--top-n", type=int, default=10)
+    parser = argparse.ArgumentParser(description="Сформировать аналитические отчёты по ночным экспериментам SKU110K")
+    parser.add_argument("--results-root", default=None, help="Корневая папка серии ночных экспериментов")
+    parser.add_argument("--summary-csv", default=None, help="Путь к night_experiments_summary.csv")
+    parser.add_argument("--out-dir", default=None, help="Папка для сформированных отчётов. По умолчанию используется корень серии")
+    parser.add_argument("--top-n", type=int, default=10, help="Сколько лучших экспериментов показать в отчёте")
     return parser.parse_args()
 
 
@@ -39,7 +77,7 @@ def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
         results_root = Path(args.results_root)
         summary_csv = results_root / "night_experiments_summary.csv"
     else:
-        raise SystemExit("Specify --results-root or --summary-csv")
+        raise SystemExit("Укажи --results-root или --summary-csv")
 
     out_dir = Path(args.out_dir) if args.out_dir else results_root
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -52,10 +90,10 @@ def _num(series: pd.Series) -> pd.Series:
 
 def _prepare_df(summary_csv: Path) -> pd.DataFrame:
     if not summary_csv.exists():
-        raise FileNotFoundError(f"Summary CSV not found: {summary_csv}")
+        raise FileNotFoundError(f"Сводная CSV-таблица не найдена: {summary_csv}")
     df = pd.read_csv(summary_csv)
     if df.empty:
-        raise ValueError(f"Summary CSV is empty: {summary_csv}")
+        raise ValueError(f"Сводная CSV-таблица пустая: {summary_csv}")
 
     numeric_cols = [
         "conf",
@@ -86,16 +124,15 @@ def _prepare_df(summary_csv: Path) -> pd.DataFrame:
     if "status" not in df.columns:
         df["status"] = "unknown"
     if "experiment" not in df.columns:
-        df["experiment"] = [f"experiment_{i+1}" for i in range(len(df))]
+        df["experiment"] = [f"experiment_{i + 1}" for i in range(len(df))]
 
     df["is_ok"] = df["status"].eq("ok")
-    refs_bonus = (df.get("gallery_refs", 0) / 500.0).clip(upper=1.0)
-    df["quick_score"] = (
-        df.get("matched_rate", 0) * 0.55
-        + df.get("avg_similarity", 0) * 0.35
-        + refs_bonus * 0.10
-        - df.get("unknown_rate", 0) * 0.05
-    )
+    gallery_refs = _num(df["gallery_refs"]) if "gallery_refs" in df.columns else pd.Series([0.0] * len(df), index=df.index)
+    refs_bonus = (gallery_refs / 500.0).clip(upper=1.0)
+    matched_rate = _num(df["matched_rate"]) if "matched_rate" in df.columns else pd.Series([0.0] * len(df), index=df.index)
+    avg_similarity = _num(df["avg_similarity"]) if "avg_similarity" in df.columns else pd.Series([0.0] * len(df), index=df.index)
+    unknown_rate = _num(df["unknown_rate"]) if "unknown_rate" in df.columns else pd.Series([0.0] * len(df), index=df.index)
+    df["quick_score"] = matched_rate * 0.55 + avg_similarity * 0.35 + refs_bonus * 0.10 - unknown_rate * 0.05
     return df
 
 
@@ -116,8 +153,8 @@ def _group_impact(df_ok: pd.DataFrame, group_col: str) -> pd.DataFrame:
                 "best_matched_rate": best.get("matched_rate", 0.0),
                 "best_unknown_rate": best.get("unknown_rate", 0.0),
                 "best_avg_similarity": best.get("avg_similarity", 0.0),
-                "avg_matched_rate": part["matched_rate"].mean(),
-                "avg_similarity": part["avg_similarity"].mean(),
+                "avg_matched_rate": part["matched_rate"].mean() if "matched_rate" in part.columns else 0.0,
+                "avg_similarity": part["avg_similarity"].mean() if "avg_similarity" in part.columns else 0.0,
             }
         )
     return pd.DataFrame(rows)
@@ -162,23 +199,23 @@ def build_recommendations(df_ok: pd.DataFrame) -> List[NightExperimentRecommenda
 
     recs: List[NightExperimentRecommendation] = []
     best_quick = df_ok.sort_values("quick_score", ascending=False).iloc[0]
-    recs.append(_row_to_recommendation(best_quick, "Лучший общий кандидат по quick_score"))
+    recs.append(_row_to_recommendation(best_quick, "лучший общий кандидат по интегральной оценке"))
 
     best_matched = df_ok.sort_values(["matched_rate", "avg_similarity"], ascending=False).iloc[0]
     if best_matched.get("experiment") != best_quick.get("experiment"):
-        recs.append(_row_to_recommendation(best_matched, "Максимальная доля matched"))
+        recs.append(_row_to_recommendation(best_matched, "максимальная доля уверенных совпадений"))
 
     safe = df_ok[df_ok.get("dedup_threshold", 0) >= 0.86]
     if not safe.empty:
         best_safe = safe.sort_values("quick_score", ascending=False).iloc[0]
         if best_safe.get("experiment") not in {rec.experiment for rec in recs}:
-            recs.append(_row_to_recommendation(best_safe, "Более консервативный вариант: dedup_threshold >= 0.86"))
+            recs.append(_row_to_recommendation(best_safe, "более консервативный вариант с dedup_threshold >= 0.86"))
 
     rich_gallery = df_ok[(df_ok.get("gallery_count", 0) >= 160) | (df_ok.get("gallery_refs", 0) >= 1000)]
     if not rich_gallery.empty:
         best_rich = rich_gallery.sort_values("quick_score", ascending=False).iloc[0]
         if best_rich.get("experiment") not in {rec.experiment for rec in recs}:
-            recs.append(_row_to_recommendation(best_rich, "Лучший вариант с расширенной gallery"))
+            recs.append(_row_to_recommendation(best_rich, "лучший вариант с расширенной gallery-частью"))
 
     return recs
 
@@ -199,9 +236,9 @@ def _save_plots(df_ok: pd.DataFrame, impact: pd.DataFrame, out_dir: Path) -> Dic
     plot_path = out_dir / "night_experiments_top_matched_rate.png"
     fig, ax = plt.subplots(figsize=(11, 5))
     ax.bar(range(len(top)), top["matched_rate"])
-    ax.set_title("Top experiments by quick_score: matched_rate")
-    ax.set_xlabel("Experiment")
-    ax.set_ylabel("matched_rate")
+    ax.set_title("Лучшие эксперименты по интегральной оценке")
+    ax.set_xlabel("Эксперимент")
+    ax.set_ylabel("Доля уверенных совпадений")
     ax.set_xticks(range(len(top)))
     ax.set_xticklabels(top["experiment"], rotation=75, ha="right", fontsize=8)
     ax.set_ylim(0, max(1.0, float(top["matched_rate"].max()) * 1.05))
@@ -216,8 +253,8 @@ def _save_plots(df_ok: pd.DataFrame, impact: pd.DataFrame, out_dir: Path) -> Dic
         labels = [f"{r.factor}={r.value}" for r in best_by_factor.itertuples()]
         fig, ax = plt.subplots(figsize=(11, 6))
         ax.barh(range(len(best_by_factor)), best_by_factor["best_matched_rate"])
-        ax.set_title("Parameter impact: best matched_rate by factor value")
-        ax.set_xlabel("best matched_rate")
+        ax.set_title("Влияние параметров: лучшая доля уверенных совпадений")
+        ax.set_xlabel("Лучшая доля уверенных совпадений")
         ax.set_yticks(range(len(best_by_factor)))
         ax.set_yticklabels(labels, fontsize=8)
         ax.invert_yaxis()
@@ -241,6 +278,16 @@ def _format_float(value: Any, digits: int = 4) -> str:
         return f"{float(value):.{digits}f}"
     except Exception:
         return "0.0000"
+
+
+def _display_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    return df.rename(columns=COLUMN_LABELS_RU)
+
+
+def _output_label(name: str) -> str:
+    return OUTPUT_LABELS_RU.get(str(name), str(name))
 
 
 def save_reports(results_root: Path, summary_csv: Path, out_dir: Path, top_n: int) -> Dict[str, Path]:
@@ -275,7 +322,7 @@ def save_reports(results_root: Path, summary_csv: Path, out_dir: Path, top_n: in
         "",
         "## Назначение отчёта",
         "",
-        "Отчёт агрегирует результаты серии запусков полного pipeline: детекция, формирование demo SKU-галереи, дедупликация, идентификация query-объектов и threshold analysis.",
+        "Отчёт агрегирует результаты серии запусков полного пайплайна: детекция, формирование demo SKU-галереи, дедупликация, идентификация query-объектов и анализ порогов.",
         "",
         "`matched_rate` не является accuracy по реальным SKU. Это доля объектов, сопоставленных с автоматически сформированной demo SKU-галереей.",
         "",
@@ -291,13 +338,13 @@ def save_reports(results_root: Path, summary_csv: Path, out_dir: Path, top_n: in
                 "",
                 "| Показатель | Значение |",
                 "|---|---:|",
-                f"| matched_rate | {_format_float(rec.matched_rate)} ({_format_pct(rec.matched_rate)}) |",
-                f"| unknown_rate | {_format_float(rec.unknown_rate)} ({_format_pct(rec.unknown_rate)}) |",
-                f"| avg_similarity | {_format_float(rec.avg_similarity)} |",
-                f"| query_objects | {rec.query_objects} |",
-                f"| demo SKU | {rec.demo_sku} |",
-                f"| gallery refs | {rec.gallery_refs} |",
-                f"| out_dir | `{rec.out_dir}` |",
+                f"| Доля уверенных совпадений | {_format_float(rec.matched_rate)} ({_format_pct(rec.matched_rate)}) |",
+                f"| Доля неопределённых объектов | {_format_float(rec.unknown_rate)} ({_format_pct(rec.unknown_rate)}) |",
+                f"| Среднее визуальное сходство | {_format_float(rec.avg_similarity)} |",
+                f"| Объектов query | {rec.query_objects} |",
+                f"| Demo SKU | {rec.demo_sku} |",
+                f"| Эталонов в галерее | {rec.gallery_refs} |",
+                f"| Папка результата | `{rec.out_dir}` |",
                 "",
             ]
         )
@@ -324,14 +371,14 @@ def save_reports(results_root: Path, summary_csv: Path, out_dir: Path, top_n: in
         [
             "## Топ экспериментов",
             "",
-            df_sorted[existing_top_cols].head(top_n).to_markdown(index=False),
+            _display_df(df_sorted[existing_top_cols].head(top_n)).to_markdown(index=False),
             "",
             "## Влияние параметров",
             "",
         ]
     )
     if not impact.empty:
-        lines.append(impact.to_markdown(index=False))
+        lines.append(_display_df(impact).to_markdown(index=False))
     else:
         lines.append("Нет данных для оценки влияния параметров.")
 
@@ -350,13 +397,13 @@ def save_reports(results_root: Path, summary_csv: Path, out_dir: Path, top_n: in
         ]
     )
     for name, path in plots.items():
-        lines.append(f"- {name}: `{path}`")
+        lines.append(f"- {_output_label(name)}: `{path}`")
     report_md.write_text("\n".join(lines), encoding="utf-8")
 
     vkr_lines = [
         "# Раздел для ВКР: серия экспериментов по подбору параметров идентификации",
         "",
-        "Для повышения качества работы системы на датасете SKU110K была проведена серия экспериментов, в которых варьировались параметры детектора и модуля формирования demo SKU-галереи: confidence threshold, размер gallery-части, максимальное количество demo SKU, порог дедупликации crop-изображений, количество эталонов на один SKU, минимальный размер crop и padding.",
+        "Для повышения качества работы системы на датасете SKU110K была проведена серия экспериментов, в которых варьировались параметры детектора и модуля формирования demo SKU-галереи: порог confidence, размер gallery-части, максимальное количество demo SKU, порог дедупликации crop-изображений, количество эталонов на один SKU, минимальный размер crop и отступ вокруг crop.",
         "",
         "В результате экспериментов было установлено, что наибольшее влияние на долю сопоставленных объектов оказывают размер demo SKU-галереи и порог дедупликации crop-изображений. Увеличение gallery-части и более мягкая дедупликация повышают покрытие галереи и увеличивают долю объектов, для которых находится близкий эталон.",
         "",
@@ -365,13 +412,13 @@ def save_reports(results_root: Path, summary_csv: Path, out_dir: Path, top_n: in
         best = recs[0]
         vkr_lines.extend(
             [
-                f"Лучшей общей конфигурацией по совокупному quick_score стал эксперимент `{best.experiment}`. При данной конфигурации доля объектов, сопоставленных с demo SKU-галереей, составила {_format_pct(best.matched_rate)}, доля объектов со статусом unknown — {_format_pct(best.unknown_rate)}, средняя similarity — {_format_float(best.avg_similarity)}.",
+                f"Лучшей общей конфигурацией по совокупной интегральной оценке стал эксперимент `{best.experiment}`. При данной конфигурации доля объектов, сопоставленных с demo SKU-галереей, составила {_format_pct(best.matched_rate)}, доля объектов со статусом `unknown` — {_format_pct(best.unknown_rate)}, среднее визуальное сходство — {_format_float(best.avg_similarity)}.",
                 "",
             ]
         )
     vkr_lines.extend(
         [
-            "Следует отметить, что matched_rate в данном эксперименте не является accuracy по реальным SKU-классам, поскольку в используемом наборе данных отсутствует эталонная разметка объектов по настоящим артикулам. Данный показатель отражает долю объектов, которые были сопоставлены с автоматически сформированной демонстрационной SKU-галереей.",
+            "Следует отметить, что `matched_rate` в данном эксперименте не является accuracy по реальным SKU-классам, поскольку в используемом наборе данных отсутствует эталонная разметка объектов по настоящим артикулам. Данный показатель отражает долю объектов, которые были сопоставлены с автоматически сформированной демонстрационной SKU-галереей.",
             "",
             "Полученные результаты могут быть использованы для выбора финальной конфигурации программного модуля и для обоснования параметров идентификации в экспериментальной части ВКР.",
         ]
@@ -393,11 +440,11 @@ def main() -> None:
     results_root, summary_csv, out_dir = _resolve_paths(args)
     outputs = save_reports(results_root=results_root, summary_csv=summary_csv, out_dir=out_dir, top_n=max(1, args.top_n))
 
-    print("=== Night experiments report generated ===")
-    print(f"Results root: {results_root}")
-    print(f"Summary CSV: {summary_csv}")
+    print("=== Отчёт по серии ночных экспериментов сформирован ===")
+    print(f"Папка серии: {results_root}")
+    print(f"Сводная CSV-таблица: {summary_csv}")
     for name, path in outputs.items():
-        print(f"{name}: {path}")
+        print(f"{_output_label(name)}: {path}")
 
 
 if __name__ == "__main__":
