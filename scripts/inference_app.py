@@ -21,7 +21,7 @@ from src.inference.yolo_inference import predict_yolo_image, prediction_summary
 from src.visualization.draw_boxes import draw_prediction
 
 
-APP_TITLE = "ShelfVision: демонстрация инференса"
+APP_TITLE = "ShelfVision: демонстрация применения модели"
 UPLOAD_DIR = ROOT / "artifacts" / "interface_uploads"
 RESULTS_DIR = ROOT / "results" / "interface_inference"
 
@@ -64,12 +64,12 @@ def detections_to_dataframe(prediction: ImagePrediction) -> pd.DataFrame:
             {
                 "№": idx,
                 "Класс": detection.label,
-                "Confidence": round(detection.score, 4),
+                "Уверенность": round(detection.score, 4),
                 "x1": round(x1, 1),
                 "y1": round(y1, 1),
                 "x2": round(x2, 1),
                 "y2": round(y2, 1),
-                "Площадь bbox": round(max(0.0, x2 - x1) * max(0.0, y2 - y1), 1),
+                "Площадь BBox": round(max(0.0, x2 - x1) * max(0.0, y2 - y1), 1),
             }
         )
     return pd.DataFrame(rows)
@@ -143,9 +143,9 @@ def render_metrics(prediction: ImagePrediction) -> None:
     with c1:
         st.metric("Найдено объектов", summary["objects_count"])
     with c2:
-        st.metric("Средний confidence", f"{summary['average_confidence']:.4f}")
+        st.metric("Средняя уверенность", f"{summary['average_confidence']:.4f}")
     with c3:
-        st.metric("Минимальный confidence", f"{summary['min_confidence']:.4f}")
+        st.metric("Минимальная уверенность", f"{summary['min_confidence']:.4f}")
     with c4:
         st.metric("Время обработки", f"{summary['inference_time']:.3f} сек")
 
@@ -175,7 +175,7 @@ def main() -> None:
         selected_model_title = st.selectbox("Модель", list(MODEL_OPTIONS.keys()))
         model_key = MODEL_OPTIONS[selected_model_title]
 
-        conf = st.slider("Порог confidence", 0.01, 0.95, 0.25, 0.01)
+        conf = st.slider("Порог уверенности", 0.01, 0.95, 0.25, 0.01)
         imgsz = st.selectbox("Размер изображения", [416, 512, 640, 768, 1024], index=2)
         device = st.text_input("Устройство запуска", value="0", help="Например: 0, cpu, cuda:0")
         device = device.strip() or None
@@ -227,7 +227,7 @@ def main() -> None:
         if missing:
             st.error("Не найдены веса модели:\n" + "\n".join(missing))
             return
-        with st.spinner(f"Запуск модели: {selected_model_title}..."):
+        with st.spinner(f"Применение модели: {selected_model_title}..."):
             try:
                 prediction = run_selected_model(
                     model_key=model_key,
@@ -245,7 +245,7 @@ def main() -> None:
                 )
                 json_path, visualized_path, table_path = save_outputs(prediction, show_masks=show_masks)
             except Exception as exc:
-                st.error(f"Ошибка инференса: {exc}")
+                st.error(f"Ошибка применения модели: {exc}")
                 return
 
         st.success("Обработка завершена")
