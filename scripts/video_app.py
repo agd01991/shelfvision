@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
 from src.inference.video_inference import process_yolo_video_file
 
 
-APP_TITLE = "ShelfVision: видеоинференс"
+APP_TITLE = "ShelfVision: обработка видео"
 CONFIG_PATH = ROOT / "config" / "shelfvision.yaml"
 UPLOAD_DIR = ROOT / "artifacts" / "video_uploads"
 DEFAULT_OUT_DIR = ROOT / "results" / "video" / "streamlit"
@@ -52,9 +52,9 @@ FRAME_STATS_COLUMNS_RU = {
     "frame_id": "ID кадра",
     "timestamp_sec": "Время, сек",
     "objects_count": "Количество объектов",
-    "average_confidence": "Средний confidence",
-    "min_confidence": "Минимальный confidence",
-    "max_confidence": "Максимальный confidence",
+    "average_confidence": "Средняя уверенность",
+    "min_confidence": "Минимальная уверенность",
+    "max_confidence": "Максимальная уверенность",
     "fps": "FPS",
     "processing_time": "Время обработки",
     "processing_time_sec": "Время обработки, сек",
@@ -132,7 +132,7 @@ def show_saved_outputs(outputs: Dict[str, Path]) -> None:
             with c2:
                 st.metric("Среднее число объектов", f"{df['objects_count'].mean():.2f}")
             with c3:
-                st.metric("Средний confidence", f"{df['average_confidence'].mean():.4f}")
+                st.metric("Средняя уверенность", f"{df['average_confidence'].mean():.4f}")
             with c4:
                 st.metric("Средний FPS", f"{df['fps'].mean():.2f}")
 
@@ -155,12 +155,12 @@ def main() -> None:
     weights = config.get("weights", {})
 
     st.title(APP_TITLE)
-    st.caption("Обработка видеофайла: YOLO детектирует товары на кадрах, сохраняет размеченное видео и статистику.")
+    st.caption("Обработка видеофайла: YOLO находит товары на кадрах, сохраняет размеченное видео и статистику.")
 
     with st.sidebar:
         st.header("Настройки")
         yolo_weights = resolve_path(st.text_input("Веса YOLO", value=str(weights.get("yolo", "models/yolo/best.pt"))))
-        conf = st.slider("Порог confidence", 0.01, 0.95, float(runtime.get("conf", 0.25)), 0.01)
+        conf = st.slider("Порог уверенности", 0.01, 0.95, float(runtime.get("conf", 0.25)), 0.01)
         imgsz_options = [416, 512, 640, 768, 1024]
         imgsz_value = int(runtime.get("imgsz", 640))
         imgsz = st.selectbox("Размер изображения", imgsz_options, index=imgsz_options.index(imgsz_value) if imgsz_value in imgsz_options else 2)
