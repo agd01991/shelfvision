@@ -10,6 +10,7 @@ import pandas as pd
 
 
 ALLOWED_STATUSES = {"matched", "matched_uncertain", "unknown"}
+STATUS_COLUMNS = ["status", "sku_status", "assignment_status"]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 
@@ -41,6 +42,13 @@ def _first_existing(root: Path, candidates: Iterable[str]) -> Optional[Path]:
         path = root / rel
         if path.exists():
             return path
+    return None
+
+
+def _status_column(df: pd.DataFrame) -> Optional[str]:
+    for col in STATUS_COLUMNS:
+        if col in df.columns:
+            return col
     return None
 
 
@@ -115,9 +123,15 @@ def _check_not_empty(name: str, df: pd.DataFrame, path: Optional[Path]) -> Valid
 def _check_statuses(df: pd.DataFrame, path: Optional[Path]) -> ValidationCheck:
     if path is None or df.empty:
         return ValidationCheck(name="Статусы идентификации", status="error", message="нет данных для проверки")
-    if "status" not in df.columns:
-        return ValidationCheck(name="Статусы идентификации", status="error", message="нет колонки status", path=str(path))
-    statuses = set(df["status"].dropna().astype(str).unique())
+    col = _status_column(df)
+    if col is None:
+        return ValidationCheck(
+            name="Статусы идентификации",
+            status="error",
+            message=f"нет колонки статуса: ожидается одна из {STATUS_COLUMNS}",
+            path=str(path),
+        )
+    statuses = set(df[col].dropna().astype(str).unique())
     unexpected = statuses - ALLOWED_STATUSES
     if unexpected:
         return ValidationCheck(
@@ -126,7 +140,12 @@ def _check_statuses(df: pd.DataFrame, path: Optional[Path]) -> ValidationCheck:
             message=f"найдены недопустимые статусы: {sorted(unexpected)}",
             path=str(path),
         )
-    return ValidationCheck(name="Статусы идентификации", status="ok", message=f"статусы корректны: {sorted(statuses)}", path=str(path))
+    return ValidationCheck(
+        name="Статусы идентификации",
+        status="ok",
+        message=f"статусы корректны в колонке {col}: {sorted(statuses)}",
+        path=str(path),
+    )
 
 
 def _check_crop_paths(df: pd.DataFrame, run_dir: Path, manifest_path: Optional[Path]) -> ValidationCheck:
@@ -161,7 +180,7 @@ def validate_run(run_dir: Path) -> tuple[ValidationSummary, List[ValidationCheck
     artifacts: Dict[str, Optional[Path]] = {
         "predictions_json": _first_existing(run_dir, ["03_query_inference/predictions.json", "01_inference/predictions.json", "predictions.json", "prediction.json"]),
         "summary_csv": _first_existing(run_dir, ["03_query_inference/summary.csv", "01_inference/summary.csv", "summary.csv"]),
-        "crops_manifest_csv": _first_existing(run_dir, ["02_demo_gallery/crops_manifest.csv", "03_query_crops/crops_manifest.csv", "crops_manifest.csv"]),
+        "crops_manifest_csv": _first_existing(run_dir, ["04_identification/crops_manifest.csv", "02_demo_gallery/crops_manifest.csv", "03_query_crops/crops_manifest.csv", "crops_manifest.csv"]),
         "gallery_csv": _first_existing(run_dir, ["02_demo_gallery/sku_gallery_final/gallery.csv", "02_demo_gallery/gallery.csv", "gallery.csv"]),
         "identification_results_csv": _first_existing(run_dir, ["04_identification/identification_results.csv", "03_identification/identification_results.csv", "06_manual_gallery/manual_identification/identification_results.csv", "identification_results.csv"]),
         "matched_uncertain_csv": _first_existing(run_dir, ["04_identification/matched_uncertain_candidates.csv", "06_manual_gallery/manual_identification/matched_uncertain_candidates.csv", "matched_uncertain_candidates.csv"]),
@@ -191,9 +210,14 @@ def validate_run(run_dir: Path) -> tuple[ValidationSummary, List[ValidationCheck
     checks.append(_check_statuses(ident_df, artifacts["identification_results_csv"]))
     checks.append(_check_crop_paths(crops_df, run_dir, artifacts["crops_manifest_csv"]))
 
-    matched = int(ident_df["status"].eq("matched").sum()) if "status" in ident_df.columns else 0
-    matched_uncertain = int(ident_df["status"].eq("matched_uncertain").sum()) if "status" in ident_df.columns else 0
-    unknown = int(ident_df["status"].eq("unknown").sum()) if "status" in ident_df.columns else 0
+    status_col = _status_column(ident_df)
+    if status_col:
+        statuses = ident_df[status_col].astype(str)
+        matched = int(statuses.eq("matched").sum())
+        matched_uncertain = int(statuses.eq("matched_uncertain").sum())
+        unknown = int(statuses.eq("unknown").sum())
+    else:
+        matched = matched_uncertain = unknown = 0
 
     error_count = sum(1 for item in checks if item.status == "error")
     warning_count = sum(1 for item in checks if item.status == "warning")
