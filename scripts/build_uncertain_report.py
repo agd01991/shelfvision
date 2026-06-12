@@ -2,23 +2,40 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 
+STATUS_COLUMNS = ["status", "sku_status", "assignment_status"]
+MARGIN_COLUMNS = ["margin", "distinct_margin"]
 DEFAULT_COLUMNS = [
     "image_name",
     "object_id",
-    "status",
-    "predicted_sku_id",
-    "best_sku_id",
-    "second_sku_id",
-    "best_similarity",
-    "second_similarity",
-    "margin",
+    "sku_status",
+    "sku_id",
+    "sku_name",
+    "best_distinct_sku",
+    "second_distinct_sku",
+    "sku_confidence",
+    "second_distinct_score",
+    "distinct_margin",
     "crop_path",
 ]
+
+
+def _status_column(df: pd.DataFrame) -> Optional[str]:
+    for col in STATUS_COLUMNS:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _margin_column(df: pd.DataFrame) -> Optional[str]:
+    for col in MARGIN_COLUMNS:
+        if col in df.columns:
+            return col
+    return None
 
 
 def _read_results(path: Path) -> pd.DataFrame:
@@ -27,8 +44,8 @@ def _read_results(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     if df.empty:
         raise ValueError(f"Файл результатов пустой: {path}")
-    if "status" not in df.columns:
-        raise ValueError("В файле результатов нет колонки status")
+    if _status_column(df) is None:
+        raise ValueError(f"В файле результатов нет колонки статуса. Ожидается одна из: {STATUS_COLUMNS}")
     return df
 
 
@@ -37,20 +54,30 @@ def _num(series: pd.Series) -> pd.Series:
 
 
 def _prepare_uncertain(df: pd.DataFrame) -> pd.DataFrame:
-    uncertain = df[df["status"].astype(str).eq("matched_uncertain")].copy()
+    status_col = _status_column(df)
+    if status_col is None:
+        return pd.DataFrame()
+    uncertain = df[df[status_col].astype(str).eq("matched_uncertain")].copy()
     if uncertain.empty:
         return uncertain
-    if "margin" in uncertain.columns:
-        uncertain["margin"] = _num(uncertain["margin"])
-        uncertain = uncertain.sort_values("margin", ascending=True)
-    elif "best_similarity" in uncertain.columns and "second_similarity" in uncertain.columns:
-        uncertain["margin"] = _num(uncertain["best_similarity"]) - _num(uncertain["second_similarity"])
-        uncertain = uncertain.sort_values("margin", ascending=True)
+
+    margin_col = _margin_column(uncertain)
+    if margin_col:
+        uncertain["report_margin"] = _num(uncertain[margin_col])
+        uncertain = uncertain.sort_values("report_margin", ascending=True)
+    elif {"sku_confidence", "second_distinct_score"}.issubset(uncertain.columns):
+        uncertain["report_margin"] = _num(uncertain["sku_confidence"]) - _num(uncertain["second_distinct_score"])
+        uncertain = uncertain.sort_values("report_margin", ascending=True)
+    elif {"best_similarity", "second_similarity"}.issubset(uncertain.columns):
+        uncertain["report_margin"] = _num(uncertain["best_similarity"]) - _num(uncertain["second_similarity"])
+        uncertain = uncertain.sort_values("report_margin", ascending=True)
     return uncertain
 
 
 def _existing_columns(df: pd.DataFrame) -> List[str]:
     columns = [col for col in DEFAULT_COLUMNS if col in df.columns]
+    if "report_margin" in df.columns and "report_margin" not in columns:
+        columns.append("report_margin")
     for col in df.columns:
         if col not in columns and col.startswith("top"):
             columns.append(col)
@@ -75,13 +102,13 @@ def build_uncertain_report(results_csv: str | Path, out_dir: str | Path, top_n: 
 
     output_csv = out_dir / "matched_uncertain_top.csv"
     report_md = out_dir / "matched_uncertain_report.md"
-    columns = _existing_columns(top) if not top.empty else []
+    columns = _existing_columns(top) if not top.empty else DEFAULT_COLUMNS
     if not top.empty:
         top[columns].to_csv(output_csv, index=False)
     else:
-        pd.DataFrame(columns=DEFAULT_COLUMNS).to_csv(output_csv, index=False)
+        pd.DataFrame(columns=columns).to_csv(output_csv, index=False)
 
-    margin_values = _num(uncertain["margin"]) if "margin" in uncertain.columns and not uncertain.empty else pd.Series(dtype=float)
+    margin_values = _num(uncertain["report_margin"]) if "report_margin" in uncertain.columns and not uncertain.empty else pd.Series(dtype=float)
     mean_margin = float(margin_values.mean()) if not margin_values.empty else 0.0
     min_margin = float(margin_values.min()) if not margin_values.empty else 0.0
 
