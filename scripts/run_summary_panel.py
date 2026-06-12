@@ -9,6 +9,9 @@ import streamlit as st
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+STATUS_COLUMNS = ["status", "sku_status", "assignment_status"]
+SIMILARITY_COLUMNS = ["best_similarity", "similarity", "score", "sku_confidence"]
+MARGIN_COLUMNS = ["margin", "distinct_margin"]
 
 
 def _first_existing(root: Path, candidates: list[str]) -> Optional[Path]:
@@ -16,6 +19,13 @@ def _first_existing(root: Path, candidates: list[str]) -> Optional[Path]:
         path = root / rel
         if path.exists():
             return path
+    return None
+
+
+def _status_column(df: pd.DataFrame) -> Optional[str]:
+    for col in STATUS_COLUMNS:
+        if col in df.columns:
+            return col
     return None
 
 
@@ -63,10 +73,17 @@ def _metric_from_manifest(manifest: Dict[str, Any], key: str, fallback: Any = 0)
     return manifest.get(key, fallback)
 
 
+def _mean_existing(df: pd.DataFrame, columns: list[str], fallback: float = 0.0) -> float:
+    for col in columns:
+        if col in df.columns:
+            return float(pd.to_numeric(df[col], errors="coerce").fillna(0).mean())
+    return fallback
+
+
 def collect_summary(run_dir: Path) -> Dict[str, Any]:
     manifest = _read_json(run_dir / "run_manifest.json")
     summary_csv = _first_existing(run_dir, ["03_query_inference/summary.csv", "01_inference/summary.csv", "summary.csv"])
-    crops_csv = _first_existing(run_dir, ["03_query_crops/crops_manifest.csv", "02_demo_gallery/crops_manifest.csv", "crops_manifest.csv"])
+    crops_csv = _first_existing(run_dir, ["04_identification/crops_manifest.csv", "03_query_crops/crops_manifest.csv", "02_demo_gallery/crops_manifest.csv", "crops_manifest.csv"])
     gallery_csv = _first_existing(run_dir, ["02_demo_gallery/sku_gallery_final/gallery.csv", "02_demo_gallery/gallery.csv", "gallery.csv"])
     results_csv = _first_existing(run_dir, ["04_identification/identification_results.csv", "03_identification/identification_results.csv", "identification_results.csv"])
     validation_json = _read_json(run_dir / "validation_summary.json")
@@ -76,7 +93,8 @@ def collect_summary(run_dir: Path) -> Dict[str, Any]:
     gallery_df = _read_csv(gallery_csv)
     results_df = _read_csv(results_csv)
 
-    statuses = results_df["status"].astype(str) if "status" in results_df.columns else pd.Series(dtype=str)
+    status_col = _status_column(results_df)
+    statuses = results_df[status_col].astype(str) if status_col else pd.Series(dtype=str)
     matched = int(statuses.eq("matched").sum()) if not statuses.empty else int(_metric_from_manifest(manifest, "matched", 0))
     matched_uncertain = int(statuses.eq("matched_uncertain").sum()) if not statuses.empty else int(_metric_from_manifest(manifest, "matched_uncertain", 0))
     unknown = int(statuses.eq("unknown").sum()) if not statuses.empty else int(_metric_from_manifest(manifest, "unknown", 0))
@@ -87,16 +105,8 @@ def collect_summary(run_dir: Path) -> Dict[str, Any]:
     else:
         detected_objects = total_objects
 
-    avg_similarity = _metric_from_manifest(manifest, "avg_similarity", 0.0)
-    for col in ["best_similarity", "similarity", "score"]:
-        if col in results_df.columns:
-            avg_similarity = float(pd.to_numeric(results_df[col], errors="coerce").fillna(0).mean())
-            break
-
-    avg_margin = _metric_from_manifest(manifest, "avg_margin", 0.0)
-    if "margin" in results_df.columns:
-        avg_margin = float(pd.to_numeric(results_df["margin"], errors="coerce").fillna(0).mean())
-
+    avg_similarity = _mean_existing(results_df, SIMILARITY_COLUMNS, _num(_metric_from_manifest(manifest, "avg_similarity", 0.0)))
+    avg_margin = _mean_existing(results_df, MARGIN_COLUMNS, _num(_metric_from_manifest(manifest, "avg_margin", 0.0)))
     assigned = matched + matched_uncertain
     assigned_share = assigned / total_objects if total_objects else 0.0
 
