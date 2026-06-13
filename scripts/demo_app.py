@@ -108,6 +108,10 @@ def _result_csv(run_dir: Path) -> Optional[Path]:
     return None
 
 
+def _corrected_results_csv(run_dir: Path) -> Path:
+    return run_dir / "04_identification" / "identification_results_corrected.csv"
+
+
 def _corrections_csv(run_dir: Path) -> Path:
     return run_dir / "manual_corrections.csv"
 
@@ -192,6 +196,24 @@ def _metric_row(data: Dict[str, Any]) -> None:
     c5.metric("С кандидатом", f"{data.get('assigned_share', 0.0) * 100:.2f}%")
 
 
+def _corrected_metric_row(run_dir: Path) -> None:
+    corrected = _read_csv(_corrected_results_csv(run_dir))
+    status_col = _status_column(corrected)
+    if corrected.empty or status_col is None:
+        st.info("Исправленный результат пока не сформирован.")
+        return
+    statuses = corrected[status_col].astype(str)
+    total = len(corrected)
+    matched = int(statuses.eq("matched").sum())
+    uncertain = int(statuses.eq("matched_uncertain").sum())
+    unknown = int(statuses.eq("unknown").sum())
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Объектов в исправленной таблице", total)
+    c2.metric("Уверенно после правок", matched)
+    c3.metric("Осталось на проверке", uncertain)
+    c4.metric("Не определено после правок", unknown)
+
+
 def _render_result(run_dir: Path, show_table: bool = False) -> None:
     if not run_dir.exists():
         st.warning("Папка результата не найдена.")
@@ -212,6 +234,7 @@ def _render_result(run_dir: Path, show_table: bool = False) -> None:
     corrections = _load_corrections(run_dir)
     if not corrections.empty:
         st.success(f"Сохранено ручных решений: {len(corrections)}")
+        _corrected_metric_row(run_dir)
 
     if data["visualized"]:
         st.subheader("Примеры результата")
@@ -223,6 +246,10 @@ def _render_result(run_dir: Path, show_table: bool = False) -> None:
     if show_table:
         st.subheader("Таблица SKU-сопоставления")
         st.dataframe(data["results_df"], use_container_width=True, height=420)
+        corrected_df = _read_csv(_corrected_results_csv(run_dir))
+        if not corrected_df.empty:
+            st.subheader("Исправленная таблица с учётом ручных решений")
+            st.dataframe(corrected_df, use_container_width=True, height=420)
 
 
 def _build_steps(cfg: Dict[str, Any], images_dir: Path, out_dir: Path) -> list[CommandStep]:
@@ -483,10 +510,14 @@ def page_reports(cfg: Dict[str, Any]) -> None:
         st.info("Сначала выберите папку результата.")
         return
     run_dir = _to_runtime_path(run_raw)
+    corrected_csv = _corrected_results_csv(run_dir)
+    corrections_csv = _corrections_csv(run_dir)
     paths = [
         ("Отчёт проверки", run_dir / "validation_report.md"),
         ("Отчёт по спорным товарам", run_dir / "uncertain_report" / "matched_uncertain_report.md"),
-        ("Ручные решения", _corrections_csv(run_dir)),
+        ("Ручные решения", corrections_csv),
+        ("Исправленная таблица", corrected_csv),
+        ("Отчёт применения ручных решений", run_dir / "manual_corrections_report.md"),
         ("Таблица SKU-сопоставления", run_dir / "04_identification" / "identification_results.csv"),
         ("Отчёт по связке детекции и идентификации", run_dir / "05_reports" / "segmentation_identification_report.md"),
         ("Итоговые визуализации", run_dir / "04_identification" / "visualized"),
@@ -498,6 +529,30 @@ def page_reports(cfg: Dict[str, Any]) -> None:
     if not corrections.empty:
         st.subheader("Последние ручные решения")
         st.dataframe(corrections.tail(50), use_container_width=True, height=260)
+
+    if corrections_csv.exists() and st.button("Применить ручные решения", type="primary", use_container_width=True):
+        steps = [
+            CommandStep(
+                "Применение ручных решений",
+                [
+                    sys.executable,
+                    "scripts/apply_manual_corrections.py",
+                    "--results-csv",
+                    str(run_dir / "04_identification" / "identification_results.csv"),
+                    "--corrections-csv",
+                    str(corrections_csv),
+                    "--out-csv",
+                    str(corrected_csv),
+                    "--report-dir",
+                    str(run_dir),
+                ],
+                cwd=ROOT,
+            )
+        ]
+        ok = run_steps_with_progress(steps, title="Применение ручных решений", success_message="Ручные решения применены")
+        if ok:
+            st.success("Исправленная таблица сформирована.")
+            _corrected_metric_row(run_dir)
 
     if st.button("Обновить отчёты проверки", use_container_width=True):
         steps = [
