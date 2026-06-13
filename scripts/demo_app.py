@@ -18,6 +18,21 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "shelfvision.yaml"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 STATUS_COLUMNS = ["sku_status", "status", "assignment_status"]
+CORRECTION_COLUMNS = [
+    "created_at",
+    "image_name",
+    "object_id",
+    "old_status",
+    "old_sku_id",
+    "old_sku_name",
+    "new_sku_id",
+    "correction_type",
+    "comment",
+    "sku_confidence",
+    "distinct_margin",
+    "second_distinct_sku",
+    "crop_path",
+]
 
 
 def _load_config() -> Dict[str, Any]:
@@ -93,6 +108,51 @@ def _result_csv(run_dir: Path) -> Optional[Path]:
     return None
 
 
+def _corrections_csv(run_dir: Path) -> Path:
+    return run_dir / "manual_corrections.csv"
+
+
+def _load_corrections(run_dir: Path) -> pd.DataFrame:
+    path = _corrections_csv(run_dir)
+    if not path.exists():
+        return pd.DataFrame(columns=CORRECTION_COLUMNS)
+    df = _read_csv(path)
+    return df if not df.empty else pd.DataFrame(columns=CORRECTION_COLUMNS)
+
+
+def _save_correction(run_dir: Path, row: pd.Series, status_col: str, correction_type: str, new_sku_id: str, comment: str) -> Path:
+    path = _corrections_csv(run_dir)
+    existing = _load_corrections(run_dir)
+    payload = {
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "image_name": row.get("image_name", ""),
+        "object_id": row.get("object_id", ""),
+        "old_status": row.get(status_col, ""),
+        "old_sku_id": row.get("sku_id", ""),
+        "old_sku_name": row.get("sku_name", ""),
+        "new_sku_id": new_sku_id,
+        "correction_type": correction_type,
+        "comment": comment,
+        "sku_confidence": row.get("sku_confidence", ""),
+        "distinct_margin": row.get("distinct_margin", ""),
+        "second_distinct_sku": row.get("second_distinct_sku", ""),
+        "crop_path": row.get("crop_path", ""),
+    }
+    updated = pd.concat([existing, pd.DataFrame([payload])], ignore_index=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    updated[CORRECTION_COLUMNS].to_csv(path, index=False)
+    return path
+
+
+def _available_sku_values(results_df: pd.DataFrame, gallery_df: pd.DataFrame) -> list[str]:
+    values: set[str] = set()
+    if "sku_id" in gallery_df.columns:
+        values.update(str(x) for x in gallery_df["sku_id"].dropna().unique() if str(x) and str(x) != "nan")
+    if "sku_id" in results_df.columns:
+        values.update(str(x) for x in results_df["sku_id"].dropna().unique() if str(x) and str(x) != "nan")
+    return sorted(values)
+
+
 def _last_run(output_root: Path) -> Optional[Path]:
     if not output_root.exists():
         return None
@@ -148,6 +208,10 @@ def _render_result(run_dir: Path, show_table: bool = False) -> None:
     st.caption(f"Папка результата: `{run_dir}`")
     st.info(f"Статус проверки результата: **{validation_status}**")
     _metric_row(data)
+
+    corrections = _load_corrections(run_dir)
+    if not corrections.empty:
+        st.success(f"Сохранено ручных решений: {len(corrections)}")
 
     if data["visualized"]:
         st.subheader("Примеры результата")
@@ -245,12 +309,12 @@ def page_analysis(cfg: Dict[str, Any]) -> None:
         cols[index].metric(label, "готово" if ok else "нужно проверить")
 
     with st.expander("Системная информация", expanded=False):
-        st.write(f"Активная модель: предобученная модель ShelfVision")
+        st.write("Активная модель: предобученная модель ShelfVision")
         st.write(f"Путь к модели: `{_display_path(_to_runtime_path(cfg['weights']))}`")
         st.write(f"SKU-галерея: `{_display_path(_to_runtime_path(cfg['system_gallery_csv']))}`")
         st.write(f"Папка результатов: `{_display_path(output_root)}`")
         st.write(f"Рекомендованный режим: порог сопоставления {cfg['threshold']}, проверка спорных случаев включена")
-        st.write(f"Найдено изображений в выбранной папке: { _count_images(images_dir) }")
+        st.write(f"Найдено изображений в выбранной папке: {_count_images(images_dir)}")
 
     last = _last_run(output_root)
     if last:
@@ -292,20 +356,24 @@ def page_review(cfg: Dict[str, Any]) -> None:
         st.info("Сначала выберите папку результата.")
         return
     run_dir = _to_runtime_path(run_raw)
+    data = collect_summary(run_dir)
     results_csv = _result_csv(run_dir)
     df = _read_csv(results_csv)
     status_col = _status_column(df)
     if df.empty or not status_col:
         st.warning("Таблица результатов не найдена или в ней нет статусов.")
         return
+
     uncertain = df[df[status_col].astype(str).eq("matched_uncertain")].copy()
+    corrections = _load_corrections(run_dir)
     st.metric("Товаров, требующих проверки", len(uncertain))
+    st.metric("Сохранено ручных решений", len(corrections))
     if uncertain.empty:
         st.success("Спорные товары не найдены.")
         return
 
     preview_cols = [c for c in ["image_name", "object_id", "sku_id", "sku_name", "best_distinct_sku", "second_distinct_sku", "sku_confidence", "distinct_margin", "crop_path"] if c in uncertain.columns]
-    st.dataframe(uncertain[preview_cols].head(200), use_container_width=True, height=360)
+    st.dataframe(uncertain[preview_cols].head(200), use_container_width=True, height=320)
 
     selected_index = st.selectbox("Посмотреть объект", uncertain.index.tolist(), format_func=lambda i: f"строка {i}: объект {uncertain.loc[i].get('object_id', '')}")
     row = uncertain.loc[selected_index]
@@ -325,6 +393,40 @@ def page_review(cfg: Dict[str, Any]) -> None:
         st.write(f"Второй SKU: `{row.get('second_distinct_sku', '')}`")
         if "top_k" in row:
             st.code(str(row.get("top_k", "")), language="text")
+
+    st.subheader("Ручное решение")
+    sku_options = _available_sku_values(data["results_df"], data["gallery_df"])
+    action = st.radio(
+        "Что сделать с выбранным объектом",
+        ["Подтвердить предложенный SKU", "Выбрать другой SKU", "Оставить не определённым", "Отложить"],
+        horizontal=True,
+    )
+    if action == "Выбрать другой SKU" and sku_options:
+        default_sku = str(row.get("sku_id", ""))
+        index = sku_options.index(default_sku) if default_sku in sku_options else 0
+        new_sku_id = st.selectbox("Правильный SKU", sku_options, index=index)
+        correction_type = "change_sku"
+    elif action == "Подтвердить предложенный SKU":
+        new_sku_id = str(row.get("sku_id", ""))
+        correction_type = "confirm_match"
+    elif action == "Оставить не определённым":
+        new_sku_id = ""
+        correction_type = "mark_unknown"
+    else:
+        new_sku_id = str(row.get("sku_id", ""))
+        correction_type = "needs_review"
+
+    comment = st.text_input("Комментарий, необязательно", value="")
+    if st.button("Сохранить решение", type="primary", use_container_width=True):
+        path = _save_correction(run_dir, row, status_col, correction_type, new_sku_id, comment)
+        st.success(f"Решение сохранено: {path}")
+
+    with st.expander("Сохранённые ручные решения", expanded=False):
+        updated = _load_corrections(run_dir)
+        if updated.empty:
+            st.info("Ручные решения пока не сохранены.")
+        else:
+            st.dataframe(updated.tail(100), use_container_width=True, height=320)
 
 
 def page_sku(cfg: Dict[str, Any]) -> None:
@@ -384,12 +486,18 @@ def page_reports(cfg: Dict[str, Any]) -> None:
     paths = [
         ("Отчёт проверки", run_dir / "validation_report.md"),
         ("Отчёт по спорным товарам", run_dir / "uncertain_report" / "matched_uncertain_report.md"),
+        ("Ручные решения", _corrections_csv(run_dir)),
         ("Таблица SKU-сопоставления", run_dir / "04_identification" / "identification_results.csv"),
         ("Отчёт по связке детекции и идентификации", run_dir / "05_reports" / "segmentation_identification_report.md"),
         ("Итоговые визуализации", run_dir / "04_identification" / "visualized"),
     ]
     for label, path in paths:
         st.write(f"- **{label}:** `{path}` {'✅' if path.exists() else '⚠️'}")
+
+    corrections = _load_corrections(run_dir)
+    if not corrections.empty:
+        st.subheader("Последние ручные решения")
+        st.dataframe(corrections.tail(50), use_container_width=True, height=260)
 
     if st.button("Обновить отчёты проверки", use_container_width=True):
         steps = [
