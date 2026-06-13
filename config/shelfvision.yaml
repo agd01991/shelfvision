@@ -50,3 +50,20 @@ video:
   sample_frames: 8
   show_masks: true
   codec: mp4v
+demo_app:
+  app_title: ShelfVision
+  output_root: D:/1Diplom/shelfvision_results/demo_user_runs
+  weights: D:/1Diplom/runs/yolo_night/E03_imgsz_640/weights/best.pt
+  system_gallery_dir: D:/1Diplom/shelfvision_results/vkr_demo_sku110k_small_full_2026-06-11_01-16-01/02_demo_gallery/sku_gallery_final
+  system_gallery_csv: D:/1Diplom/shelfvision_results/vkr_demo_sku110k_small_full_2026-06-11_01-16-01/02_demo_gallery/sku_gallery_final/gallery.csv
+  default_images_dir: C:/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/raw/sku110k_small/images
+  model: yolo
+  conf: 0.25
+  imgsz: 640
+  device: '0'
+  threshold: 0.55
+  thresholds: 0.45,0.50,0.55,0.60,0.65
+  top_k: 5
+  ambiguity_margin: 0.03
+  visualize_limit: 50
+  progress_every: 50
