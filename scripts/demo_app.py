@@ -214,6 +214,60 @@ def _corrected_metric_row(run_dir: Path) -> None:
     c4.metric("Не определено после правок", unknown)
 
 
+def _mean_value(df: pd.DataFrame, col: str) -> float:
+    if col not in df.columns or df.empty:
+        return 0.0
+    return float(pd.to_numeric(df[col], errors="coerce").fillna(0).mean())
+
+
+def _render_image_grid(paths: list[Path], title: str, limit: int = 9) -> None:
+    if not paths:
+        st.info(f"{title}: изображения не найдены.")
+        return
+    st.subheader(title)
+    cols = st.columns(3)
+    for index, image_path in enumerate(paths[:limit]):
+        with cols[index % 3]:
+            st.image(str(image_path), caption=image_path.name, use_container_width=True)
+
+
+def _crop_paths_from_rows(rows: pd.DataFrame, limit: int = 9) -> list[Path]:
+    if "crop_path" not in rows.columns:
+        return []
+    result: list[Path] = []
+    for raw in rows["crop_path"].dropna().astype(str).tolist():
+        path = _to_runtime_path(raw)
+        if path.exists() and path.is_file():
+            result.append(path)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _sku_status_table(selected: pd.DataFrame, status_col: Optional[str]) -> pd.DataFrame:
+    if not status_col:
+        return pd.DataFrame(columns=["Статус", "Количество", "Доля"])
+    counts = selected[status_col].astype(str).value_counts().rename_axis("Статус").reset_index(name="Количество")
+    counts["Доля"] = counts["Количество"] / max(1, int(counts["Количество"].sum()))
+    return counts
+
+
+def _confusion_table(selected: pd.DataFrame) -> pd.DataFrame:
+    if "second_distinct_sku" not in selected.columns:
+        return pd.DataFrame()
+    subset = selected.copy()
+    subset["second_distinct_sku"] = subset["second_distinct_sku"].fillna("").astype(str)
+    subset = subset[subset["second_distinct_sku"].ne("")]
+    if subset.empty:
+        return pd.DataFrame()
+    grouped = subset.groupby("second_distinct_sku").agg(
+        count=("second_distinct_sku", "size"),
+        mean_score=("sku_confidence", "mean") if "sku_confidence" in subset.columns else ("second_distinct_sku", "size"),
+        mean_margin=("distinct_margin", "mean") if "distinct_margin" in subset.columns else ("second_distinct_sku", "size"),
+    )
+    return grouped.sort_values("count", ascending=False).reset_index().rename(columns={"second_distinct_sku": "Конкурирующий SKU"})
+
+
 def _render_result(run_dir: Path, show_table: bool = False) -> None:
     if not run_dir.exists():
         st.warning("Папка результата не найдена.")
@@ -464,11 +518,18 @@ def page_sku(cfg: Dict[str, Any]) -> None:
         return
     run_dir = _to_runtime_path(run_raw)
     data = collect_summary(run_dir)
-    results_df = data["results_df"]
+    base_results_df = data["results_df"]
+    corrected_df = _read_csv(_corrected_results_csv(run_dir))
     gallery_df = data["gallery_df"]
-    if results_df.empty:
+    if base_results_df.empty:
         st.warning("Результаты SKU-сопоставления не найдены.")
         return
+
+    source_options = ["Исходный результат"]
+    if not corrected_df.empty:
+        source_options.append("После ручных решений")
+    source = st.radio("Источник данных", source_options, horizontal=True)
+    results_df = corrected_df if source == "После ручных решений" and not corrected_df.empty else base_results_df
 
     sku_values = sorted(str(x) for x in results_df.get("sku_id", pd.Series(dtype=str)).dropna().unique() if str(x) and str(x) != "nan")
     if not sku_values:
@@ -478,29 +539,66 @@ def page_sku(cfg: Dict[str, Any]) -> None:
     selected = results_df[results_df["sku_id"].astype(str).eq(sku)].copy()
     status_col = _status_column(selected)
 
-    c1, c2, c3 = st.columns(3)
+    st.subheader("Сводка по выбранному SKU")
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Всего найдено", len(selected))
     if status_col:
         c2.metric("Уверенно", int(selected[status_col].astype(str).eq("matched").sum()))
         c3.metric("Требует проверки", int(selected[status_col].astype(str).eq("matched_uncertain").sum()))
+        c4.metric("Не определено", int(selected[status_col].astype(str).eq("unknown").sum()))
+    c5.metric("Среднее сходство", f"{_mean_value(selected, 'sku_confidence'):.4f}")
+
+    status_table = _sku_status_table(selected, status_col)
+    if not status_table.empty:
+        st.subheader("Распределение статусов")
+        st.dataframe(status_table, use_container_width=True, height=160)
+        st.bar_chart(status_table.set_index("Статус")["Количество"])
 
     st.subheader("Эталоны SKU")
     refs = gallery_df[gallery_df.get("sku_id", pd.Series(dtype=str)).astype(str).eq(sku)].head(9) if not gallery_df.empty and "sku_id" in gallery_df.columns else pd.DataFrame()
     if refs.empty:
         st.info("Эталоны выбранного SKU в галерее не найдены.")
     else:
-        cols = st.columns(3)
-        for index, (_, ref) in enumerate(refs.iterrows()):
+        ref_paths = []
+        for _, ref in refs.iterrows():
             image_path = ref.get("image_path", "")
             image = _to_runtime_path(image_path) if image_path else None
-            with cols[index % 3]:
-                if image and image.exists():
-                    st.image(str(image), caption=Path(str(image)).name, use_container_width=True)
-                else:
-                    st.write(f"`{image_path}`")
+            if image and image.exists():
+                ref_paths.append(image)
+        _render_image_grid(ref_paths, "Эталоны выбранного SKU", limit=9)
 
     st.subheader("Найденные товары по этому SKU")
-    st.dataframe(selected.head(300), use_container_width=True, height=420)
+    found_paths = _crop_paths_from_rows(selected, limit=9)
+    _render_image_grid(found_paths, "Примеры найденных товаров", limit=9)
+
+    if status_col:
+        uncertain = selected[selected[status_col].astype(str).eq("matched_uncertain")].copy()
+    else:
+        uncertain = pd.DataFrame()
+    if not uncertain.empty:
+        st.subheader("Спорные объекты по выбранному SKU")
+        uncertainty_cols = [c for c in ["image_name", "object_id", "sku_id", "sku_name", "second_distinct_sku", "sku_confidence", "distinct_margin", "crop_path"] if c in uncertain.columns]
+        st.dataframe(uncertain[uncertainty_cols].head(200), use_container_width=True, height=260)
+
+    confusion = _confusion_table(selected)
+    if not confusion.empty:
+        st.subheader("С какими SKU чаще всего путается")
+        st.dataframe(confusion.head(30), use_container_width=True, height=260)
+        st.bar_chart(confusion.head(15).set_index("Конкурирующий SKU")["count"])
+
+    corrections = _load_corrections(run_dir)
+    if not corrections.empty:
+        related = corrections[
+            corrections.get("old_sku_id", pd.Series(dtype=str)).astype(str).eq(sku)
+            | corrections.get("new_sku_id", pd.Series(dtype=str)).astype(str).eq(sku)
+        ]
+        if not related.empty:
+            st.subheader("Ручные решения, связанные с этим SKU")
+            st.dataframe(related.tail(100), use_container_width=True, height=260)
+
+    st.subheader("Таблица объектов")
+    object_cols = [c for c in ["image_name", "object_id", status_col or "", "sku_id", "sku_name", "sku_confidence", "distinct_margin", "second_distinct_sku", "crop_path"] if c and c in selected.columns]
+    st.dataframe(selected[object_cols].head(300), use_container_width=True, height=420)
 
 
 def page_reports(cfg: Dict[str, Any]) -> None:
