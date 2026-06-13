@@ -3,11 +3,12 @@ paths:
   image: data/test/image_001.jpg
   gt_coco: data/test/annotations.json
   gt_yolo_labels: data/test/labels
-  out_dir: results/control_panel
+  out_dir: D:/1Diplom/shelfvision_results/photo_identification_test
 weights:
   yolo: D:/1Diplom/runs/detect/runs/dir1/dir1_yolov8s_img640/weights/best.pt
   rtdetr: D:/1Diplom/runs/detect/runs/dir1/dir1_rtdetr_l_img640/weights/best.pt
   frcnn: D:/1Diplom/runs/detect/runs/dir1/dir1_rtdetr_l_img640/weights/best.pt
+  yolo_seg: ''
 runtime:
   conf: 0.25
   imgsz: 640
@@ -50,14 +51,129 @@ video:
   sample_frames: 8
   show_masks: true
   codec: mp4v
+  model: yolo_seg
+  save_frames_for_identification: true
+  tracking_enabled: true
+  tracking_iou: 0.3
+  tracking_max_missing: 5
+  progress_every: 10
+sku_gallery:
+  gallery_dir: D:/1Diplom/sku_gallery
+  output_csv: D:/1Diplom/sku_gallery/gallery.csv
+  out_dir: D:/1Diplom/shelfvision_results/sku_gallery
+  min_images_per_sku: 3
+identification:
+  gallery_dir: D:/1Diplom/sku_gallery
+  gallery_csv: D:/1Diplom/sku_gallery/gallery.csv
+  predictions: results/inference/yolo_seg_batch/predictions.json
+  images_dir: data/yolo_cache/d2s_small_seg/images/test
+  out_dir: D:/1Diplom/shelfvision_results/identification
+  gt_csv: ''
+  threshold: 0.65
+  top_k: 3
+  padding: 0.05
+  use_masks: true
+  no_visualize: false
+  visualize_limit: 30
+  stabilize_tracks: true
+  render_identified_video: true
+  video_summary: ''
+  identified_video_codec: mp4v
+readiness:
+  out_dir: D:/1Diplom/shelfvision_results/readiness
+demo_sku_gallery:
+  images_dir: D:/1Diplom/test_photo_identification/images
+  out_dir: D:/1Diplom/shelfvision_results/photo_identification_test
+  gallery_dir: D:/1Diplom/sku_gallery
+  gallery_csv: D:/1Diplom/sku_gallery/gallery.csv
+  model: yolo
+  max_sku: 20
+  min_score: 0.35
+  min_width: 20
+  min_height: 20
+  padding: 0.05
+  threshold: 0.65
+  top_k: 3
+  visualize_limit: 30
+  use_masks: true
+  prefix: sku_demo_
+  keep_old_demo: false
+presentation_assets:
+  out_dir: D:/1Diplom/shelfvision_results/photo_identification_test
+  results_root: D:/1Diplom/shelfvision_results/photo_identification_test
+  video_dir: results/video/yolo
+  identification_dir: D:/1Diplom/shelfvision_results/photo_identification_test/03_identification
+  video_frame: 0
+full_photo_identification:
+  images_dir: D:/1Diplom/data/raw/d2s_full/images
+  gallery_images_dir: ''
+  query_images_dir: ''
+  out_dir: D:\1Diplom\shelfvision_results\vkr_demo_sku110k_small_full_2026-06-11_01-16-01
+  gallery_dir: D:/1Diplom/sku_gallery_full_300_shuffle_seed42_dedup
+  gallery_csv: D:/1Diplom/sku_gallery_full_300_shuffle_seed42_dedup/gallery.csv
+  model: yolo
+  limit: 0
+  gallery_count: 120
+  query_count: 140
+  max_sku: 150
+  threshold: 0.65
+  top_k: 5
+  visualize_limit: 100
+  progress_every: 100
+  resume: true
+  skip_existing: true
+  min_score: 0.35
+  min_width: 20
+  min_height: 20
+  padding: 0.05
+  prefix: sku_demo_
+  keep_old_demo: false
+  bbox_only: false
+  no_visualize_inference: false
+  thresholds: 0.50,0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90
+  shuffle: true
+  seed: 42
+  deduplicate_gallery: true
+  dedup_threshold: 0.82
+  max_refs_per_sku: 10
+  query_predictions_json: ''
+  feature_cache_dir: ''
+  gallery_build_mode: greedy
+  cluster_merge_threshold: 0.82
+  cluster_strong_merge_threshold: 0.88
+  cluster_min_similarity: 0.72
+  cluster_pair_report_threshold: 0.75
+  cluster_max_candidates: 0
+  recommended_preset: balanced
+  enable_uncertain_status: true
+  ambiguity_margin: 0.03
+night_experiments:
+  results_root: /mnt/d/1Diplom/shelfvision_results/cluster_compare_sku110k_2026-05-29_23-35-48
+  summary_csv: ''
+  out_dir: ''
+  top_n: 16
+ui:
+  settings_mode: advanced
+  settings_mode_by_page:
+    actions: advanced
 demo_app:
   app_title: ShelfVision
+
+  # Куда складывать новые пользовательские запуски
   output_root: D:/1Diplom/shelfvision_results/demo_user_runs
+
+  # Предобученная модель, активная по умолчанию
   weights: D:/1Diplom/runs/yolo_night/E03_imgsz_640/weights/best.pt
+  model: yolo
+
+  # Системная SKU-галерея, выбранная по результатам экспериментов
   system_gallery_dir: D:/1Diplom/shelfvision_results/vkr_demo_sku110k_small_full_2026-06-11_01-16-01/02_demo_gallery/sku_gallery_final
   system_gallery_csv: D:/1Diplom/shelfvision_results/vkr_demo_sku110k_small_full_2026-06-11_01-16-01/02_demo_gallery/sku_gallery_final/gallery.csv
+
+  # Папка, которая будет подставлена в интерфейсе по умолчанию
   default_images_dir: C:/Users/agd01/Documents/1ДипломМага/Проги/shelfvision/data/raw/sku110k_small/images
-  model: yolo
+
+  # Параметры, подобранные по результатам экспериментов
   conf: 0.25
   imgsz: 640
   device: '0'
