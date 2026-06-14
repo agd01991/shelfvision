@@ -18,6 +18,17 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "shelfvision.yaml"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 STATUS_COLUMNS = ["sku_status", "status", "assignment_status"]
+STATUS_LABELS = {
+    "matched": "Уверенно идентифицировано",
+    "matched_uncertain": "Требует проверки",
+    "unknown": "Не определено",
+}
+CORRECTION_LABELS = {
+    "confirm_match": "Подтверждён предложенный SKU",
+    "change_sku": "Выбран другой SKU",
+    "mark_unknown": "Оставлено не определённым",
+    "needs_review": "Отложено для проверки",
+}
 CORRECTION_COLUMNS = [
     "created_at",
     "image_name",
@@ -80,6 +91,14 @@ def _display_path(path: str | Path) -> str:
     return str(path)
 
 
+def _status_label(value: Any) -> str:
+    return STATUS_LABELS.get(str(value), str(value))
+
+
+def _correction_label(value: Any) -> str:
+    return CORRECTION_LABELS.get(str(value), str(value))
+
+
 def _status_column(df: pd.DataFrame) -> Optional[str]:
     for col in STATUS_COLUMNS:
         if col in df.columns:
@@ -94,6 +113,33 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
         return pd.read_csv(path)
     except Exception:
         return pd.DataFrame()
+
+
+def _display_df(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    status_col = _status_column(result)
+    if status_col:
+        result[status_col] = result[status_col].map(_status_label)
+        result = result.rename(columns={status_col: "Статус"})
+    if "correction_type" in result.columns:
+        result["correction_type"] = result["correction_type"].map(_correction_label)
+        result = result.rename(columns={"correction_type": "Ручное решение"})
+    rename_map = {
+        "image_name": "Изображение",
+        "object_id": "Объект",
+        "sku_id": "SKU",
+        "sku_name": "Название SKU",
+        "sku_confidence": "Сходство",
+        "distinct_margin": "Отрыв",
+        "second_distinct_sku": "Второй SKU",
+        "crop_path": "Фрагмент",
+        "created_at": "Время",
+        "old_status": "Старый статус",
+        "old_sku_id": "Старый SKU",
+        "new_sku_id": "Новый SKU",
+        "comment": "Комментарий",
+    }
+    return result.rename(columns={key: value for key, value in rename_map.items() if key in result.columns})
 
 
 def _result_csv(run_dir: Path) -> Optional[Path]:
@@ -255,7 +301,7 @@ def _crop_paths_from_rows(rows: pd.DataFrame, limit: int = 9) -> list[Path]:
 def _sku_status_table(selected: pd.DataFrame, status_col: Optional[str]) -> pd.DataFrame:
     if not status_col:
         return pd.DataFrame(columns=["Статус", "Количество", "Доля"])
-    counts = selected[status_col].astype(str).value_counts().rename_axis("Статус").reset_index(name="Количество")
+    counts = selected[status_col].astype(str).map(_status_label).value_counts().rename_axis("Статус").reset_index(name="Количество")
     counts["Доля"] = counts["Количество"] / max(1, int(counts["Количество"].sum()))
     return counts
 
@@ -309,7 +355,63 @@ def _changed_rows(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
         merged["status_before"].astype(str).ne(merged["status_after"].astype(str))
         | merged["sku_before"].astype(str).ne(merged["sku_after"].astype(str))
     ]
-    return changed
+    if not changed.empty:
+        changed["status_before"] = changed["status_before"].map(_status_label)
+        changed["status_after"] = changed["status_after"].map(_status_label)
+    return changed.rename(
+        columns={
+            "image_name": "Изображение",
+            "object_id": "Объект",
+            "status_before": "Статус до",
+            "status_after": "Статус после",
+            "sku_before": "SKU до",
+            "sku_after": "SKU после",
+            "name_before": "Название до",
+            "name_after": "Название после",
+        }
+    )
+
+
+def _download_file(label: str, path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        return
+    suffix = path.suffix.lower()
+    mime = "text/csv" if suffix == ".csv" else "application/json" if suffix == ".json" else "text/plain"
+    try:
+        data = path.read_bytes()
+    except Exception:
+        return
+    st.download_button(
+        label=f"Скачать: {label}",
+        data=data,
+        file_name=path.name,
+        mime=mime,
+        use_container_width=True,
+        key=f"download_{label}_{path.name}",
+    )
+
+
+def _next_steps(run_dir: Path) -> None:
+    st.subheader("Что делать дальше")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info("Проверьте спорные товары и сохраните ручные решения.")
+        if st.button("Проверить спорные товары", use_container_width=True, key="next_review"):
+            st.session_state["demo_run_dir"] = str(run_dir)
+            st.session_state["demo_page"] = "Проверка идентификации"
+            st.rerun()
+    with c2:
+        st.info("Посмотрите, с какими товарами путается конкретный SKU.")
+        if st.button("Анализировать SKU", use_container_width=True, key="next_sku"):
+            st.session_state["demo_run_dir"] = str(run_dir)
+            st.session_state["demo_page"] = "Анализ SKU"
+            st.rerun()
+    with c3:
+        st.info("Сформируйте исправленную таблицу и отчёт по ручным решениям.")
+        if st.button("Перейти к отчётам", use_container_width=True, key="next_reports"):
+            st.session_state["demo_run_dir"] = str(run_dir)
+            st.session_state["demo_page"] = "Отчёты"
+            st.rerun()
 
 
 def _render_result(run_dir: Path, show_table: bool = False) -> None:
@@ -341,13 +443,15 @@ def _render_result(run_dir: Path, show_table: bool = False) -> None:
             with cols[index % 3]:
                 st.image(str(image_path), caption=image_path.name, use_container_width=True)
 
+    _next_steps(run_dir)
+
     if show_table:
         st.subheader("Таблица SKU-сопоставления")
-        st.dataframe(data["results_df"], use_container_width=True, height=420)
+        st.dataframe(_display_df(data["results_df"]), use_container_width=True, height=420)
         corrected_df = _read_csv(_corrected_results_csv(run_dir))
         if not corrected_df.empty:
             st.subheader("Исправленная таблица с учётом ручных решений")
-            st.dataframe(corrected_df, use_container_width=True, height=420)
+            st.dataframe(_display_df(corrected_df), use_container_width=True, height=420)
 
 
 def _build_steps(cfg: Dict[str, Any], images_dir: Path, out_dir: Path) -> list[CommandStep]:
@@ -498,7 +602,7 @@ def page_review(cfg: Dict[str, Any]) -> None:
         return
 
     preview_cols = [c for c in ["image_name", "object_id", "sku_id", "sku_name", "best_distinct_sku", "second_distinct_sku", "sku_confidence", "distinct_margin", "crop_path"] if c in uncertain.columns]
-    st.dataframe(uncertain[preview_cols].head(200), use_container_width=True, height=320)
+    st.dataframe(_display_df(uncertain[preview_cols].head(200)), use_container_width=True, height=320)
 
     selected_index = st.selectbox("Посмотреть объект", uncertain.index.tolist(), format_func=lambda i: f"строка {i}: объект {uncertain.loc[i].get('object_id', '')}")
     row = uncertain.loc[selected_index]
@@ -551,7 +655,7 @@ def page_review(cfg: Dict[str, Any]) -> None:
         if updated.empty:
             st.info("Ручные решения пока не сохранены.")
         else:
-            st.dataframe(updated.tail(100), use_container_width=True, height=320)
+            st.dataframe(_display_df(updated.tail(100)), use_container_width=True, height=320)
 
 
 def page_sku(cfg: Dict[str, Any]) -> None:
@@ -620,7 +724,7 @@ def page_sku(cfg: Dict[str, Any]) -> None:
     if not uncertain.empty:
         st.subheader("Спорные объекты по выбранному SKU")
         uncertainty_cols = [c for c in ["image_name", "object_id", "sku_id", "sku_name", "second_distinct_sku", "sku_confidence", "distinct_margin", "crop_path"] if c in uncertain.columns]
-        st.dataframe(uncertain[uncertainty_cols].head(200), use_container_width=True, height=260)
+        st.dataframe(_display_df(uncertain[uncertainty_cols].head(200)), use_container_width=True, height=260)
 
     confusion = _confusion_table(selected)
     if not confusion.empty:
@@ -636,11 +740,11 @@ def page_sku(cfg: Dict[str, Any]) -> None:
         ]
         if not related.empty:
             st.subheader("Ручные решения, связанные с этим SKU")
-            st.dataframe(related.tail(100), use_container_width=True, height=260)
+            st.dataframe(_display_df(related.tail(100)), use_container_width=True, height=260)
 
     st.subheader("Таблица объектов")
     object_cols = [c for c in ["image_name", "object_id", status_col or "", "sku_id", "sku_name", "sku_confidence", "distinct_margin", "second_distinct_sku", "crop_path"] if c and c in selected.columns]
-    st.dataframe(selected[object_cols].head(300), use_container_width=True, height=420)
+    st.dataframe(_display_df(selected[object_cols].head(300)), use_container_width=True, height=420)
 
 
 def page_comparison(cfg: Dict[str, Any]) -> None:
@@ -693,7 +797,7 @@ def page_comparison(cfg: Dict[str, Any]) -> None:
         if corrections.empty:
             st.info("Ручные решения не найдены.")
         else:
-            st.dataframe(corrections.tail(200), use_container_width=True, height=360)
+            st.dataframe(_display_df(corrections.tail(200)), use_container_width=True, height=360)
 
 
 def page_reports(cfg: Dict[str, Any]) -> None:
@@ -718,10 +822,18 @@ def page_reports(cfg: Dict[str, Any]) -> None:
     for label, path in paths:
         st.write(f"- **{label}:** `{path}` {'✅' if path.exists() else '⚠️'}")
 
+    downloadable = [(label, path) for label, path in paths if path.exists() and path.is_file()]
+    if downloadable:
+        st.subheader("Скачать материалы")
+        cols = st.columns(2)
+        for index, (label, path) in enumerate(downloadable):
+            with cols[index % 2]:
+                _download_file(label, path)
+
     corrections = _load_corrections(run_dir)
     if not corrections.empty:
         st.subheader("Последние ручные решения")
-        st.dataframe(corrections.tail(50), use_container_width=True, height=260)
+        st.dataframe(_display_df(corrections.tail(50)), use_container_width=True, height=260)
 
     if corrections_csv.exists() and st.button("Применить ручные решения", type="primary", use_container_width=True):
         steps = [
