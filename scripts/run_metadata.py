@@ -4,7 +4,7 @@ import argparse
 import json
 import platform
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from importlib import metadata
 from pathlib import Path
@@ -15,6 +15,9 @@ import yaml
 
 
 KEY_PACKAGES = ["numpy", "pandas", "opencv-python", "ultralytics", "streamlit", "torch"]
+STATUS_COLUMNS = ["status", "sku_status", "assignment_status"]
+SIMILARITY_COLUMNS = ["best_similarity", "similarity", "score", "sku_confidence"]
+MARGIN_COLUMNS = ["margin", "distinct_margin"]
 
 
 @dataclass
@@ -41,6 +44,20 @@ def _first_existing(root: Path, candidates: Iterable[str]) -> Optional[Path]:
     return None
 
 
+def _status_column(df: pd.DataFrame) -> Optional[str]:
+    for col in STATUS_COLUMNS:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _mean_from_columns(df: pd.DataFrame, columns: Iterable[str]) -> float:
+    for col in columns:
+        if col in df.columns:
+            return float(pd.to_numeric(df[col], errors="coerce").fillna(0).mean())
+    return 0.0
+
+
 def _package_version(package: str) -> str:
     try:
         return metadata.version(package)
@@ -59,9 +76,17 @@ def _cuda_status() -> str:
         return f"не удалось проверить: {exc}"
 
 
-def collect_run_counts(run_dir: Path) -> Dict[str, int | float]:
+def collect_run_counts(run_dir: Path) -> Dict[str, int | float | str]:
     summary_csv = _first_existing(run_dir, ["03_query_inference/summary.csv", "01_inference/summary.csv", "summary.csv"])
-    crops_csv = _first_existing(run_dir, ["03_query_crops/crops_manifest.csv", "02_demo_gallery/crops_manifest.csv", "crops_manifest.csv"])
+    crops_csv = _first_existing(
+        run_dir,
+        [
+            "04_identification/crops_manifest.csv",
+            "03_query_crops/crops_manifest.csv",
+            "02_demo_gallery/crops_manifest.csv",
+            "crops_manifest.csv",
+        ],
+    )
     gallery_csv = _first_existing(run_dir, ["02_demo_gallery/sku_gallery_final/gallery.csv", "02_demo_gallery/gallery.csv", "gallery.csv"])
     results_csv = _first_existing(run_dir, ["04_identification/identification_results.csv", "03_identification/identification_results.csv", "identification_results.csv"])
 
@@ -79,30 +104,26 @@ def collect_run_counts(run_dir: Path) -> Dict[str, int | float]:
     gallery_items = int(gallery_df["sku_id"].nunique()) if "sku_id" in gallery_df.columns else 0
     gallery_refs = int(len(gallery_df)) if not gallery_df.empty else 0
 
-    if "status" in results_df.columns:
-        matched = int(results_df["status"].eq("matched").sum())
-        matched_uncertain = int(results_df["status"].eq("matched_uncertain").sum())
-        unknown = int(results_df["status"].eq("unknown").sum())
+    status_col = _status_column(results_df)
+    if status_col:
+        statuses = results_df[status_col].astype(str)
+        matched = int(statuses.eq("matched").sum())
+        matched_uncertain = int(statuses.eq("matched_uncertain").sum())
+        unknown = int(statuses.eq("unknown").sum())
     else:
         matched = matched_uncertain = unknown = 0
 
-    avg_similarity = 0.0
-    for col in ["best_similarity", "similarity", "score"]:
-        if col in results_df.columns:
-            avg_similarity = float(pd.to_numeric(results_df[col], errors="coerce").fillna(0).mean())
-            break
-
-    avg_margin = 0.0
-    if "margin" in results_df.columns:
-        avg_margin = float(pd.to_numeric(results_df["margin"], errors="coerce").fillna(0).mean())
+    avg_similarity = _mean_from_columns(results_df, SIMILARITY_COLUMNS)
+    avg_margin = _mean_from_columns(results_df, MARGIN_COLUMNS)
 
     return {
         "processed_images": int(len(summary_df)) if not summary_df.empty else 0,
-        "detected_objects": detected_objects,
+        "detected_objects": int(detected_objects),
         "crops_count": int(len(crops_df)) if not crops_df.empty else 0,
         "gallery_items": gallery_items,
         "gallery_refs": gallery_refs,
         "identification_rows": int(len(results_df)) if not results_df.empty else 0,
+        "status_column": status_col or "",
         "matched": matched,
         "matched_uncertain": matched_uncertain,
         "unknown": unknown,
