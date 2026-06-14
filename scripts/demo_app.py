@@ -187,6 +187,19 @@ def _readiness(cfg: Dict[str, Any], images_dir: Path) -> Dict[str, bool]:
     }
 
 
+def _status_counts(df: pd.DataFrame) -> Dict[str, int]:
+    status_col = _status_column(df)
+    if df.empty or status_col is None:
+        return {"total": 0, "matched": 0, "matched_uncertain": 0, "unknown": 0}
+    statuses = df[status_col].astype(str)
+    return {
+        "total": int(len(df)),
+        "matched": int(statuses.eq("matched").sum()),
+        "matched_uncertain": int(statuses.eq("matched_uncertain").sum()),
+        "unknown": int(statuses.eq("unknown").sum()),
+    }
+
+
 def _metric_row(data: Dict[str, Any]) -> None:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Найдено товаров", data.get("detected_objects", 0))
@@ -198,20 +211,15 @@ def _metric_row(data: Dict[str, Any]) -> None:
 
 def _corrected_metric_row(run_dir: Path) -> None:
     corrected = _read_csv(_corrected_results_csv(run_dir))
-    status_col = _status_column(corrected)
-    if corrected.empty or status_col is None:
+    counts = _status_counts(corrected)
+    if counts["total"] == 0:
         st.info("Исправленный результат пока не сформирован.")
         return
-    statuses = corrected[status_col].astype(str)
-    total = len(corrected)
-    matched = int(statuses.eq("matched").sum())
-    uncertain = int(statuses.eq("matched_uncertain").sum())
-    unknown = int(statuses.eq("unknown").sum())
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Объектов в исправленной таблице", total)
-    c2.metric("Уверенно после правок", matched)
-    c3.metric("Осталось на проверке", uncertain)
-    c4.metric("Не определено после правок", unknown)
+    c1.metric("Объектов в исправленной таблице", counts["total"])
+    c2.metric("Уверенно после правок", counts["matched"])
+    c3.metric("Осталось на проверке", counts["matched_uncertain"])
+    c4.metric("Не определено после правок", counts["unknown"])
 
 
 def _mean_value(df: pd.DataFrame, col: str) -> float:
@@ -266,6 +274,42 @@ def _confusion_table(selected: pd.DataFrame) -> pd.DataFrame:
         mean_margin=("distinct_margin", "mean") if "distinct_margin" in subset.columns else ("second_distinct_sku", "size"),
     )
     return grouped.sort_values("count", ascending=False).reset_index().rename(columns={"second_distinct_sku": "Конкурирующий SKU"})
+
+
+def _comparison_table(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
+    b = _status_counts(before)
+    a = _status_counts(after)
+    rows = [
+        ("Всего объектов", b["total"], a["total"]),
+        ("Уверенно идентифицировано", b["matched"], a["matched"]),
+        ("Требует проверки", b["matched_uncertain"], a["matched_uncertain"]),
+        ("Не определено", b["unknown"], a["unknown"]),
+    ]
+    return pd.DataFrame(
+        [
+            {"Показатель": label, "До": before_value, "После": after_value, "Изменение": after_value - before_value}
+            for label, before_value, after_value in rows
+        ]
+    )
+
+
+def _changed_rows(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
+    if before.empty or after.empty or not {"image_name", "object_id"}.issubset(before.columns) or not {"image_name", "object_id"}.issubset(after.columns):
+        return pd.DataFrame()
+    before_status = _status_column(before)
+    after_status = _status_column(after)
+    if before_status is None or after_status is None:
+        return pd.DataFrame()
+    before_part = before[["image_name", "object_id", before_status, "sku_id", "sku_name"]].copy()
+    after_part = after[["image_name", "object_id", after_status, "sku_id", "sku_name"]].copy()
+    before_part = before_part.rename(columns={before_status: "status_before", "sku_id": "sku_before", "sku_name": "name_before"})
+    after_part = after_part.rename(columns={after_status: "status_after", "sku_id": "sku_after", "sku_name": "name_after"})
+    merged = before_part.merge(after_part, on=["image_name", "object_id"], how="inner")
+    changed = merged[
+        merged["status_before"].astype(str).ne(merged["status_after"].astype(str))
+        | merged["sku_before"].astype(str).ne(merged["sku_after"].astype(str))
+    ]
+    return changed
 
 
 def _render_result(run_dir: Path, show_table: bool = False) -> None:
@@ -554,7 +598,6 @@ def page_sku(cfg: Dict[str, Any]) -> None:
         st.dataframe(status_table, use_container_width=True, height=160)
         st.bar_chart(status_table.set_index("Статус")["Количество"])
 
-    st.subheader("Эталоны SKU")
     refs = gallery_df[gallery_df.get("sku_id", pd.Series(dtype=str)).astype(str).eq(sku)].head(9) if not gallery_df.empty and "sku_id" in gallery_df.columns else pd.DataFrame()
     if refs.empty:
         st.info("Эталоны выбранного SKU в галерее не найдены.")
@@ -567,7 +610,6 @@ def page_sku(cfg: Dict[str, Any]) -> None:
                 ref_paths.append(image)
         _render_image_grid(ref_paths, "Эталоны выбранного SKU", limit=9)
 
-    st.subheader("Найденные товары по этому SKU")
     found_paths = _crop_paths_from_rows(selected, limit=9)
     _render_image_grid(found_paths, "Примеры найденных товаров", limit=9)
 
@@ -599,6 +641,59 @@ def page_sku(cfg: Dict[str, Any]) -> None:
     st.subheader("Таблица объектов")
     object_cols = [c for c in ["image_name", "object_id", status_col or "", "sku_id", "sku_name", "sku_confidence", "distinct_margin", "second_distinct_sku", "crop_path"] if c and c in selected.columns]
     st.dataframe(selected[object_cols].head(300), use_container_width=True, height=420)
+
+
+def page_comparison(cfg: Dict[str, Any]) -> None:
+    st.title("Сравнение до/после")
+    run_raw = st.text_input("Папка результата", value=st.session_state.get("demo_run_dir", ""), key="comparison_run_dir")
+    if not run_raw:
+        st.info("Сначала выберите папку результата.")
+        return
+    run_dir = _to_runtime_path(run_raw)
+    before = _read_csv(_result_csv(run_dir))
+    after = _read_csv(_corrected_results_csv(run_dir))
+    corrections = _load_corrections(run_dir)
+
+    if before.empty:
+        st.warning("Исходная таблица SKU-сопоставления не найдена.")
+        return
+    if corrections.empty:
+        st.info("Ручные решения пока не сохранены. Сначала откройте раздел 'Проверка идентификации' и сохраните хотя бы одно решение.")
+    if after.empty:
+        st.info("Исправленная таблица пока не сформирована. Откройте раздел 'Отчёты' и нажмите 'Применить ручные решения'.")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Ручных решений", len(corrections))
+    c2.metric("Уникальных объектов с решением", len(corrections.drop_duplicates(["image_name", "object_id"])) if not corrections.empty and {"image_name", "object_id"}.issubset(corrections.columns) else 0)
+    c3.metric("Исправленная таблица", "готова" if not after.empty else "не готова")
+
+    if not after.empty:
+        st.subheader("Изменение итоговых показателей")
+        comparison = _comparison_table(before, after)
+        st.dataframe(comparison, use_container_width=True, height=220)
+
+        b = _status_counts(before)
+        a = _status_counts(after)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Уверенно идентифицировано", a["matched"], delta=a["matched"] - b["matched"])
+        c2.metric("Требует проверки", a["matched_uncertain"], delta=a["matched_uncertain"] - b["matched_uncertain"], delta_color="inverse")
+        c3.metric("Не определено", a["unknown"], delta=a["unknown"] - b["unknown"], delta_color="inverse")
+
+        chart_df = comparison[comparison["Показатель"].ne("Всего объектов")].set_index("Показатель")[["До", "После"]]
+        st.bar_chart(chart_df)
+
+        changed = _changed_rows(before, after)
+        st.subheader("Какие строки изменились")
+        if changed.empty:
+            st.info("Изменённые строки не найдены или нет общих ключей image_name/object_id.")
+        else:
+            st.dataframe(changed.head(300), use_container_width=True, height=360)
+
+    with st.expander("Ручные решения", expanded=False):
+        if corrections.empty:
+            st.info("Ручные решения не найдены.")
+        else:
+            st.dataframe(corrections.tail(200), use_container_width=True, height=360)
 
 
 def page_reports(cfg: Dict[str, Any]) -> None:
@@ -663,7 +758,7 @@ def page_reports(cfg: Dict[str, Any]) -> None:
 def main() -> None:
     cfg = _demo_config()
     st.set_page_config(page_title=cfg["app_title"], page_icon="🛒", layout="wide")
-    pages = ["Анализ полки", "Результат", "Проверка идентификации", "Анализ SKU", "Отчёты"]
+    pages = ["Анализ полки", "Результат", "Проверка идентификации", "Анализ SKU", "Сравнение до/после", "Отчёты"]
     current = st.sidebar.radio("Раздел", pages, index=pages.index(st.session_state.get("demo_page", "Анализ полки")) if st.session_state.get("demo_page", "Анализ полки") in pages else 0)
     st.session_state["demo_page"] = current
 
@@ -675,6 +770,8 @@ def main() -> None:
         page_review(cfg)
     elif current == "Анализ SKU":
         page_sku(cfg)
+    elif current == "Сравнение до/после":
+        page_comparison(cfg)
     else:
         page_reports(cfg)
 
