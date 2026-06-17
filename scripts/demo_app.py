@@ -18,6 +18,17 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "shelfvision.yaml"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 STATUS_COLUMNS = ["sku_status", "status", "assignment_status"]
+STATUS_LABELS = {
+    "matched": "Уверенно идентифицировано",
+    "matched_uncertain": "Требует проверки",
+    "unknown": "Не определено",
+}
+CORRECTION_LABELS = {
+    "confirm_match": "Подтверждён предложенный SKU",
+    "change_sku": "Выбран другой SKU",
+    "mark_unknown": "Оставлено не определённым",
+    "needs_review": "Отложено для проверки",
+}
 CORRECTION_COLUMNS = [
     "created_at",
     "image_name",
@@ -80,6 +91,14 @@ def _display_path(path: str | Path) -> str:
     return str(path)
 
 
+def _status_label(value: Any) -> str:
+    return STATUS_LABELS.get(str(value), str(value))
+
+
+def _correction_label(value: Any) -> str:
+    return CORRECTION_LABELS.get(str(value), str(value))
+
+
 def _status_column(df: pd.DataFrame) -> Optional[str]:
     for col in STATUS_COLUMNS:
         if col in df.columns:
@@ -94,6 +113,33 @@ def _read_csv(path: Path | None) -> pd.DataFrame:
         return pd.read_csv(path)
     except Exception:
         return pd.DataFrame()
+
+
+def _display_df(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    status_col = _status_column(result)
+    if status_col:
+        result[status_col] = result[status_col].map(_status_label)
+        result = result.rename(columns={status_col: "Статус"})
+    if "correction_type" in result.columns:
+        result["correction_type"] = result["correction_type"].map(_correction_label)
+        result = result.rename(columns={"correction_type": "Ручное решение"})
+    rename_map = {
+        "image_name": "Изображение",
+        "object_id": "Объект",
+        "sku_id": "SKU",
+        "sku_name": "Название SKU",
+        "sku_confidence": "Сходство",
+        "distinct_margin": "Отрыв",
+        "second_distinct_sku": "Второй SKU",
+        "crop_path": "Фрагмент",
+        "created_at": "Время",
+        "old_status": "Старый статус",
+        "old_sku_id": "Старый SKU",
+        "new_sku_id": "Новый SKU",
+        "comment": "Комментарий",
+    }
+    return result.rename(columns={key: value for key, value in rename_map.items() if key in result.columns})
 
 
 def _result_csv(run_dir: Path) -> Optional[Path]:
@@ -187,6 +233,19 @@ def _readiness(cfg: Dict[str, Any], images_dir: Path) -> Dict[str, bool]:
     }
 
 
+def _status_counts(df: pd.DataFrame) -> Dict[str, int]:
+    status_col = _status_column(df)
+    if df.empty or status_col is None:
+        return {"total": 0, "matched": 0, "matched_uncertain": 0, "unknown": 0}
+    statuses = df[status_col].astype(str)
+    return {
+        "total": int(len(df)),
+        "matched": int(statuses.eq("matched").sum()),
+        "matched_uncertain": int(statuses.eq("matched_uncertain").sum()),
+        "unknown": int(statuses.eq("unknown").sum()),
+    }
+
+
 def _metric_row(data: Dict[str, Any]) -> None:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Найдено товаров", data.get("detected_objects", 0))
@@ -198,20 +257,15 @@ def _metric_row(data: Dict[str, Any]) -> None:
 
 def _corrected_metric_row(run_dir: Path) -> None:
     corrected = _read_csv(_corrected_results_csv(run_dir))
-    status_col = _status_column(corrected)
-    if corrected.empty or status_col is None:
+    counts = _status_counts(corrected)
+    if counts["total"] == 0:
         st.info("Исправленный результат пока не сформирован.")
         return
-    statuses = corrected[status_col].astype(str)
-    total = len(corrected)
-    matched = int(statuses.eq("matched").sum())
-    uncertain = int(statuses.eq("matched_uncertain").sum())
-    unknown = int(statuses.eq("unknown").sum())
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Объектов в исправленной таблице", total)
-    c2.metric("Уверенно после правок", matched)
-    c3.metric("Осталось на проверке", uncertain)
-    c4.metric("Не определено после правок", unknown)
+    c1.metric("Объектов в исправленной таблице", counts["total"])
+    c2.metric("Уверенно после правок", counts["matched"])
+    c3.metric("Осталось на проверке", counts["matched_uncertain"])
+    c4.metric("Не определено после правок", counts["unknown"])
 
 
 def _mean_value(df: pd.DataFrame, col: str) -> float:
@@ -247,7 +301,7 @@ def _crop_paths_from_rows(rows: pd.DataFrame, limit: int = 9) -> list[Path]:
 def _sku_status_table(selected: pd.DataFrame, status_col: Optional[str]) -> pd.DataFrame:
     if not status_col:
         return pd.DataFrame(columns=["Статус", "Количество", "Доля"])
-    counts = selected[status_col].astype(str).value_counts().rename_axis("Статус").reset_index(name="Количество")
+    counts = selected[status_col].astype(str).map(_status_label).value_counts().rename_axis("Статус").reset_index(name="Количество")
     counts["Доля"] = counts["Количество"] / max(1, int(counts["Количество"].sum()))
     return counts
 
@@ -266,6 +320,98 @@ def _confusion_table(selected: pd.DataFrame) -> pd.DataFrame:
         mean_margin=("distinct_margin", "mean") if "distinct_margin" in subset.columns else ("second_distinct_sku", "size"),
     )
     return grouped.sort_values("count", ascending=False).reset_index().rename(columns={"second_distinct_sku": "Конкурирующий SKU"})
+
+
+def _comparison_table(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
+    b = _status_counts(before)
+    a = _status_counts(after)
+    rows = [
+        ("Всего объектов", b["total"], a["total"]),
+        ("Уверенно идентифицировано", b["matched"], a["matched"]),
+        ("Требует проверки", b["matched_uncertain"], a["matched_uncertain"]),
+        ("Не определено", b["unknown"], a["unknown"]),
+    ]
+    return pd.DataFrame(
+        [
+            {"Показатель": label, "До": before_value, "После": after_value, "Изменение": after_value - before_value}
+            for label, before_value, after_value in rows
+        ]
+    )
+
+
+def _changed_rows(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
+    if before.empty or after.empty or not {"image_name", "object_id"}.issubset(before.columns) or not {"image_name", "object_id"}.issubset(after.columns):
+        return pd.DataFrame()
+    before_status = _status_column(before)
+    after_status = _status_column(after)
+    if before_status is None or after_status is None:
+        return pd.DataFrame()
+    before_part = before[["image_name", "object_id", before_status, "sku_id", "sku_name"]].copy()
+    after_part = after[["image_name", "object_id", after_status, "sku_id", "sku_name"]].copy()
+    before_part = before_part.rename(columns={before_status: "status_before", "sku_id": "sku_before", "sku_name": "name_before"})
+    after_part = after_part.rename(columns={after_status: "status_after", "sku_id": "sku_after", "sku_name": "name_after"})
+    merged = before_part.merge(after_part, on=["image_name", "object_id"], how="inner")
+    changed = merged[
+        merged["status_before"].astype(str).ne(merged["status_after"].astype(str))
+        | merged["sku_before"].astype(str).ne(merged["sku_after"].astype(str))
+    ]
+    if not changed.empty:
+        changed["status_before"] = changed["status_before"].map(_status_label)
+        changed["status_after"] = changed["status_after"].map(_status_label)
+    return changed.rename(
+        columns={
+            "image_name": "Изображение",
+            "object_id": "Объект",
+            "status_before": "Статус до",
+            "status_after": "Статус после",
+            "sku_before": "SKU до",
+            "sku_after": "SKU после",
+            "name_before": "Название до",
+            "name_after": "Название после",
+        }
+    )
+
+
+def _download_file(label: str, path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        return
+    suffix = path.suffix.lower()
+    mime = "text/csv" if suffix == ".csv" else "application/json" if suffix == ".json" else "text/plain"
+    try:
+        data = path.read_bytes()
+    except Exception:
+        return
+    st.download_button(
+        label=f"Скачать: {label}",
+        data=data,
+        file_name=path.name,
+        mime=mime,
+        use_container_width=True,
+        key=f"download_{label}_{path.name}",
+    )
+
+
+def _next_steps(run_dir: Path) -> None:
+    st.subheader("Что делать дальше")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info("Проверьте спорные товары и сохраните ручные решения.")
+        if st.button("Проверить спорные товары", use_container_width=True, key="next_review"):
+            st.session_state["demo_run_dir"] = str(run_dir)
+            st.session_state["demo_page"] = "Проверка идентификации"
+            st.rerun()
+    with c2:
+        st.info("Посмотрите, с какими товарами путается конкретный SKU.")
+        if st.button("Анализировать SKU", use_container_width=True, key="next_sku"):
+            st.session_state["demo_run_dir"] = str(run_dir)
+            st.session_state["demo_page"] = "Анализ SKU"
+            st.rerun()
+    with c3:
+        st.info("Сформируйте исправленную таблицу и отчёт по ручным решениям.")
+        if st.button("Перейти к отчётам", use_container_width=True, key="next_reports"):
+            st.session_state["demo_run_dir"] = str(run_dir)
+            st.session_state["demo_page"] = "Отчёты"
+            st.rerun()
 
 
 def _render_result(run_dir: Path, show_table: bool = False) -> None:
@@ -297,13 +443,15 @@ def _render_result(run_dir: Path, show_table: bool = False) -> None:
             with cols[index % 3]:
                 st.image(str(image_path), caption=image_path.name, use_container_width=True)
 
+    _next_steps(run_dir)
+
     if show_table:
         st.subheader("Таблица SKU-сопоставления")
-        st.dataframe(data["results_df"], use_container_width=True, height=420)
+        st.dataframe(_display_df(data["results_df"]), use_container_width=True, height=420)
         corrected_df = _read_csv(_corrected_results_csv(run_dir))
         if not corrected_df.empty:
             st.subheader("Исправленная таблица с учётом ручных решений")
-            st.dataframe(corrected_df, use_container_width=True, height=420)
+            st.dataframe(_display_df(corrected_df), use_container_width=True, height=420)
 
 
 def _build_steps(cfg: Dict[str, Any], images_dir: Path, out_dir: Path) -> list[CommandStep]:
@@ -454,7 +602,7 @@ def page_review(cfg: Dict[str, Any]) -> None:
         return
 
     preview_cols = [c for c in ["image_name", "object_id", "sku_id", "sku_name", "best_distinct_sku", "second_distinct_sku", "sku_confidence", "distinct_margin", "crop_path"] if c in uncertain.columns]
-    st.dataframe(uncertain[preview_cols].head(200), use_container_width=True, height=320)
+    st.dataframe(_display_df(uncertain[preview_cols].head(200)), use_container_width=True, height=320)
 
     selected_index = st.selectbox("Посмотреть объект", uncertain.index.tolist(), format_func=lambda i: f"строка {i}: объект {uncertain.loc[i].get('object_id', '')}")
     row = uncertain.loc[selected_index]
@@ -507,7 +655,7 @@ def page_review(cfg: Dict[str, Any]) -> None:
         if updated.empty:
             st.info("Ручные решения пока не сохранены.")
         else:
-            st.dataframe(updated.tail(100), use_container_width=True, height=320)
+            st.dataframe(_display_df(updated.tail(100)), use_container_width=True, height=320)
 
 
 def page_sku(cfg: Dict[str, Any]) -> None:
@@ -554,7 +702,6 @@ def page_sku(cfg: Dict[str, Any]) -> None:
         st.dataframe(status_table, use_container_width=True, height=160)
         st.bar_chart(status_table.set_index("Статус")["Количество"])
 
-    st.subheader("Эталоны SKU")
     refs = gallery_df[gallery_df.get("sku_id", pd.Series(dtype=str)).astype(str).eq(sku)].head(9) if not gallery_df.empty and "sku_id" in gallery_df.columns else pd.DataFrame()
     if refs.empty:
         st.info("Эталоны выбранного SKU в галерее не найдены.")
@@ -567,7 +714,6 @@ def page_sku(cfg: Dict[str, Any]) -> None:
                 ref_paths.append(image)
         _render_image_grid(ref_paths, "Эталоны выбранного SKU", limit=9)
 
-    st.subheader("Найденные товары по этому SKU")
     found_paths = _crop_paths_from_rows(selected, limit=9)
     _render_image_grid(found_paths, "Примеры найденных товаров", limit=9)
 
@@ -578,7 +724,7 @@ def page_sku(cfg: Dict[str, Any]) -> None:
     if not uncertain.empty:
         st.subheader("Спорные объекты по выбранному SKU")
         uncertainty_cols = [c for c in ["image_name", "object_id", "sku_id", "sku_name", "second_distinct_sku", "sku_confidence", "distinct_margin", "crop_path"] if c in uncertain.columns]
-        st.dataframe(uncertain[uncertainty_cols].head(200), use_container_width=True, height=260)
+        st.dataframe(_display_df(uncertain[uncertainty_cols].head(200)), use_container_width=True, height=260)
 
     confusion = _confusion_table(selected)
     if not confusion.empty:
@@ -594,11 +740,64 @@ def page_sku(cfg: Dict[str, Any]) -> None:
         ]
         if not related.empty:
             st.subheader("Ручные решения, связанные с этим SKU")
-            st.dataframe(related.tail(100), use_container_width=True, height=260)
+            st.dataframe(_display_df(related.tail(100)), use_container_width=True, height=260)
 
     st.subheader("Таблица объектов")
     object_cols = [c for c in ["image_name", "object_id", status_col or "", "sku_id", "sku_name", "sku_confidence", "distinct_margin", "second_distinct_sku", "crop_path"] if c and c in selected.columns]
-    st.dataframe(selected[object_cols].head(300), use_container_width=True, height=420)
+    st.dataframe(_display_df(selected[object_cols].head(300)), use_container_width=True, height=420)
+
+
+def page_comparison(cfg: Dict[str, Any]) -> None:
+    st.title("Сравнение до/после")
+    run_raw = st.text_input("Папка результата", value=st.session_state.get("demo_run_dir", ""), key="comparison_run_dir")
+    if not run_raw:
+        st.info("Сначала выберите папку результата.")
+        return
+    run_dir = _to_runtime_path(run_raw)
+    before = _read_csv(_result_csv(run_dir))
+    after = _read_csv(_corrected_results_csv(run_dir))
+    corrections = _load_corrections(run_dir)
+
+    if before.empty:
+        st.warning("Исходная таблица SKU-сопоставления не найдена.")
+        return
+    if corrections.empty:
+        st.info("Ручные решения пока не сохранены. Сначала откройте раздел 'Проверка идентификации' и сохраните хотя бы одно решение.")
+    if after.empty:
+        st.info("Исправленная таблица пока не сформирована. Откройте раздел 'Отчёты' и нажмите 'Применить ручные решения'.")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Ручных решений", len(corrections))
+    c2.metric("Уникальных объектов с решением", len(corrections.drop_duplicates(["image_name", "object_id"])) if not corrections.empty and {"image_name", "object_id"}.issubset(corrections.columns) else 0)
+    c3.metric("Исправленная таблица", "готова" if not after.empty else "не готова")
+
+    if not after.empty:
+        st.subheader("Изменение итоговых показателей")
+        comparison = _comparison_table(before, after)
+        st.dataframe(comparison, use_container_width=True, height=220)
+
+        b = _status_counts(before)
+        a = _status_counts(after)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Уверенно идентифицировано", a["matched"], delta=a["matched"] - b["matched"])
+        c2.metric("Требует проверки", a["matched_uncertain"], delta=a["matched_uncertain"] - b["matched_uncertain"], delta_color="inverse")
+        c3.metric("Не определено", a["unknown"], delta=a["unknown"] - b["unknown"], delta_color="inverse")
+
+        chart_df = comparison[comparison["Показатель"].ne("Всего объектов")].set_index("Показатель")[["До", "После"]]
+        st.bar_chart(chart_df)
+
+        changed = _changed_rows(before, after)
+        st.subheader("Какие строки изменились")
+        if changed.empty:
+            st.info("Изменённые строки не найдены или нет общих ключей image_name/object_id.")
+        else:
+            st.dataframe(changed.head(300), use_container_width=True, height=360)
+
+    with st.expander("Ручные решения", expanded=False):
+        if corrections.empty:
+            st.info("Ручные решения не найдены.")
+        else:
+            st.dataframe(_display_df(corrections.tail(200)), use_container_width=True, height=360)
 
 
 def page_reports(cfg: Dict[str, Any]) -> None:
@@ -623,10 +822,18 @@ def page_reports(cfg: Dict[str, Any]) -> None:
     for label, path in paths:
         st.write(f"- **{label}:** `{path}` {'✅' if path.exists() else '⚠️'}")
 
+    downloadable = [(label, path) for label, path in paths if path.exists() and path.is_file()]
+    if downloadable:
+        st.subheader("Скачать материалы")
+        cols = st.columns(2)
+        for index, (label, path) in enumerate(downloadable):
+            with cols[index % 2]:
+                _download_file(label, path)
+
     corrections = _load_corrections(run_dir)
     if not corrections.empty:
         st.subheader("Последние ручные решения")
-        st.dataframe(corrections.tail(50), use_container_width=True, height=260)
+        st.dataframe(_display_df(corrections.tail(50)), use_container_width=True, height=260)
 
     if corrections_csv.exists() and st.button("Применить ручные решения", type="primary", use_container_width=True):
         steps = [
@@ -663,7 +870,7 @@ def page_reports(cfg: Dict[str, Any]) -> None:
 def main() -> None:
     cfg = _demo_config()
     st.set_page_config(page_title=cfg["app_title"], page_icon="🛒", layout="wide")
-    pages = ["Анализ полки", "Результат", "Проверка идентификации", "Анализ SKU", "Отчёты"]
+    pages = ["Анализ полки", "Результат", "Проверка идентификации", "Анализ SKU", "Сравнение до/после", "Отчёты"]
     current = st.sidebar.radio("Раздел", pages, index=pages.index(st.session_state.get("demo_page", "Анализ полки")) if st.session_state.get("demo_page", "Анализ полки") in pages else 0)
     st.session_state["demo_page"] = current
 
@@ -675,6 +882,8 @@ def main() -> None:
         page_review(cfg)
     elif current == "Анализ SKU":
         page_sku(cfg)
+    elif current == "Сравнение до/после":
+        page_comparison(cfg)
     else:
         page_reports(cfg)
 
