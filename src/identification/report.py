@@ -72,7 +72,9 @@ def build_identified_predictions(
                         "second_distinct_sku": matched.second_distinct_sku,
                         "second_distinct_score": matched.second_distinct_score,
                         "distinct_margin": matched.distinct_margin,
-                        "sku_top_k": [candidate.__dict__ for candidate in matched.top_k],
+                        "sku_top_k": [
+                            candidate.__dict__ for candidate in matched.top_k
+                        ],
                         "track_id": matched.track_id,
                         "track_stabilized": matched.track_stabilized,
                         "track_frames_count": matched.track_frames_count,
@@ -84,10 +86,18 @@ def build_identified_predictions(
 
         enriched = dict(prediction)
         enriched["detections"] = detections
-        enriched["identified_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "matched")
-        enriched["matched_uncertain_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "matched_uncertain")
-        enriched["unknown_objects_count"] = sum(1 for item in detections if item.get("sku_status") == "unknown")
-        enriched["tracked_objects_count"] = sum(1 for item in detections if item.get("track_id") is not None)
+        enriched["identified_objects_count"] = sum(
+            1 for item in detections if item.get("sku_status") == "matched"
+        )
+        enriched["matched_uncertain_objects_count"] = sum(
+            1 for item in detections if item.get("sku_status") == "matched_uncertain"
+        )
+        enriched["unknown_objects_count"] = sum(
+            1 for item in detections if item.get("sku_status") == "unknown"
+        )
+        enriched["tracked_objects_count"] = sum(
+            1 for item in detections if item.get("track_id") is not None
+        )
         identified.append(enriched)
     return identified
 
@@ -99,9 +109,15 @@ def save_identification_outputs(
     out_dir: str | Path,
 ) -> None:
     out_dir = Path(out_dir)
-    save_json([result_to_dict(item) for item in results], out_dir / "identification_results.json")
+    save_json(
+        [result_to_dict(item) for item in results],
+        out_dir / "identification_results.json",
+    )
     save_json(metrics, out_dir / "identification_metrics.json")
-    save_json(build_identified_predictions(predictions_json, results), out_dir / "identified_predictions.json")
+    save_json(
+        build_identified_predictions(predictions_json, results),
+        out_dir / "identified_predictions.json",
+    )
     save_identification_report(results=results, metrics=metrics, out_dir=out_dir)
 
 
@@ -130,17 +146,27 @@ def save_identification_report(
         f"- Треков в видео: {tracks_count}",
         f"- Объектов со стабилизированным SKU по треку: {stabilized_count}",
     ]
-    if "top1_accuracy" in metrics:
+    if metrics.get("has_ground_truth_sku"):
         lines.extend(
             [
-                f"- Точность top-1: {metrics.get('top1_accuracy', 0):.4f}",
-                f"- Точность top-k: {metrics.get('topk_accuracy', 0):.4f}",
-                f"- Доля ложных уверенных совпадений: {metrics.get('false_match_rate', 0):.4f}",
+                f"- Top-1 accuracy по эталонной SKU-разметке: {metrics.get('top1_accuracy', 0):.4f}",
+                f"- Top-k accuracy по эталонной SKU-разметке: {metrics.get('topk_accuracy', 0):.4f}",
+                f"- Доля ложных уверенных сопоставлений по GT: {metrics.get('false_match_rate', 0):.4f}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "Примечание: эталонная SKU-разметка не передана, поэтому top-1/top-k accuracy не рассчитывались.",
+                "Доли matched, matched_uncertain и unknown описывают распределение статусов сопоставления с демонстрационной SKU-галереей.",
             ]
         )
 
     lines.extend(["", "## Первые результаты", ""])
-    lines.append("| изображение | объект | трек | статус | SKU | безопасный SKU | confidence | отрыв | crop |")
+    lines.append(
+        "| изображение | объект | трек | статус | SKU | безопасный SKU | confidence | отрыв | crop |"
+    )
     lines.append("|---|---:|---:|---|---|---|---:|---:|---|")
     for item in results[:30]:
         track = item.track_id if item.track_id is not None else ""

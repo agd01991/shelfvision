@@ -13,43 +13,96 @@ DEFAULT_THRESHOLDS = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90]
 THRESHOLD_ANALYSIS_COLUMNS_RU = {
     "threshold": "Порог идентификации",
     "total_objects": "Всего объектов",
-    "matched": "Уверенные совпадения",
-    "unknown": "Неопределённые объекты",
-    "matched_rate": "Доля уверенных совпадений",
-    "unknown_rate": "Доля неопределённых объектов",
+    "matched": "Уверенные сопоставления",
+    "matched_uncertain": "Спорные сопоставления",
+    "unknown": "Неопределенные объекты",
+    "assigned": "Объекты с назначенным кандидатом",
+    "matched_rate": "Доля уверенных сопоставлений",
+    "matched_uncertain_rate": "Доля спорных сопоставлений",
+    "unknown_rate": "Доля неопределенных объектов",
+    "assigned_rate": "Доля объектов с назначенным кандидатом",
     "avg_similarity_all": "Среднее сходство по всем объектам",
-    "avg_similarity_matched": "Среднее сходство уверенных совпадений",
-    "min_similarity_matched": "Минимальное сходство среди уверенных совпадений",
-    "max_similarity_unknown": "Максимальное сходство среди неопределённых объектов",
+    "avg_similarity_matched": "Среднее сходство уверенных сопоставлений",
+    "mean_margin_matched": "Средний margin уверенных сопоставлений",
 }
 
 
 def build_threshold_analysis(
     results: List[IdentificationResult],
     thresholds: Iterable[float] = DEFAULT_THRESHOLDS,
+    ambiguity_margin: float = 0.03,
+    enable_uncertain_status: bool = True,
 ) -> pd.DataFrame:
     total = len(results)
     rows = []
+
     for threshold in thresholds:
         threshold = float(threshold)
-        matched_items = [item for item in results if item.sku_confidence >= threshold]
-        unknown_items = [item for item in results if item.sku_confidence < threshold]
+
+        matched_items = []
+        uncertain_items = []
+        unknown_items = []
+
+        for item in results:
+            score = float(item.sku_confidence or 0.0)
+            margin = item.distinct_margin
+
+            if score < threshold:
+                unknown_items.append(item)
+            elif (
+                enable_uncertain_status
+                and margin is not None
+                and float(margin) < ambiguity_margin
+            ):
+                uncertain_items.append(item)
+            else:
+                matched_items.append(item)
+
         matched = len(matched_items)
+        matched_uncertain = len(uncertain_items)
         unknown = len(unknown_items)
+        assigned = matched + matched_uncertain
+
         rows.append(
             {
                 "threshold": threshold,
                 "total_objects": total,
                 "matched": matched,
+                "matched_uncertain": matched_uncertain,
                 "unknown": unknown,
+                "assigned": assigned,
                 "matched_rate": matched / total if total else 0.0,
+                "matched_uncertain_rate": matched_uncertain / total if total else 0.0,
                 "unknown_rate": unknown / total if total else 0.0,
-                "avg_similarity_all": sum(item.sku_confidence for item in results) / total if total else 0.0,
-                "avg_similarity_matched": sum(item.sku_confidence for item in matched_items) / matched if matched else 0.0,
-                "min_similarity_matched": min((item.sku_confidence for item in matched_items), default=0.0),
-                "max_similarity_unknown": max((item.sku_confidence for item in unknown_items), default=0.0),
+                "assigned_rate": assigned / total if total else 0.0,
+                "avg_similarity_all": sum(item.sku_confidence for item in results)
+                / total
+                if total
+                else 0.0,
+                "avg_similarity_matched": sum(
+                    item.sku_confidence for item in matched_items
+                )
+                / matched
+                if matched
+                else 0.0,
+                "mean_margin_matched": (
+                    sum(
+                        float(item.distinct_margin)
+                        for item in matched_items
+                        if item.distinct_margin is not None
+                    )
+                    / max(
+                        1,
+                        sum(
+                            1
+                            for item in matched_items
+                            if item.distinct_margin is not None
+                        ),
+                    )
+                ),
             }
         )
+
     return pd.DataFrame(rows)
 
 
@@ -82,8 +135,18 @@ def _save_threshold_plot(df: pd.DataFrame, out_dir: Path) -> dict[str, Path]:
     svg_path = out_dir / "threshold_analysis_plot.svg"
 
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.plot(df["threshold"], df["matched_rate"], marker="o", label="доля уверенных совпадений")
-    ax.plot(df["threshold"], df["unknown_rate"], marker="o", label="доля неопределённых объектов")
+    ax.plot(
+        df["threshold"],
+        df["matched_rate"],
+        marker="o",
+        label="доля уверенных совпадений",
+    )
+    ax.plot(
+        df["threshold"],
+        df["unknown_rate"],
+        marker="o",
+        label="доля неопределённых объектов",
+    )
     ax.set_title("Влияние порога сходства на идентификацию")
     ax.set_xlabel("Порог визуального сходства")
     ax.set_ylabel("Доля объектов")
@@ -94,7 +157,10 @@ def _save_threshold_plot(df: pd.DataFrame, out_dir: Path) -> dict[str, Path]:
     fig.savefig(png_path, dpi=180)
     fig.savefig(svg_path)
     plt.close(fig)
-    return {"threshold_analysis_plot_png": png_path, "threshold_analysis_plot_svg": svg_path}
+    return {
+        "threshold_analysis_plot_png": png_path,
+        "threshold_analysis_plot_svg": svg_path,
+    }
 
 
 def _recommended_threshold_text(df: pd.DataFrame) -> str:
@@ -124,6 +190,8 @@ def save_threshold_analysis(
     results: List[IdentificationResult],
     out_dir: str | Path,
     thresholds: Iterable[float] = DEFAULT_THRESHOLDS,
+    ambiguity_margin: float = 0.03,
+    enable_uncertain_status: bool = True,
 ) -> dict[str, Path]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -147,15 +215,19 @@ def save_threshold_analysis(
         "",
     ]
     if "threshold_analysis_plot_png" in plot_outputs:
-        lines.extend([
-            "![График влияния порога на долю уверенных совпадений и неопределённых объектов](threshold_analysis_plot.png)",
-            "",
-        ])
+        lines.extend(
+            [
+                "![График влияния порога на долю уверенных совпадений и неопределённых объектов](threshold_analysis_plot.png)",
+                "",
+            ]
+        )
     else:
-        lines.extend([
-            "График не был сформирован. Проверь, установлен ли `matplotlib`.",
-            "",
-        ])
+        lines.extend(
+            [
+                "График не был сформирован. Проверь, установлен ли `matplotlib`.",
+                "",
+            ]
+        )
 
     lines.extend(
         [
@@ -169,4 +241,8 @@ def save_threshold_analysis(
         ]
     )
     md_path.write_text("\n".join(lines), encoding="utf-8")
-    return {"threshold_analysis_csv": csv_path, "threshold_analysis_md": md_path, **plot_outputs}
+    return {
+        "threshold_analysis_csv": csv_path,
+        "threshold_analysis_md": md_path,
+        **plot_outputs,
+    }

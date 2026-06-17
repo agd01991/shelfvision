@@ -5,6 +5,7 @@ import json
 import shutil
 import time
 import traceback
+import argparse
 from pathlib import Path
 
 from ultralytics import YOLO
@@ -184,6 +185,21 @@ def run_one(exp_name: str, model_path: str, override: dict) -> None:
     print("SUMMARY:", SUMMARY_PATH)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--run-base",
+        action="store_true",
+        help="Запустить BASE-конфигурацию перед ablation-запусками",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Перезапустить даже уже выполненные эксперименты",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
     if not DATASET_DIR.exists():
         raise FileNotFoundError(f"DATASET_DIR not found: {DATASET_DIR}")
@@ -194,29 +210,30 @@ def main() -> None:
 
     state = load_state()
     done = set(state.get("done", []))
+    args = parse_args()
 
     # BASE
-    # if BASE_NAME not in done:
-    #     try:
-    #         run_one(BASE_NAME, BASE_MODEL, {})
-    #         done.add(BASE_NAME)
-    #         state["done"] = sorted(done)
-    #         save_state(state)
-    #     except Exception as e:
-    #         print("BASE FAILED:", repr(e))
-    #         traceback.print_exc()
-    #         append_summary(
-    #             {
-    #                 "exp": BASE_NAME,
-    #                 "status": f"failed: {type(e).__name__}",
-    #                 "error": repr(e),
-    #             }
-    #         )
-    #         save_state({"done": sorted(done)})
+    if args.run_base and (args.force or BASE_NAME not in done):
+        try:
+            run_one(BASE_NAME, BASE_MODEL, {})
+            done.add(BASE_NAME)
+            state["done"] = sorted(done)
+            save_state(state)
+        except Exception as e:
+            print("BASE FAILED:", repr(e))
+            traceback.print_exc()
+            append_summary(
+                {
+                    "exp": BASE_NAME,
+                    "status": f"failed: {type(e).__name__}",
+                    "error": repr(e),
+                }
+            )
+            save_state({"done": sorted(done)})
 
     # Others
     for exp in EXPERIMENTS:
-        if exp["name"] in done:
+        if exp["name"] in done and not args.force:
             print("SKIP (already done):", exp["name"])
             continue
         try:
