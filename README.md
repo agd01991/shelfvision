@@ -78,6 +78,8 @@ streamlit run scripts/control_panel_wsl_app.py
 10. сравнение результата до и после ручной проверки;
 11. экспорт отчетных файлов.
 
+Вкладка **«0. Сценарий защиты»** содержит чек-лист готовности и пошаговый сценарий демонстрации на 5 минут.
+
 Интерфейс предназначен для демонстрации исследовательского прототипа и не заявляется как промышленная система контроля планограмм.
 
 ## Установка зависимостей через WSL
@@ -146,7 +148,10 @@ python3 -m venv .venv_wsl
 05_reports/full_experiment_summary.md
 05_reports/threshold_analysis.csv
 06_manual_identification/manual_identification_edits.csv
+06_manual_identification/manual_reference_suggestions.csv
 06_manual_identification/identification_results_corrected.csv
+selected_sku_demo/selected_sku_report.md
+defense_export/vkr_defense_artifacts.zip
 ```
 
 ## Документы для защиты
@@ -154,4 +159,5 @@ python3 -m venv .venv_wsl
 - `docs/DEFENSE_FAQ.md` — ответы на вопросы комиссии;
 - `docs/SIMILAR_PROJECTS.md` — отличие от открытых проектов с похожим названием;
 - `docs/REPRODUCIBILITY.md` — воспроизводимость итогового запуска;
+- `docs/DEMO_SCRIPT_5_MIN.md` — сценарий демонстрации на защите за 5 минут;
 - `data/README.md` — описание локального размещения данных.
