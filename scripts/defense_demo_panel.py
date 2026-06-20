@@ -380,6 +380,30 @@ def _render_faq() -> None:
         st.info("Файл FAQ пока не найден.")
 
 
+def _render_demo_script() -> None:
+    script_path = ROOT / "docs" / "DEMO_SCRIPT_5_MIN.md"
+    text = _read_text(script_path, max_chars=40000)
+    if text:
+        st.markdown(text)
+    else:
+        st.info("Файл сценария демонстрации пока не найден.")
+
+
+def _render_readiness_checklist(experiment_dir: Path) -> None:
+    st.markdown("#### Быстрый чек-лист перед показом")
+    checks = {
+        "есть итоговая сводка": experiment_dir / "05_reports" / "full_experiment_summary.md",
+        "есть результаты идентификации": experiment_dir / "04_identification" / "identification_results.csv",
+        "есть crop-манифест": experiment_dir / "04_identification" / "crops_manifest.csv",
+        "есть corrected-результат или журнал правок": experiment_dir / "06_manual_identification" / "manual_identification_edits.csv",
+        "есть FAQ защиты": ROOT / "docs" / "DEFENSE_FAQ.md",
+        "есть сценарий на 5 минут": ROOT / "docs" / "DEMO_SCRIPT_5_MIN.md",
+    }
+    for title, path in checks.items():
+        icon = "✅" if _p(path).exists() else "⚠️"
+        st.write(f"{icon} {title}: `{_rel(_p(path))}`")
+
+
 def page_defense_demo(config: Dict[str, Any]) -> None:
     st.header("Демо защиты: полный визуальный контур")
     st.caption(
@@ -396,6 +420,7 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
     )
 
     tabs = st.tabs([
+        "0. Сценарий защиты",
         "1. Обзор",
         "2. Данные и профиль",
         "3. Фрагменты",
@@ -408,6 +433,11 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
     ])
 
     with tabs[0]:
+        _render_readiness_checklist(experiment_dir)
+        st.divider()
+        _render_demo_script()
+
+    with tabs[1]:
         _render_summary_metrics(experiment_dir)
         st.markdown("#### Готовность артефактов")
         _render_file_links(
@@ -431,7 +461,7 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
                 with cols[idx % len(cols)]:
                     st.image(str(image), caption=image.name, use_container_width=True)
 
-    with tabs[1]:
+    with tabs[2]:
         _render_final_profile(config)
         st.markdown("#### Манифест изображений")
         for label, path in {
@@ -446,20 +476,20 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
                 with st.expander(f"{label}: {len(df)} строк", expanded=False):
                     st.dataframe(df.head(200), use_container_width=True, hide_index=True)
 
-    with tabs[2]:
+    with tabs[3]:
         _render_crop_gallery(experiment_dir)
 
-    with tabs[3]:
+    with tabs[4]:
         _render_results_table(experiment_dir)
         st.info("Для ручного изменения конкретного назначения открой раздел `Ручная проверка идентификации` в меню `Запуск задач`.")
 
-    with tabs[4]:
+    with tabs[5]:
         _render_before_after(experiment_dir)
 
-    with tabs[5]:
+    with tabs[6]:
         _render_selected_sku_export(experiment_dir)
 
-    with tabs[6]:
+    with tabs[7]:
         reports = {
             "full_experiment_summary.md": experiment_dir / "05_reports" / "full_experiment_summary.md",
             "threshold_analysis.csv": experiment_dir / "05_reports" / "threshold_analysis.csv",
@@ -481,8 +511,8 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
                 else:
                     st.code(_read_text(path), language="text")
 
-    with tabs[7]:
+    with tabs[8]:
         _render_export(experiment_dir)
 
-    with tabs[8]:
+    with tabs[9]:
         _render_faq()
