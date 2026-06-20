@@ -10,7 +10,9 @@ import yaml
 
 from control_panel import ensure_config_exists, load_config, page_downloads, save_config
 from control_panel_wsl import page_actions_wsl, page_config_wsl
+from defense_demo_panel import page_defense_demo
 from full_photo_identification_panel import page_full_photo_identification
+from identification_review_panel import page_identification_review
 from manual_cluster_editor_panel import page_manual_cluster_editor
 from night_experiments_panel import page_night_experiments_reports
 from setup_pages import page_setup
@@ -89,6 +91,10 @@ def _find_key_files(root: Path) -> List[Path]:
         "manual_vs_original_report.md",
         "manual_cluster_edits.csv",
         "manual_cluster_edits_applied.csv",
+        "manual_identification_edits.csv",
+        "manual_identification_report.md",
+        "manual_identification_summary.json",
+        "identification_results_corrected.csv",
         "sku_similarity_audit_report.md",
         "sku_similarity_audit_summary.json",
         "sku_to_sku_similarity.csv",
@@ -157,6 +163,7 @@ def _find_preview_images(root: Path, limit: int = 12) -> List[Path]:
     if root.is_dir():
         for sub in [
             root / "04_identification" / "visualized",
+            root / "06_manual_identification" / "visualized",
             root / "06_manual_gallery" / "manual_identification" / "visualized",
             root / "03_identification" / "visualized",
             root / "visualized",
@@ -229,8 +236,18 @@ def _render_result_dir(title: str, root: Path | None, config_key: str, advanced:
     if key_files:
         st.write("Ключевые файлы:")
         visible_files = key_files[:30] if advanced else key_files[:8]
+        expanded_names = {
+            "assignment_uncertainty_report.md",
+            "manual_gallery_report.md",
+            "manual_identification_report.md",
+            "sku_purity_audit_report.md",
+            "full_experiment_summary.md",
+            "experiment_summary.md",
+            "night_experiments_detailed_report.md",
+            "vkr_night_experiments_section.md",
+        }
         for path in visible_files:
-            with st.expander(_rel_or_abs(path), expanded=path.name in {"assignment_uncertainty_report.md", "manual_gallery_report.md", "sku_purity_audit_report.md", "full_experiment_summary.md", "experiment_summary.md", "night_experiments_detailed_report.md", "vkr_night_experiments_section.md"}):
+            with st.expander(_rel_or_abs(path), expanded=path.name in expanded_names):
                 if path.suffix.lower() == ".md":
                     _render_markdown_preview(path)
                 elif path.suffix.lower() in TEXT_EXTS:
@@ -299,6 +316,8 @@ def page_actions_app(config: Dict[str, Any]) -> None:
         st.divider()
 
     page_full_photo_identification(config)
+    st.divider()
+    page_identification_review(config)
 
     if advanced:
         st.divider()
@@ -336,7 +355,7 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
 
     st.success(f"Найдено рабочих папок: {len(existing)} из {len(candidates)}")
 
-    st.info("Подробный просмотр серии экспериментов SKU110K, аудита и ручного редактора кластеров находится в разделе `Запуск задач`.")
+    st.info("Подробный просмотр полного сценария защиты находится в разделе `Демо защиты`. Ручная проверка идентификации находится в разделе `Запуск задач`.")
 
     if advanced:
         selected_titles = st.multiselect(
@@ -360,16 +379,21 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Панель управления ShelfVision", page_icon="🧰", layout="wide")
+    st.set_page_config(page_title="Демо ВКР: анализ полочных сцен", page_icon="🧰", layout="wide")
     ensure_config_exists()
     config = load_config()
     config.setdefault("runtime", {}).setdefault("use_wsl_runtime", True)
 
-    st.title("🧰 Панель управления ShelfVision")
-    st.caption("Панель первого запуска и управления. Рабочие задачи по умолчанию запускаются через WSL .venv_wsl.")
+    st.title("🧰 Демонстрационный интерфейс ВКР")
+    st.caption("Панель первого запуска, полного визуального контура и ручной проверки результатов. Рабочие задачи по умолчанию запускаются через WSL .venv_wsl.")
 
-    page = st.sidebar.radio("Раздел", ["Первый запуск", "Скачивание файлов", "Настройки", "Запуск задач", "Результаты", "config YAML"])
-    if page == "Первый запуск":
+    page = st.sidebar.radio(
+        "Раздел",
+        ["Демо защиты", "Первый запуск", "Скачивание файлов", "Настройки", "Запуск задач", "Результаты", "config YAML"],
+    )
+    if page == "Демо защиты":
+        page_defense_demo(config)
+    elif page == "Первый запуск":
         page_setup(config)
     elif page == "Скачивание файлов":
         page_downloads(config)
