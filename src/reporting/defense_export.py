@@ -42,6 +42,7 @@ DEFAULT_FILES = [
     "05_reports/threshold_analysis.csv",
     "05_reports/segmentation_identification_report.md",
     "06_manual_identification/manual_identification_edits.csv",
+    "06_manual_identification/manual_reference_suggestions.csv",
     "06_manual_identification/identification_results_corrected.csv",
     "06_manual_identification/manual_identification_summary.json",
     "06_manual_identification/manual_identification_report.md",
@@ -60,6 +61,7 @@ DEFAULT_FILES = [
 
 DEFAULT_DIRS = [
     "selected_sku_demo",
+    "06_manual_identification/proposed_refs",
 ]
 
 VISUAL_DIRS = [
@@ -67,12 +69,6 @@ VISUAL_DIRS = [
     "03_query_inference/visualized",
     "04_identification/visualized",
 ]
-
-
-def _iter_existing_files(paths: Iterable[Path]) -> Iterable[Path]:
-    for path in paths:
-        if path.exists() and path.is_file():
-            yield path
 
 
 def _iter_dir_files(root: Path, limit: int = 0) -> Iterable[Path]:
