@@ -1,0 +1,57 @@
+# Итоговый профиль ВКР для демонстрационного интерфейса защиты.
+# Значения соответствуют финальной проверке полного визуального контура.
+
+full_photo_identification:
+  images_dir: "D:/1Diplom/data/raw/d2s_full/images"
+  gallery_images_dir: ""
+  query_images_dir: ""
+  out_dir: "D:/1Diplom/shelfvision_results/full_photo_identification_vkr_final"
+  gallery_dir: "D:/1Diplom/sku_gallery_full_vkr_final"
+  gallery_csv: "D:/1Diplom/sku_gallery_full_vkr_final/gallery.csv"
+  model: yolo
+  limit: 0
+  gallery_count: 160
+  query_count: 140
+  gallery_limit: 0
+  query_limit: 0
+  max_sku: 200
+  min_score: 0.35
+  min_width: 20
+  min_height: 20
+  padding: 0.05
+  prefix: sku_demo_
+  keep_old_demo: false
+  threshold: 0.65
+  top_k: 5
+  visualize_limit: 150
+  resume: true
+  skip_existing: true
+  progress_every: 100
+  no_visualize_inference: false
+  gallery_build_mode: greedy
+  deduplicate_gallery: true
+  dedup_threshold: 0.82
+  max_refs_per_sku: 15
+  enable_uncertain_status: true
+  ambiguity_margin: 0.03
+  shuffle: true
+  seed: 42
+
+runtime:
+  use_wsl_runtime: true
+  conf: 0.25
+  imgsz: 640
+  device: "0"
+
+feature_extractor:
+  type: hsv_orb
+  image_size: 224
+  hist_bins: [16, 16, 8]
+  orb_features: 256
+  orb_vector_size: 64
+  similarity: cosine
+
+notes:
+  - "matched_rate / assigned_rate не являются top-1 accuracy без эталонной SKU-разметки."
+  - "Итоговая количественная проверка полного контура выполняется на ветке YOLO."
+  - "YOLO-Seg, RT-DETR, Faster R-CNN и WBF предусмотрены архитектурно и требуют отдельного сравнения."
