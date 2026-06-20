@@ -1,72 +1,86 @@
-# ShelfVision
+# Демонстрационный интерфейс программного комплекса анализа полочных сцен
 
-Проект для ВКР: система анализа изображений товарных полок с использованием моделей детекции и сегментации.
+Ранее в рабочих материалах проекта использовалось техническое название `ShelfVision`. Название не является предметом научной новизны и не используется как заявка на уникальный программный продукт. В рамках ВКР проект рассматривается как программный комплекс для анализа изображений полочных сцен, локализации товарных объектов и экспериментального SKU-сопоставления.
 
-Сейчас проект включает:
-- подготовку датасета в COCO/YOLO-подобных форматах;
-- конвертацию COCO segmentation в YOLO-Seg labels;
+Проект не является форком и не является новой версией сторонних открытых репозиториев с похожим названием. Совпадение названия объясняется общей предметной областью: `shelf`, `vision`, `retail shelf analysis`. Отличие данной реализации заключается в полном контуре обработки: локализация объектов, извлечение товарных фрагментов, автоматическое формирование демонстрационной SKU-галереи, расчет визуальных признаков HSV + ORB, косинусное сопоставление, top-k кандидаты, margin-анализ, статусы `matched` / `matched_uncertain` / `unknown` и формирование отчетных артефактов.
+
+## Что входит в проект
+
+- подготовка датасета в COCO/YOLO-подобных форматах;
+- конвертация COCO segmentation в YOLO-Seg labels;
 - обучение и сравнение моделей;
-- отдельное обучение YOLO-Seg;
-- инференс YOLO, YOLO-Seg, RT-DETR, Faster R-CNN и WBF;
-- отчётные таблицы и графики;
-- Streamlit-интерфейс экспериментов;
-- Streamlit-интерфейс интерактивного инференса;
-- Streamlit-интерфейс видеоинференса;
-- единую панель управления для первого запуска, настройки и запуска сценариев кнопками;
-- отдельную установку зависимостей через WSL в Linux-среду `.venv_wsl`;
-- единый слой инференса для подключения YOLO, RT-DETR, Faster R-CNN и WBF;
-- модуль видеоинференса YOLO для обработки видеофайлов;
-- расчёт bbox-метрик и визуализацию ошибок модели;
-- расчёт mask-метрик для YOLO-Seg: mask IoU, APmask50, APmask75, APmask50-95;
-- автоматическую рекомендацию лучшего pipeline по набору метрик;
-- единый отчёт сравнения нескольких моделей с таблицами и графиками;
-- анализ плотности найденных товаров по зонам изображения;
-- экспорт итогового мини-отчёта для презентации и защиты;
-- запуск полного pipeline одной командой;
-- `.bat`-файлы для удобного запуска на Windows;
-- smoke-проверку основных CLI-скриптов и модулей.
+- инференс YOLO, YOLO-Seg, RT-DETR, Faster R-CNN и WBF через единый формат предсказаний;
+- расчет bbox-метрик и визуализация ошибок модели;
+- расчет mask-метрик для YOLO-Seg при наличии масочной разметки;
+- полный контур gallery/query для фото-идентификации;
+- извлечение вырезанных фрагментов товаров;
+- автоматическое формирование демонстрационной SKU-галереи;
+- SKU-сопоставление по HSV + ORB признакам и косинусной мере сходства;
+- аудит похожих SKU и проверка смешанных SKU;
+- ручная корректировка SKU-галереи;
+- ручная проверка конкретных результатов идентификации;
+- отчетные таблицы CSV, JSON, MD и визуализации;
+- Streamlit-интерфейс для демонстрации защиты.
 
-## Самый простой первый запуск на Windows
+## Границы экспериментальной проверки
 
-После скачивания проекта можно запустить файл:
+В рамках ВКР итоговая количественная проверка полного визуального контура выполнена на выбранной модельной ветке YOLO. YOLO-Seg, RT-DETR, Faster R-CNN и WBF предусмотрены архитектурно и частично реализованы через единый формат предсказаний, однако их полноценное сравнение требует отдельной серии экспериментов и не заявляется как завершённый результат текущей работы.
 
-```bat
-scripts\windows\start_control_panel.bat
+`matched_rate` / `assigned_rate` не являются top-1 accuracy реального SKU-распознавания без эталонной SKU-разметки каждого проверяемого объекта. Это доля объектов, которым демонстрационный контур назначил кандидата из автоматически сформированной SKU-галереи.
+
+## Итоговый профиль ВКР
+
+Итоговые параметры для воспроизводимой демонстрации вынесены в файл:
+
+```text
+config/vkr_final.yaml
 ```
 
-Он автоматически:
-- создаёт виртуальную среду `.venv`, если её ещё нет;
-- обновляет `pip`;
-- устанавливает минимальные зависимости для панели управления: `streamlit`, `PyYAML`, `pandas`;
-- создаёт `config/shelfvision.yaml` из примера;
-- открывает ShelfVision Control Panel.
+Ключевые параметры:
 
-После открытия панели можно кнопками:
-- установить все зависимости из `requirements.txt` через WSL в `.venv_wsl`;
-- проверить или установить WSL;
-- скачать веса моделей и файлы данных по указанным URL;
-- настроить пути к изображениям, разметке, весам, видео и папке результатов;
-- запустить smoke-проверку;
-- запустить инференс;
-- запустить видеоинференс;
-- запустить полный pipeline;
-- открыть результаты.
+| Параметр | Значение |
+|---|---:|
+| Модель итогового контура | YOLO |
+| gallery_count | 160 |
+| query_count | 140 |
+| max_sku | 200 |
+| confidence детектора | 0,25 |
+| imgsz | 640 |
+| threshold τ | 0,65 |
+| ambiguity_margin δ | 0,03 |
+| top-k | 5 |
+| dedup_threshold | 0,82 |
+| max_refs_per_sku | 15 |
+| min_score | 0,35 |
+| min_width / min_height | 20 / 20 |
+| padding | 0,05 |
+| seed | 42 |
+
+## Демонстрационный интерфейс для защиты
+
+Главный интерфейс запускается через WSL/локальное окружение:
+
+```bash
+streamlit run scripts/control_panel_wsl_app.py
+```
+
+В интерфейсе добавлен раздел **«Демо защиты»**, который показывает полный сценарий:
+
+1. выбор набора изображений;
+2. разделение на gallery/query;
+3. применение модели локализации;
+4. просмотр BBox/масок и вырезанных фрагментов;
+5. формирование демонстрационной SKU-галереи;
+6. SKU-сопоставление по визуальным признакам;
+7. просмотр top-k кандидатов, similarity и margin;
+8. ручная проверка идентификации;
+9. корректировка SKU-галереи;
+10. сравнение результата до и после ручной проверки;
+11. экспорт отчетных файлов.
+
+Интерфейс предназначен для демонстрации исследовательского прототипа и не заявляется как промышленная система контроля планограмм.
 
 ## Установка зависимостей через WSL
-
-В Control Panel в разделе **«Первый запуск»** есть отдельная кнопка:
-
-```text
-Создать WSL venv и установить зависимости
-```
-
-Она создаёт Linux-виртуальную среду:
-
-```text
-.venv_wsl
-```
-
-и устанавливает зависимости командой внутри WSL:
 
 ```bash
 python3 -m venv .venv_wsl
@@ -74,564 +88,70 @@ python3 -m venv .venv_wsl
 .venv_wsl/bin/python -m pip install -r requirements.txt
 ```
 
-То же самое можно запустить без интерфейса:
-
-```bat
-scripts\windows\setup_wsl_env.bat
-```
-
-или командой:
+Для точной фиксации локального окружения защиты рекомендуется дополнительно сформировать freeze-файл:
 
 ```bash
-python scripts/setup_wsl_env.py --venv-dir .venv_wsl --requirements requirements.txt
+.venv_wsl/bin/python -m pip freeze > requirements-wsl-freeze.txt
 ```
 
-Подробности вынесены в:
+## Быстрый запуск полного контура
 
-```text
-docs/wsl_setup.md
-```
-
-## Запуск панели управления вручную
+Пример запуска полного контура с итоговыми параметрами:
 
 ```bash
-streamlit run scripts/control_panel_wsl.py
-```
-
-Конфигурация хранится в файле:
-
-```text
-config/shelfvision.yaml
-```
-
-Шаблон конфигурации:
-
-```text
-config/shelfvision.example.yaml
-```
-
-## Видеоинференс YOLO
-
-Видеорежим обрабатывает видеофайл по кадрам, рисует bbox/masks и сохраняет итоговое видео со статистикой:
-
-```bash
-python run_video_inference.py --model yolo --weights models/yolo/best.pt --video data/video/test.mp4 --out-dir results/video/yolo --conf 0.25 --imgsz 640 --frame-skip 3
-```
-
-Запуск отдельного видеоинтерфейса:
-
-```bash
-streamlit run scripts/video_app.py
-```
-
-Запуск видеоинтерфейса через WSL `.venv_wsl` на Windows:
-
-```bat
-scripts\windows\run_video_app.bat
-```
-
-Запуск видеообработки через WSL `.venv_wsl` на Windows:
-
-```bat
-scripts\windows\run_video_inference_wsl_example.bat
-```
-
-После запуска сохраняются:
-- `output_video.mp4` — размеченное видео;
-- `frame_stats.csv` — статистика по кадрам;
-- `video_summary.json` — краткая сводка;
-- `sample_frames/` — первые размеченные кадры для отчёта.
-
-Основные параметры:
-- `--frame-skip 3` — обрабатывать каждый третий кадр;
-- `--max-frames 300` — ограничить число обработанных кадров;
-- `--no-save-video` — не сохранять итоговое видео;
-- `--sample-frames 8` — сохранить первые 8 кадров-примеров;
-- `--no-masks` — не отрисовывать маски.
-
-В Control Panel в разделе **«Запуск задач»** также есть кнопки:
-- `Открыть видеоинтерфейс`;
-- `Обработать видео через выбранный runtime`.
-
-## Быстрый старт через командную строку
-
-1) Установка зависимостей:
-```bash
-pip install -r requirements.txt
-```
-
-2) Подготовить демо-датасет (COCO bbox):
-- data/raw/demo_coco/annotations.json
-- data/raw/demo_coco/images/...
-
-3) Запуск подготовки:
-```bash
-python scripts/prepare_dataset.py --dataset demo_coco --version v1
-```
-
-Результат:
-- data/prepared/demo_coco/v1/annotations.json
-- data/prepared/demo_coco/v1/splits.json
-- data/prepared/demo_coco/v1/passport.json
-- data/prepared/demo_coco/v1/issues.json
-- data/prepared/demo_coco/v1/reports/samples_{train,val,test}/
-
-## Подготовка сегментационного YOLO-Seg датасета
-
-Если исходная разметка хранится в COCO segmentation, её можно перевести в YOLO-Seg формат:
-
-```bash
-python scripts/coco_to_yolo_seg.py \
-  --images_root data/raw/d2s_small/images \
-  --train_json data/raw/d2s_small/annotations_train.json \
-  --val_json data/raw/d2s_small/annotations_val.json \
-  --test_json data/raw/d2s_small/annotations_test.json \
-  --out_dir data/yolo_cache/d2s_small_seg
-```
-
-После запуска будут сохранены:
-- `data/yolo_cache/d2s_small_seg/dataset.yaml`;
-- `data/yolo_cache/d2s_small_seg/meta.json`;
-- `images/train`, `images/val`, `images/test`;
-- `labels/train`, `labels/val`, `labels/test`.
-
-## Обучение YOLO-Seg
-
-```bash
-python scripts/train_yolo_seg.py \
-  --data data/yolo_cache/d2s_small_seg/dataset.yaml \
-  --model yolov8s-seg.pt \
-  --epochs 30 \
+.venv_wsl/bin/python run_full_photo_identification_pipeline.py \
+  --model yolo \
+  --weights models/yolo/best.pt \
+  --images-dir D:/1Diplom/data/raw/d2s_full/images \
+  --out-dir D:/1Diplom/shelfvision_results/full_photo_identification_vkr_final \
+  --gallery-dir D:/1Diplom/sku_gallery_full_vkr_final \
+  --gallery-csv D:/1Diplom/sku_gallery_full_vkr_final/gallery.csv \
+  --gallery-count 160 \
+  --query-count 140 \
+  --max-sku 200 \
+  --conf 0.25 \
   --imgsz 640 \
-  --batch 8 \
-  --project runs/yolo_seg \
-  --name d2s_small_yolov8s_seg
+  --threshold 0.65 \
+  --ambiguity-margin 0.03 \
+  --top-k 5 \
+  --dedup-threshold 0.82 \
+  --max-refs-per-sku 15 \
+  --min-score 0.35 \
+  --min-width 20 \
+  --min-height 20 \
+  --padding 0.05 \
+  --shuffle \
+  --seed 42 \
+  --enable-uncertain-status \
+  --resume \
+  --skip-existing
 ```
 
-После обучения основные веса находятся здесь:
+## Основные выходные файлы
 
 ```text
-runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt
+00_manifest/all_images.csv
+00_manifest/gallery_images.csv
+00_manifest/query_images.csv
+01_gallery_inference/predictions.json
+01_gallery_inference/summary.csv
+02_demo_gallery/demo_sku_gallery_summary.json
+02_demo_gallery/demo_sku_gallery_items.csv
+03_query_inference/predictions.json
+03_query_inference/summary.csv
+04_identification/crops_manifest.csv
+04_identification/identification_results.csv
+04_identification/identification_report.md
+05_reports/full_experiment_summary.json
+05_reports/full_experiment_summary.md
+05_reports/threshold_analysis.csv
+06_manual_identification/manual_identification_edits.csv
+06_manual_identification/identification_results_corrected.csv
 ```
 
-## Запуск интерфейса экспериментов
-
-```bash
-streamlit run scripts/interface_app.py
-```
-
-Интерфейс показывает таблицы метрик, графики, визуальные примеры, устойчивость моделей и результаты YOLO-Seg.
-
-## Запуск интерактивного инференса
-
-```bash
-streamlit run scripts/inference_app.py
-```
-
-В этом интерфейсе можно:
-- загрузить изображение полки;
-- выбрать модель: YOLO, RT-DETR-L, Faster R-CNN или WBF;
-- настроить confidence threshold и размер изображения;
-- указать пути к весам моделей;
-- получить изображение с bbox/masks;
-- посмотреть таблицу найденных объектов;
-- сохранить JSON, CSV и визуальный результат.
-
-## Запуск инференса YOLO на одном изображении
-
-```bash
-python run_inference.py --model yolo --weights models/yolo/best.pt --image data/test/image_001.jpg --out-dir results/inference/yolo
-```
-
-## Запуск инференса YOLO-Seg на одном изображении
-
-```bash
-python run_inference.py --model yolo_seg --weights runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt --image data/test/image_001.jpg --out-dir results/inference/yolo_seg
-```
-
-Если модель возвращает маски, они сохраняются в поле `masks` внутри `prediction.json` / `predictions.json` и отрисовываются в `visualized/`.
-
-## Запуск инференса RT-DETR-L на одном изображении
-
-```bash
-python run_inference.py --model rtdetr --weights models/rtdetr/best.pt --image data/test/image_001.jpg --out-dir results/inference/rtdetr
-```
-
-## Запуск инференса Faster R-CNN на одном изображении
-
-```bash
-python run_inference.py --model frcnn --weights models/faster_rcnn/model_final.pth --image data/test/image_001.jpg --out-dir results/inference/frcnn
-```
-
-Faster R-CNN использует Detectron2. Если библиотека не установлена, её нужно поставить отдельно под свою версию PyTorch/CUDA.
-
-## Запуск WBF-ансамбля на одном изображении
-
-```bash
-python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --image data/test/image_001.jpg --out-dir results/inference/wbf
-```
-
-WBF объединяет bbox-предсказания YOLO и RT-DETR-L. Дополнительно можно менять параметры:
-
-```bash
-python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --image data/test/image_001.jpg --out-dir results/inference/wbf --wbf-iou 0.55 --wbf-skip 0.001 --yolo-weight 1.0 --rtdetr-weight 1.0
-```
-
-После запуска будут сохранены:
-- `prediction.json` — предсказания в едином формате;
-- `summary.csv` — краткая аналитика;
-- `visualized/` — изображение с bbox/masks.
-
-## Пакетная обработка папки изображений
-
-YOLO:
-```bash
-python run_inference.py --model yolo --weights models/yolo/best.pt --images-dir data/test --out-dir results/inference/yolo_batch
-```
-
-YOLO-Seg:
-```bash
-python run_inference.py --model yolo_seg --weights runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt --images-dir data/yolo_cache/d2s_small_seg/images/test --out-dir results/inference/yolo_seg_batch
-```
-
-RT-DETR-L:
-```bash
-python run_inference.py --model rtdetr --weights models/rtdetr/best.pt --images-dir data/test --out-dir results/inference/rtdetr_batch
-```
-
-Faster R-CNN:
-```bash
-python run_inference.py --model frcnn --weights models/faster_rcnn/model_final.pth --images-dir data/test --out-dir results/inference/frcnn_batch
-```
-
-WBF:
-```bash
-python run_inference.py --model wbf --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --images-dir data/test --out-dir results/inference/wbf_batch
-```
-
-После запуска будут сохранены:
-- `predictions.json`;
-- `summary.csv`;
-- папка `visualized/` с отрисованными результатами.
-
-## Расчёт bbox-метрик
-
-Для COCO-разметки:
-
-```bash
-python run_evaluation.py --predictions results/inference/yolo_batch/predictions.json --gt-coco data/test/annotations.json --out-dir results/evaluation/yolo
-```
-
-Для YOLO-разметки:
-
-```bash
-python run_evaluation.py --predictions results/inference/yolo_batch/predictions.json --gt-yolo-labels data/test/labels --images-dir data/test/images --out-dir results/evaluation/yolo
-```
-
-С визуализацией ошибок:
-
-```bash
-python run_evaluation.py --predictions results/inference/yolo_batch/predictions.json --gt-yolo-labels data/test/labels --images-dir data/test/images --out-dir results/evaluation/yolo --visualize-errors --limit 20
-```
-
-После запуска будут сохранены:
-- `metrics.json`;
-- `metrics_summary.csv`;
-- `metrics_per_image.csv`;
-- `ap_by_threshold.csv`;
-- `errors/` с изображениями ошибок, если указан `--visualize-errors`.
-
-Цвета ошибок:
-- зелёный — правильное обнаружение TP;
-- красный — ложное обнаружение FP;
-- жёлтый — пропущенный объект FN.
-
-## Расчёт mask-метрик для YOLO-Seg
-
-Для оценки масок нужен COCO JSON с `segmentation`:
-
-```bash
-python run_segmentation_evaluation.py \
-  --predictions results/inference/yolo_seg_batch/predictions.json \
-  --gt-coco data/raw/d2s_small/annotations_test.json \
-  --out-dir results/evaluation/yolo_seg_masks \
-  --iou 0.5
-```
-
-После запуска будут сохранены:
-- `segmentation_metrics.json`;
-- `segmentation_metrics_summary.csv`;
-- `segmentation_metrics_per_image.csv`;
-- `mask_ap_by_threshold.csv`.
-
-Основные показатели:
-- `mean_mask_iou`;
-- `mask_precision`;
-- `mask_recall`;
-- `mask_f1`;
-- `APmask50`;
-- `APmask75`;
-- `APmask50-95`.
-
-## Автоматическая рекомендация лучшего pipeline
-
-После расчёта метрик для нескольких моделей можно выбрать лучший pipeline:
-
-```bash
-python run_recommendation.py --metrics results/evaluation/yolo/metrics_summary.csv results/evaluation/rtdetr/metrics_summary.csv results/evaluation/frcnn/metrics_summary.csv results/evaluation/wbf/metrics_summary.csv --labels YOLO RT-DETR Faster-R-CNN WBF --out-dir results/recommendation
-```
-
-По умолчанию итоговый score считается по весам:
-- AP50-95 — 0.40;
-- AP50 — 0.20;
-- Recall — 0.15;
-- Precision — 0.15;
-- F1 — 0.05;
-- скорость — 0.05.
-
-Веса можно менять через параметры:
-
-```bash
-python run_recommendation.py --metrics results/evaluation/yolo/metrics_summary.csv results/evaluation/rtdetr/metrics_summary.csv --labels YOLO RT-DETR --w-ap50-95 0.50 --w-recall 0.20 --out-dir results/recommendation
-```
-
-После запуска будут сохранены:
-- `recommendation.json`;
-- `recommendation_ranking.csv`;
-- `recommendation.md`.
-
-## Единый отчёт сравнения моделей
-
-Для формирования отчёта по нескольким моделям:
-
-```bash
-python run_compare.py --metrics results/evaluation/yolo/metrics_summary.csv results/evaluation/rtdetr/metrics_summary.csv results/evaluation/frcnn/metrics_summary.csv results/evaluation/wbf/metrics_summary.csv --labels YOLO RT-DETR Faster-R-CNN WBF --out-dir results/model_comparison
-```
-
-После запуска будут сохранены:
-- `model_comparison.json`;
-- `model_comparison.csv`;
-- `model_comparison.md`;
-- `plots/` с графиками по AP50-95, AP50, precision, recall, F1 и recommendation score.
-
-Этот отчёт удобно использовать в практической главе ВКР: он показывает рейтинг моделей, лучшую модель по каждой метрике и итоговую рекомендацию pipeline.
-
-## Анализ плотности товаров
-
-После инференса можно оценить, как найденные товары распределены по зонам изображения:
-
-```bash
-python run_density.py --predictions results/inference/yolo_batch/predictions.json --out-dir results/density/yolo --rows 3 --cols 3
-```
-
-Для одного изображения:
-
-```bash
-python run_density.py --predictions results/inference/yolo/prediction.json --out-dir results/density/yolo_single --rows 3 --cols 3
-```
-
-После запуска будут сохранены:
-- `density_by_zone.csv` — статистика по каждой зоне каждого изображения;
-- `density_summary.csv` — агрегированная статистика по зонам;
-- `density_report.json` — краткий отчёт;
-- `visualized/` — изображения с сеткой и тепловой заливкой плотности.
-
-Этот блок можно описывать как аналитический модуль для ритейла: система не только находит товары, но и показывает, какие части полки заполнены сильнее.
-
-## Итоговый мини-отчёт для презентации
-
-После сравнения моделей и анализа плотности можно собрать короткий отчёт для презентации:
-
-```bash
-python run_mini_report.py --comparison-json results/model_comparison/model_comparison.json --comparison-csv results/model_comparison/model_comparison.csv --recommendation-json results/recommendation/recommendation.json --density-json results/density/yolo/density_report.json --density-csv results/density/yolo/density_summary.csv --images-dir results/density/yolo/visualized --out-dir results/mini_report
-```
-
-После запуска будут сохранены:
-- `mini_report.md` — markdown-отчёт;
-- `mini_report.html` — HTML-отчёт для просмотра в браузере;
-- `mini_report_manifest.json` — список использованных входных и выходных файлов.
-
-Мини-отчёт содержит:
-- назначение системы;
-- рекомендуемый pipeline;
-- таблицу сравнения моделей;
-- анализ плотности товаров;
-- визуальные примеры;
-- список пунктов, которые удобно показать на защите.
-
-## Запуск полного pipeline одной командой
-
-Полный bbox-pipeline запускает инференс, оценку, рекомендацию, сравнение моделей, анализ плотности и мини-отчёт:
-
-```bash
-python run_full_pipeline.py --images-dir data/test/images --gt-yolo-labels data/test/labels --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --models yolo rtdetr wbf --out-dir results/full_pipeline
-```
-
-Если используется COCO-разметка:
-
-```bash
-python run_full_pipeline.py --images-dir data/test/images --gt-coco data/test/annotations.json --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --models yolo rtdetr wbf --out-dir results/full_pipeline
-```
-
-Для добавления Faster R-CNN:
-
-```bash
-python run_full_pipeline.py --images-dir data/test/images --gt-yolo-labels data/test/labels --yolo-weights models/yolo/best.pt --rtdetr-weights models/rtdetr/best.pt --frcnn-weights models/faster_rcnn/model_final.pth --models yolo rtdetr frcnn wbf --out-dir results/full_pipeline
-```
-
-Для запуска сегментационной ветки YOLO-Seg:
-
-```bash
-python run_full_pipeline.py \
-  --images-dir data/yolo_cache/d2s_small_seg/images/test \
-  --gt-coco data/raw/d2s_small/annotations_test.json \
-  --yolo-seg-weights runs/yolo_seg/d2s_small_yolov8s_seg/weights/best.pt \
-  --models yolo_seg \
-  --density-model yolo_seg \
-  --out-dir results/full_pipeline_seg
-```
-
-После запуска будут сформированы папки:
-- `inference/` — предсказания и визуализации моделей;
-- `evaluation/` — bbox-метрики и ошибки;
-- `segmentation_evaluation/` — mask-метрики YOLO-Seg;
-- `recommendation/` — выбор лучшего pipeline;
-- `model_comparison/` — единый отчёт сравнения;
-- `density/` — анализ плотности;
-- `mini_report/` — итоговый HTML/Markdown-отчёт.
-
-## Запуск на Windows через `.bat`
-
-Готовые `.bat`-файлы лежат в папке:
-
-```text
-scripts/windows/
-```
-
-Доступные сценарии:
-
-```text
-start_control_panel.bat             — первый запуск, .venv, минимальные пакеты и панель управления
-setup_wsl_env.bat                   — установка всех зависимостей через WSL в .venv_wsl
-run_video_app.bat                   — запуск видеоинтерфейса через WSL .venv_wsl
-run_video_inference_wsl_example.bat — пример видеоинференса через WSL .venv_wsl
-run_interface.bat                   — запуск интерфейса таблиц и графиков
-run_inference_app.bat               — запуск интерфейса инференса
-run_yolo_inference_example.bat      — пример запуска YOLO на одном изображении
-run_full_pipeline_example.bat       — пример запуска полного pipeline
-run_full_pipeline_wsl_example.bat   — пример запуска полного pipeline через WSL
-run_mini_report_example.bat         — пример сборки мини-отчёта
-run_smoke_cli.bat                   — проверка CLI-скриптов и импортов
-```
-
-Перед запуском example-файлов нужно открыть `.bat` и при необходимости изменить пути:
-
-```bat
-set WEIGHTS=models\yolo\best.pt
-set VIDEO=data\video\test.mp4
-set IMAGE=data\test\image_001.jpg
-set IMAGES_DIR=data\test\images
-set LABELS_DIR=data\test\labels
-```
-
-## Smoke-проверка CLI
-
-Smoke-проверка не запускает модели и не требует весов. Она проверяет, что основные модули импортируются, а CLI-скрипты открывают `--help` без ошибок:
-
-```bash
-python scripts/smoke_cli.py
-```
-
-На Windows можно запустить:
-
-```bat
-scripts\windows\run_smoke_cli.bat
-```
-
-Если нужно проверить только `--help` без импортов:
-
-```bash
-python scripts/smoke_cli.py --skip-imports
-```
-
-Если нужно проверить только импорты:
-
-```bash
-python scripts/smoke_cli.py --skip-help
-```
-
-## Новая структура инференса, оценки, аналитики и отчётов
-
-```text
-config/
-├── shelfvision.example.yaml  # пример конфигурации
-└── shelfvision.yaml          # локальная конфигурация после первого запуска
-
-docs/
-└── wsl_setup.md              # установка зависимостей через WSL
-
-src/inference/
-├── prediction.py             # единый формат результата
-├── yolo_inference.py         # адаптер YOLO/YOLO-Seg
-├── rtdetr_inference.py       # адаптер RT-DETR-L
-├── faster_rcnn_inference.py  # адаптер Faster R-CNN
-├── ensemble_wbf.py           # WBF-ансамбль YOLO + RT-DETR
-└── video_inference.py        # видеоинференс YOLO
-
-src/visualization/
-└── draw_boxes.py             # отрисовка bbox и masks
-
-src/evaluation/
-├── metrics.py                # IoU, Precision, Recall, F1, AP50, AP50-95 для bbox
-├── segmentation_metrics.py   # mask IoU, APmask50, APmask75, APmask50-95
-├── error_visualization.py    # отрисовка TP/FP/FN
-├── recommend_model.py        # автоматический выбор лучшего pipeline
-└── compare_models.py         # единый отчёт сравнения моделей
-
-src/analytics/
-└── density.py                # анализ плотности товаров по зонам
-
-src/reporting/
-└── mini_report.py            # итоговый мини-отчёт для презентации
-
-scripts/
-├── control_panel.py          # панель управления первым запуском и сценариями
-├── control_panel_wsl.py      # панель управления с WSL runtime
-├── setup_wsl_env.py          # создание .venv_wsl и установка requirements через WSL
-├── wsl_runtime.py            # запуск скриптов через WSL .venv_wsl
-├── interface_app.py          # интерфейс таблиц и графиков экспериментов
-├── inference_app.py          # интерактивный инференс по изображению
-├── video_app.py              # интерфейс видеоинференса
-├── smoke_cli.py              # smoke-проверка CLI и импортов
-└── windows/                  # .bat-файлы для Windows
-
-run_inference.py              # CLI-запуск инференса
-run_video_inference.py        # CLI-запуск видеоинференса
-run_evaluation.py             # CLI-запуск оценки качества
-run_recommendation.py         # CLI-рекомендация лучшего pipeline
-run_compare.py                # CLI-сравнение нескольких моделей
-run_density.py                # CLI-анализ плотности товаров
-run_mini_report.py            # CLI-сборка мини-отчёта
-run_full_pipeline.py          # CLI-запуск полного pipeline
-```
-
-Единый формат нужен, чтобы результаты разных моделей можно было сравнивать одинаково:
-
-```python
-{
-    "image_path": "data/test/image_001.jpg",
-    "model_name": "YOLO-Seg",
-    "boxes": [[x1, y1, x2, y2]],
-    "scores": [0.91],
-    "labels": ["product"],
-    "masks": [[[x1, y1], [x2, y2], [x3, y3]]],
-    "objects_count": 1,
-    "average_confidence": 0.91,
-    "inference_time": 0.08
-}
-```
-
-## Следующие этапы
-
-1. Добавить live camera / browser camera demo.
-2. Добавить сравнение статистики видео по нескольким роликам.
+## Документы для защиты
+
+- `docs/DEFENSE_FAQ.md` — ответы на вопросы комиссии;
+- `docs/SIMILAR_PROJECTS.md` — отличие от открытых проектов с похожим названием;
+- `docs/REPRODUCIBILITY.md` — воспроизводимость итогового запуска;
+- `data/README.md` — описание локального размещения данных.
