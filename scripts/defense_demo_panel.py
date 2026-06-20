@@ -9,6 +9,8 @@ import streamlit as st
 import yaml
 
 from path_utils import to_current_os_path
+from src.identification.selected_sku_exporter import export_selected_sku_demo
+from src.reporting.defense_export import build_defense_export_zip
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
@@ -76,15 +78,6 @@ def _default_experiment_dir(config: Dict[str, Any]) -> Path:
     return _p(full.get("out_dir") or "D:/1Diplom/shelfvision_results/full_photo_identification")
 
 
-def _status_badge(label: str, ok: bool, path: Path | None = None) -> None:
-    icon = "✅" if ok else "⚠️"
-    text = f"{icon} **{label}**"
-    if path is not None:
-        text += f"  
-`{_rel(path)}`"
-    st.markdown(text)
-
-
 def _preview_images(root: Path, limit: int = 8) -> List[Path]:
     root = _p(root)
     if not root.exists():
@@ -127,6 +120,36 @@ def _load_final_profile() -> Dict[str, Any]:
         return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except Exception:
         return {}
+
+
+def _status_summary(df: pd.DataFrame) -> Dict[str, float | int]:
+    if df.empty or "sku_status" not in df.columns:
+        return {
+            "total": 0,
+            "matched": 0,
+            "matched_uncertain": 0,
+            "unknown": 0,
+            "assigned": 0,
+            "assigned_rate": 0.0,
+            "unknown_rate": 0.0,
+            "manual_edits": 0,
+        }
+    total = len(df)
+    matched = int((df["sku_status"].astype(str) == "matched").sum())
+    uncertain = int((df["sku_status"].astype(str) == "matched_uncertain").sum())
+    unknown = int((df["sku_status"].astype(str) == "unknown").sum())
+    assigned = matched + uncertain
+    manual_edits = int((df.get("manual_edit_applied", pd.Series([False] * total)).astype(str).str.lower().isin({"true", "1", "yes"})).sum())
+    return {
+        "total": total,
+        "matched": matched,
+        "matched_uncertain": uncertain,
+        "unknown": unknown,
+        "assigned": assigned,
+        "assigned_rate": assigned / total if total else 0.0,
+        "unknown_rate": unknown / total if total else 0.0,
+        "manual_edits": manual_edits,
+    }
 
 
 def _render_final_profile(config: Dict[str, Any]) -> None:
@@ -174,11 +197,12 @@ def _render_summary_metrics(experiment_dir: Path) -> None:
         c7.metric("unknown", _safe_int(summary.get("unknown")))
         c8.metric("assigned_rate", f"{_safe_float(summary.get('assigned_rate')):.4f}")
     elif not results.empty:
+        stats = _status_summary(results)
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("объектов", len(results))
-        c2.metric("matched", int((results.get("sku_status", "") == "matched").sum()))
-        c3.metric("matched_uncertain", int((results.get("sku_status", "") == "matched_uncertain").sum()))
-        c4.metric("unknown", int((results.get("sku_status", "") == "unknown").sum()))
+        c1.metric("объектов", stats["total"])
+        c2.metric("matched", stats["matched"])
+        c3.metric("matched_uncertain", stats["matched_uncertain"])
+        c4.metric("unknown", stats["unknown"])
     else:
         st.info("Итоговая сводка пока не найдена. Запусти полный контур или укажи другую папку эксперимента.")
 
@@ -241,6 +265,112 @@ def _render_crop_gallery(experiment_dir: Path) -> None:
                 st.caption(str(crop_path))
 
 
+def _render_before_after(experiment_dir: Path) -> None:
+    raw_csv = experiment_dir / "04_identification" / "identification_results.csv"
+    corrected_csv = experiment_dir / "06_manual_identification" / "identification_results_corrected.csv"
+    edits_csv = experiment_dir / "06_manual_identification" / "manual_identification_edits.csv"
+    raw = _read_csv(raw_csv)
+    corrected = _read_csv(corrected_csv)
+    edits = _read_csv(edits_csv)
+
+    if raw.empty:
+        st.info("Исходный `identification_results.csv` пока не найден.")
+        return
+
+    raw_stats = _status_summary(raw)
+    corrected_stats = _status_summary(corrected) if not corrected.empty else raw_stats
+
+    st.markdown("#### Сравнение исходного и corrected-результата")
+    table = pd.DataFrame(
+        [
+            {"Показатель": "Всего объектов", "До": raw_stats["total"], "После": corrected_stats["total"]},
+            {"Показатель": "matched", "До": raw_stats["matched"], "После": corrected_stats["matched"]},
+            {"Показатель": "matched_uncertain", "До": raw_stats["matched_uncertain"], "После": corrected_stats["matched_uncertain"]},
+            {"Показатель": "unknown", "До": raw_stats["unknown"], "После": corrected_stats["unknown"]},
+            {"Показатель": "assigned_rate", "До": f"{raw_stats['assigned_rate']:.4f}", "После": f"{corrected_stats['assigned_rate']:.4f}"},
+            {"Показатель": "ручных правок", "До": 0, "После": len(edits)},
+            {"Показатель": "применено правок", "До": 0, "После": corrected_stats.get("manual_edits", 0)},
+        ]
+    )
+    st.dataframe(table, use_container_width=True, hide_index=True)
+
+    if corrected.empty:
+        st.info("Corrected CSV пока не сформирован. Применить журнал правок можно в разделе `Запуск задач → Ручная проверка идентификации`.")
+    if not edits.empty:
+        with st.expander("Последние ручные правки", expanded=False):
+            st.dataframe(edits.tail(100), use_container_width=True, hide_index=True)
+
+    st.warning("Ручная проверка повышает экспертную согласованность демонстрационного контура, но не превращает assigned_rate в top-1 accuracy без эталонной SKU-разметки.")
+
+
+def _render_selected_sku_export(experiment_dir: Path) -> None:
+    corrected_csv = experiment_dir / "06_manual_identification" / "identification_results_corrected.csv"
+    raw_csv = experiment_dir / "04_identification" / "identification_results.csv"
+    results_csv = corrected_csv if corrected_csv.exists() else raw_csv
+    df = _read_csv(results_csv)
+    if df.empty or "sku_id" not in df.columns:
+        st.info("Таблица идентификации пока не найдена или не содержит sku_id.")
+        return
+
+    sku_counts = (
+        df[df["sku_id"].astype(str).str.len() > 0]
+        .groupby("sku_id")
+        .size()
+        .sort_values(ascending=False)
+    )
+    options = sku_counts.index.astype(str).tolist()
+    default = options[: min(5, len(options))]
+    selected = st.multiselect("SKU для демонстрации", options, default=default, key="selected_sku_demo_multiselect")
+    include_unknown = st.checkbox("Включать unknown, где выбранный SKU встречается в top-k", value=False)
+    max_rows = st.number_input("Максимум query-фрагментов на SKU", min_value=1, max_value=500, value=40)
+
+    if selected:
+        preview = df[df["sku_id"].astype(str).isin(selected)].copy()
+        st.caption(f"Найдено строк по выбранным SKU: {len(preview)}")
+        show_cols = [col for col in ["image_name", "object_id", "sku_id", "sku_status", "sku_confidence", "distinct_margin", "crop_path", "top_k"] if col in preview.columns]
+        st.dataframe(preview[show_cols].head(200), use_container_width=True, hide_index=True)
+
+    if st.button("Собрать демонстрационный набор по выбранным SKU", use_container_width=True):
+        outputs = export_selected_sku_demo(
+            experiment_dir=experiment_dir,
+            selected_skus=selected,
+            output_dir=experiment_dir / "selected_sku_demo",
+            results_csv=results_csv,
+            max_rows_per_sku=int(max_rows),
+            include_unknown_similar=include_unknown,
+        )
+        st.success("Демонстрационный набор выбранных SKU собран.")
+        for name, path in outputs.items():
+            st.write(f"- {name}: `{_rel(_p(path))}`")
+
+
+def _render_export(experiment_dir: Path) -> None:
+    output_zip = _p(
+        st.text_input(
+            "Путь к ZIP-архиву",
+            value=str(experiment_dir / "defense_export" / "vkr_defense_artifacts.zip"),
+            key="defense_export_zip_path",
+        )
+    )
+    include_visuals = st.checkbox("Включить ограниченное число визуализаций", value=True)
+    visual_limit = st.number_input("Лимит визуализаций на папку", min_value=0, max_value=300, value=30)
+
+    if st.button("Собрать ZIP-архив материалов защиты", use_container_width=True):
+        outputs = build_defense_export_zip(
+            experiment_dir=experiment_dir,
+            output_zip=output_zip,
+            include_visualizations=include_visuals,
+            visualized_limit_per_dir=int(visual_limit),
+        )
+        st.success("ZIP-архив материалов защиты сформирован.")
+        for name, path in outputs.items():
+            st.write(f"- {name}: `{_rel(_p(path))}`")
+
+    report = _read_text(output_zip.parent / "defense_export_report.md")
+    if report:
+        st.markdown(report)
+
+
 def _render_faq() -> None:
     faq_path = ROOT / "docs" / "DEFENSE_FAQ.md"
     text = _read_text(faq_path)
@@ -270,8 +400,11 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
         "2. Данные и профиль",
         "3. Фрагменты",
         "4. Идентификация",
-        "5. Отчеты",
-        "6. FAQ",
+        "5. До/после",
+        "6. Выбор SKU",
+        "7. Отчеты",
+        "8. Экспорт",
+        "9. FAQ",
     ])
 
     with tabs[0]:
@@ -286,6 +419,8 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
                 "identification results": experiment_dir / "04_identification" / "identification_results.csv",
                 "full summary": experiment_dir / "05_reports" / "full_experiment_summary.md",
                 "manual corrected results": experiment_dir / "06_manual_identification" / "identification_results_corrected.csv",
+                "selected SKU demo": experiment_dir / "selected_sku_demo" / "selected_sku_report.md",
+                "defense export ZIP": experiment_dir / "defense_export" / "vkr_defense_artifacts.zip",
             }
         )
         images = _preview_images(experiment_dir)
@@ -319,12 +454,19 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
         st.info("Для ручного изменения конкретного назначения открой раздел `Ручная проверка идентификации` в меню `Запуск задач`.")
 
     with tabs[4]:
+        _render_before_after(experiment_dir)
+
+    with tabs[5]:
+        _render_selected_sku_export(experiment_dir)
+
+    with tabs[6]:
         reports = {
             "full_experiment_summary.md": experiment_dir / "05_reports" / "full_experiment_summary.md",
             "threshold_analysis.csv": experiment_dir / "05_reports" / "threshold_analysis.csv",
             "assignment_uncertainty_report.md": experiment_dir / "04_identification" / "assignment_uncertainty_report.md",
             "manual_identification_report.md": experiment_dir / "06_manual_identification" / "manual_identification_report.md",
             "manual_gallery_report.md": experiment_dir / "06_manual_gallery" / "manual_gallery_report.md",
+            "selected_sku_report.md": experiment_dir / "selected_sku_demo" / "selected_sku_report.md",
         }
         for label, path in reports.items():
             path = _p(path)
@@ -339,5 +481,8 @@ def page_defense_demo(config: Dict[str, Any]) -> None:
                 else:
                     st.code(_read_text(path), language="text")
 
-    with tabs[5]:
+    with tabs[7]:
+        _render_export(experiment_dir)
+
+    with tabs[8]:
         _render_faq()
