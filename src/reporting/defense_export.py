@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 @dataclass
 class DefenseExportSummary:
@@ -16,6 +18,16 @@ class DefenseExportSummary:
     status: str
     note: str = ""
 
+
+PROJECT_FILES = [
+    "README.md",
+    "config/vkr_final.yaml",
+    "data/README.md",
+    "docs/DEFENSE_FAQ.md",
+    "docs/SIMILAR_PROJECTS.md",
+    "docs/REPRODUCIBILITY.md",
+    "docs/DEMO_SCRIPT_5_MIN.md",
+]
 
 DEFAULT_FILES = [
     "00_manifest/all_images.csv",
@@ -88,9 +100,9 @@ def build_defense_export_zip(
 ) -> Dict[str, Path]:
     """Create a compact ZIP archive with key VKR defense artifacts.
 
-    The archive intentionally contains reports, CSV/JSON summaries and a limited
-    number of visualization images. Large raw datasets and model weights are not
-    included.
+    The archive intentionally contains reports, CSV/JSON summaries, defense notes
+    and a limited number of visualization images. Large raw datasets and model
+    weights are not included.
     """
 
     exp = Path(experiment_dir)
@@ -104,34 +116,46 @@ def build_defense_export_zip(
     added_rel: set[str] = set()
 
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for rel in PROJECT_FILES:
+            path = PROJECT_ROOT / rel
+            if path.exists() and path.is_file():
+                zf.write(path, arcname=f"project/{rel}")
+                added += 1
+                added_rel.add(f"project/{rel}")
+            else:
+                skipped += 1
+
         for rel in DEFAULT_FILES:
             path = exp / rel
             if path.exists() and path.is_file():
-                zf.write(path, arcname=rel)
+                zf.write(path, arcname=f"experiment/{rel}")
                 added += 1
-                added_rel.add(rel)
+                added_rel.add(f"experiment/{rel}")
             else:
                 skipped += 1
 
         for rel_dir in DEFAULT_DIRS:
             for path in _iter_dir_files(exp / rel_dir):
                 rel = str(path.relative_to(exp)).replace("\\", "/")
-                if rel not in added_rel:
-                    zf.write(path, arcname=rel)
+                arcname = f"experiment/{rel}"
+                if arcname not in added_rel:
+                    zf.write(path, arcname=arcname)
                     added += 1
-                    added_rel.add(rel)
+                    added_rel.add(arcname)
 
         if include_visualizations:
             for rel_dir in VISUAL_DIRS:
                 for path in _iter_dir_files(exp / rel_dir, limit=max(0, int(visualized_limit_per_dir))):
                     rel = str(path.relative_to(exp)).replace("\\", "/")
-                    if rel not in added_rel:
-                        zf.write(path, arcname=rel)
+                    arcname = f"experiment/{rel}"
+                    if arcname not in added_rel:
+                        zf.write(path, arcname=arcname)
                         added += 1
-                        added_rel.add(rel)
+                        added_rel.add(arcname)
 
         manifest = {
             "experiment_dir": str(exp),
+            "project_root": str(PROJECT_ROOT),
             "files_added": added,
             "skipped_missing": skipped,
             "include_visualizations": include_visualizations,
@@ -165,6 +189,7 @@ def build_defense_export_zip(
                 f"- Не найдено ожидаемых файлов: {summary.skipped_missing}",
                 f"- Статус: **{summary.status}**",
                 "",
+                "В архив включаются проектные документы защиты, итоговый профиль, ключевые отчеты, таблицы, ручные правки и ограниченное число визуализаций.",
                 "Сырые датасеты и веса моделей в архив не включаются из-за размера и лицензионных ограничений.",
             ]
         ),
