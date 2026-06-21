@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -9,12 +7,11 @@ import streamlit as st
 import yaml
 
 from control_panel import ensure_config_exists, load_config, page_downloads, save_config
-from control_panel_wsl import page_actions_wsl, page_config_wsl
+from control_panel_wsl import page_config_wsl
 from defense_demo_panel import page_defense_demo
 from full_photo_identification_panel import page_full_photo_identification
 from identification_review_panel import page_identification_review
 from manual_cluster_editor_panel import page_manual_cluster_editor
-from night_experiments_panel import page_night_experiments_reports
 from setup_pages import page_setup
 from sku_audit_panel import page_sku_audit
 from sku_purity_panel import page_sku_purity_audit
@@ -24,11 +21,6 @@ from ui_settings import is_advanced, render_settings_mode_switch
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 TEXT_EXTS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
-APP_PORTS = {
-    "scripts/interface_app.py": 8502,
-    "scripts/inference_app.py": 8503,
-    "scripts/video_app.py": 8504,
-}
 
 
 def _as_path(raw: str | Path | None) -> Path | None:
@@ -59,18 +51,16 @@ def _candidate_dirs(config: Dict[str, Any]) -> List[Tuple[str, Path | None, str]
     video = config.get("video", {})
     readiness = config.get("readiness", {})
     sku_gallery = config.get("sku_gallery", {})
-    presentation = config.get("presentation_assets", {})
 
     return [
-        ("Основные результаты / старый пайплайн", _as_path(paths.get("out_dir", "results/control_panel")), "paths.out_dir"),
+        ("Основные результаты", _as_path(paths.get("out_dir", "results/control_panel")), "paths.out_dir"),
         ("Фото-идентификация", _as_path(demo.get("out_dir", "D:/1Diplom/shelfvision_results/photo_identification")), "demo_sku_gallery.out_dir"),
         ("Полная фото-идентификация gallery/query", _as_path(full.get("out_dir", "D:/1Diplom/shelfvision_results/full_photo_identification")), "full_photo_identification.out_dir"),
-        ("Серия экспериментов SKU110K", _as_path(night.get("out_dir") or night.get("results_root", "")), "night_experiments.results_root / night_experiments.out_dir"),
+        ("Серия экспериментов", _as_path(night.get("out_dir") or night.get("results_root", "")), "night_experiments.results_root / night_experiments.out_dir"),
         ("Идентификация SKU", _as_path(identification.get("out_dir", "D:/1Diplom/shelfvision_results/identification")), "identification.out_dir"),
         ("Видео", _as_path(video.get("output_dir", "results/video/yolo")), "video.output_dir"),
         ("Диагностика готовности", _as_path(readiness.get("out_dir", "D:/1Diplom/shelfvision_results/readiness")), "readiness.out_dir"),
         ("Отчёты SKU-галереи", _as_path(sku_gallery.get("out_dir", "D:/1Diplom/shelfvision_results/sku_gallery")), "sku_gallery.out_dir"),
-        ("Материалы презентации", _as_path(presentation.get("out_dir", "D:/1Diplom/presentation_assets")), "presentation_assets.out_dir"),
         ("SKU-галерея", _as_path(demo.get("gallery_dir") or sku_gallery.get("gallery_dir", "D:/1Diplom/sku_gallery")), "demo_sku_gallery.gallery_dir / sku_gallery.gallery_dir"),
         ("Полная SKU-галерея", _as_path(full.get("gallery_dir", "D:/1Diplom/sku_gallery_full")), "full_photo_identification.gallery_dir"),
     ]
@@ -92,6 +82,7 @@ def _find_key_files(root: Path) -> List[Path]:
         "manual_cluster_edits.csv",
         "manual_cluster_edits_applied.csv",
         "manual_identification_edits.csv",
+        "manual_reference_suggestions.csv",
         "manual_identification_report.md",
         "manual_identification_summary.json",
         "identification_results_corrected.csv",
@@ -111,7 +102,6 @@ def _find_key_files(root: Path) -> List[Path]:
         "matched_uncertain_candidates.csv",
         "suspicious_absorber_sku.csv",
         "night_experiments_detailed_report.md",
-        "vkr_night_experiments_section.md",
         "night_experiments_ranked.csv",
         "night_experiments_parameter_impact.csv",
         "night_experiments_best_config.json",
@@ -138,6 +128,9 @@ def _find_key_files(root: Path) -> List[Path]:
         "readiness_report.md",
         "readiness_checks.csv",
         "video_summary.json",
+        "defense_demo_smoke_report.md",
+        "defense_export_report.md",
+        "selected_sku_report.md",
     ]
     result: List[Path] = []
     if not root.exists():
@@ -244,7 +237,6 @@ def _render_result_dir(title: str, root: Path | None, config_key: str, advanced:
             "full_experiment_summary.md",
             "experiment_summary.md",
             "night_experiments_detailed_report.md",
-            "vkr_night_experiments_section.md",
         }
         for path in visible_files:
             with st.expander(_rel_or_abs(path), expanded=path.name in expanded_names):
@@ -263,99 +255,37 @@ def _render_result_dir(title: str, root: Path | None, config_key: str, advanced:
                 st.caption("Показаны первые 300 файлов.")
 
 
-def _streamlit_url(script_path: str) -> str:
-    port = APP_PORTS.get(script_path.replace("\\", "/"), 8501)
-    return f"http://localhost:{port}"
-
-
-def _start_streamlit_app(script_path: str) -> str:
-    port = APP_PORTS.get(script_path.replace("\\", "/"), 8501)
-    subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "streamlit",
-            "run",
-            script_path,
-            "--server.port",
-            str(port),
-            "--server.headless",
-            "true",
-        ],
-        cwd=str(ROOT),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return f"http://localhost:{port}"
-
-
-def page_interface_shortcuts() -> None:
-    st.header("Быстрый запуск интерфейсов")
-    st.caption("`run_interface.bat` запускает старый экспериментальный интерфейс: `python -m streamlit run scripts/interface_app.py`.")
-
-    app_script = "scripts/interface_app.py"
-    if st.button(
-        "Открыть интерфейс из run_interface.bat",
-        use_container_width=True,
-        key="shortcut_open_legacy_interface_app",
-    ):
-        url = _start_streamlit_app(app_script)
-        st.success("Интерфейс `scripts/interface_app.py` запускается в отдельном процессе.")
-        st.markdown(f"Открой: [{url}]({url})")
-
-    st.caption(f"Адрес этого интерфейса: `{_streamlit_url(app_script)}`. Остальные интерфейсы ниже уже есть в основном блоке `Интерфейсы`.")
-
-
 def page_actions_app(config: Dict[str, Any]) -> None:
     render_settings_mode_switch(config, page_key="actions")
     advanced = is_advanced(config, page_key="actions")
     st.divider()
 
-    if advanced:
-        page_interface_shortcuts()
-        st.divider()
-
     page_full_photo_identification(config)
     st.divider()
     page_identification_review(config)
 
-    if advanced:
-        st.divider()
-        page_night_experiments_reports(config)
-        st.divider()
+    st.divider()
+    with st.expander("Дополнительные инструменты проверки SKU", expanded=advanced):
+        st.caption("Эти инструменты помогают найти похожие SKU, смешанные эталоны и спорные случаи.")
         page_manual_cluster_editor(config)
         st.divider()
         page_sku_audit(config)
         st.divider()
         page_sku_purity_audit(config)
-        st.divider()
-        page_actions_wsl(config)
-        return
-
-    st.divider()
-    with st.expander("Дополнительные инструменты проверки SKU", expanded=False):
-        st.caption("Эти инструменты скрыты по умолчанию, чтобы не перегружать рекомендованный режим.")
-        page_sku_audit(config)
-        st.divider()
-        page_sku_purity_audit(config)
-
-    with st.expander("Расширенные задачи и ночные эксперименты", expanded=False):
-        st.info("Ночные эксперименты, ручной редактор кластеров и старый WSL-блок доступны в режиме «Для уверенных пользователей».")
 
 
 def page_results_wsl(config: Dict[str, Any]) -> None:
-    st.header("5. Результаты")
+    st.header("Результаты")
     render_settings_mode_switch(config, page_key="results")
     advanced = is_advanced(config, page_key="results")
-    st.caption("Здесь показаны все основные папки результатов, а не только старый `results/control_panel`.")
+    st.caption("Здесь собраны основные папки с результатами, отчётами и визуализациями.")
 
     candidates = _candidate_dirs(config)
     existing = [(title, path, key) for title, path, key in candidates if path is not None and path.exists()]
     missing = [(title, path, key) for title, path, key in candidates if path is None or not path.exists()]
 
     st.success(f"Найдено рабочих папок: {len(existing)} из {len(candidates)}")
-
-    st.info("Подробный просмотр полного сценария защиты находится в разделе `Демо защиты`. Ручная проверка идентификации находится в разделе `Запуск задач`.")
+    st.info("Полный обзор сценария находится в разделе `Демо`. Ручная проверка идентификации находится в разделе `Запуск и проверка`.")
 
     if advanced:
         selected_titles = st.multiselect(
@@ -379,19 +309,19 @@ def page_results_wsl(config: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Демо ВКР: анализ полочных сцен", page_icon="🧰", layout="wide")
+    st.set_page_config(page_title="Демо анализа полочных сцен", page_icon="🧰", layout="wide")
     ensure_config_exists()
     config = load_config()
     config.setdefault("runtime", {}).setdefault("use_wsl_runtime", True)
 
-    st.title("🧰 Демонстрационный интерфейс ВКР")
-    st.caption("Панель первого запуска, полного визуального контура и ручной проверки результатов. Рабочие задачи по умолчанию запускаются через WSL .venv_wsl.")
+    st.title("🧰 Демонстрационный интерфейс анализа полочных сцен")
+    st.caption("Панель запуска, проверки результатов и ручной корректировки идентификации.")
 
     page = st.sidebar.radio(
         "Раздел",
-        ["Демо защиты", "Первый запуск", "Скачивание файлов", "Настройки", "Запуск задач", "Результаты", "config YAML"],
+        ["Демо", "Первый запуск", "Скачивание файлов", "Настройки", "Запуск и проверка", "Результаты", "config YAML"],
     )
-    if page == "Демо защиты":
+    if page == "Демо":
         page_defense_demo(config)
     elif page == "Первый запуск":
         page_setup(config)
@@ -399,7 +329,7 @@ def main() -> None:
         page_downloads(config)
     elif page == "Настройки":
         page_config_wsl(config)
-    elif page == "Запуск задач":
+    elif page == "Запуск и проверка":
         page_actions_app(config)
     elif page == "Результаты":
         page_results_wsl(config)
