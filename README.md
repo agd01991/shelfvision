@@ -64,6 +64,18 @@ config/vkr_final.yaml
 streamlit run scripts/control_panel_wsl_app.py
 ```
 
+На Windows можно запустить:
+
+```bat
+scripts\windows\run_defense_demo_app.bat
+```
+
+В WSL/Linux можно запустить:
+
+```bash
+bash scripts/run_defense_demo_app.sh
+```
+
 В интерфейсе добавлен раздел **«Демо защиты»**, который показывает полный сценарий:
 
 1. выбор набора изображений;
@@ -81,6 +93,28 @@ streamlit run scripts/control_panel_wsl_app.py
 Вкладка **«0. Сценарий защиты»** содержит чек-лист готовности и пошаговый сценарий демонстрации на 5 минут.
 
 Интерфейс предназначен для демонстрации исследовательского прототипа и не заявляется как промышленная система контроля планограмм.
+
+## Smoke-проверка перед защитой
+
+Быстрая проверка наличия проектных файлов, импортов и основных артефактов эксперимента выполняется так:
+
+```bash
+.venv_wsl/bin/python scripts/defense_demo_smoke_check.py \
+  --experiment-dir D:/1Diplom/shelfvision_results/full_photo_identification_vkr_final
+```
+
+На Windows можно запустить:
+
+```bat
+scripts\windows\run_defense_smoke_check.bat --experiment-dir D:/1Diplom/shelfvision_results/full_photo_identification_vkr_final
+```
+
+Проверка формирует:
+
+```text
+defense_export/defense_demo_smoke_report.json
+defense_export/defense_demo_smoke_report.md
+```
 
 ## Установка зависимостей через WSL
 
