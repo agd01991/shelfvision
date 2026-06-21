@@ -8,5 +8,5 @@ if exist ".venv\Scripts\python.exe" (
   set PYTHON=python
 )
 
-%PYTHON% -m streamlit run scripts\final_demo_app.py
+%PYTHON% -m streamlit run scripts\final_demo_history_app.py
 endlocal
