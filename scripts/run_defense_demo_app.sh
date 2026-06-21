@@ -9,4 +9,4 @@ elif [[ -x ".venv/bin/python" ]]; then
   PYTHON=".venv/bin/python"
 fi
 
-"$PYTHON" -m streamlit run scripts/control_panel_wsl_app.py
+"$PYTHON" -m streamlit run scripts/final_demo_app.py
