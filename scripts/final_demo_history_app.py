@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict
+
+import pandas as pd
+import streamlit as st
+
+import action_history
+import final_demo_app as core
+from identification_review_panel import page_identification_review
+from src.identification.selected_sku_exporter import export_selected_sku_demo
+from src.reporting.defense_export import build_defense_export_zip
+
+
+def _config_snapshot(config: Dict[str, Any], exp: Path) -> Dict[str, Any]:
+    full = config.get("full_photo_identification", {})
+    paths = core.experiment_paths(exp) if hasattr(core, "experiment_paths") else {}
+    return {
+        "experiment_dir": str(exp),
+        "full_photo_identification": full,
+        "files": {name: str(path) for name, path in paths.items()},
+    }
+
+
+def _sidebar(config: Dict[str, Any]) -> Path:
+    st.sidebar.header("Настройки")
+    default_exp = st.session_state.get("demo_experiment_dir") or str(core._default_experiment_dir(config))
+    exp = core._p(st.sidebar.text_input("Папка с результатами", value=default_exp, key="history_exp_dir"))
+    st.session_state["demo_experiment_dir"] = str(exp)
+
+    st.sidebar.caption("Папка с результатами полного запуска: предсказания, фрагменты, идентификация и отчёты.")
+    st.sidebar.divider()
+    if st.sidebar.button("Создать контрольную точку", use_container_width=True):
+        checkpoint = action_history.create_checkpoint(
+            exp,
+            title="Быстрая контрольная точка",
+            config=_config_snapshot(config, exp),
+            note="Создано из боковой панели",
+        )
+        st.sidebar.success(f"Сохранено: {checkpoint.name}")
+    return exp
+
+
+def _render_start(exp: Path) -> None:
+    st.subheader("Старт")
+    st.info("Интерфейс помогает пройти полный контур: обзор результатов, фрагменты, идентификация, ручная проверка, сравнение до/после и экспорт.")
+    paths = core.experiment_paths(exp) if hasattr(core, "experiment_paths") else {}
+    if paths:
+        cols = st.columns(4)
+        checks = [
+            ("Файлы", paths.get("manifest")),
+            ("Фрагменты", paths.get("crops")),
+            ("Идентификация", paths.get("results")),
+            ("Правки", paths.get("edits")),
+        ]
+        for col, (label, path) in zip(cols, checks):
+            with col:
+                ok = path is not None and core._p(path).exists()
+                st.metric(label, "готово" if ok else "нет")
+    st.markdown(
+        """
+#### Рекомендуемый порядок
+1. **Обзор** — убедиться, что файлы найдены.
+2. **Фрагменты** — проверить качество вырезанных товаров.
+3. **Идентификация** — отфильтровать статусы и найти спорные случаи.
+4. **Ручная проверка** — подтвердить или изменить назначение SKU.
+5. **История** — сохранить контрольную точку после важных действий.
+6. **До/после** — сравнить исходный и скорректированный результат.
+7. **Экспорт** — собрать ZIP-архив с материалами.
+"""
+    )
+
+
+def _render_selected_sku_with_history(exp: Path) -> None:
+    source = core.result_source(exp) if hasattr(core, "result_source") else (exp / "04_identification" / "identification_results.csv")
+    df = core._read_csv(source)
+    if df.empty or "sku_id" not in df.columns:
+        st.info("Таблица идентификации пока не найдена или не содержит sku_id.")
+        return
+
+    sku_counts = df[df["sku_id"].astype(str).str.len() > 0].groupby("sku_id").size().sort_values(ascending=False)
+    options = sku_counts.index.astype(str).tolist()
+    selected = st.multiselect("SKU для показа", options, default=options[: min(5, len(options))])
+    include_unknown = st.checkbox("Включать unknown, где выбранный SKU встречается в top-k", value=False)
+    max_rows = st.number_input("Максимум query-фрагментов на SKU", min_value=1, max_value=500, value=40)
+
+    if selected:
+        preview = df[df["sku_id"].astype(str).isin(selected)].copy()
+        view_cols = [c for c in ["image_name", "object_id", "sku_id", "sku_status", "sku_confidence", "distinct_margin", "crop_path", "top_k"] if c in preview.columns]
+        st.dataframe(preview[view_cols].head(200), use_container_width=True, hide_index=True)
+
+    if st.button("Собрать набор по выбранным SKU", use_container_width=True):
+        outputs = export_selected_sku_demo(
+            experiment_dir=exp,
+            selected_skus=selected,
+            output_dir=exp / "selected_sku_demo",
+            results_csv=source,
+            max_rows_per_sku=int(max_rows),
+            include_unknown_similar=include_unknown,
+        )
+        action_history.append_event(exp, "selected_sku_export", "Собран набор SKU", ", ".join(selected))
+        st.success("Набор выбранных SKU собран.")
+        for name, path in outputs.items():
+            st.write(f"- {name}: `{core._rel(core._p(path))}`")
+
+
+def _render_export_with_history(exp: Path) -> None:
+    output = core._p(st.text_input("Путь к ZIP-архиву", value=str(exp / "export" / "demo_artifacts.zip")))
+    include_visuals = st.checkbox("Включить ограниченное число визуализаций", value=True)
+    visual_limit = st.number_input("Лимит визуализаций на папку", min_value=0, max_value=300, value=30)
+    if st.button("Собрать ZIP-архив материалов", use_container_width=True):
+        outputs = build_defense_export_zip(
+            experiment_dir=exp,
+            output_zip=output,
+            include_visualizations=include_visuals,
+            visualized_limit_per_dir=int(visual_limit),
+        )
+        action_history.append_event(exp, "export", "Собран ZIP-архив", str(output))
+        st.success("ZIP-архив материалов сформирован.")
+        for name, path in outputs.items():
+            st.write(f"- {name}: `{core._rel(core._p(path))}`")
+
+
+def _render_history(exp: Path, config: Dict[str, Any]) -> None:
+    st.subheader("История")
+    st.caption("Здесь можно сохранить контрольную точку, посмотреть события и вернуться к сохранённому этапу.")
+
+    title = st.text_input("Название контрольной точки", value="Проверенный этап")
+    note = st.text_area("Комментарий", value="", height=90)
+    if st.button("Сохранить контрольную точку", type="primary", use_container_width=True):
+        checkpoint = action_history.create_checkpoint(
+            exp,
+            title=title,
+            note=note,
+            config=_config_snapshot(config, exp),
+            extra={"active_page": "История"},
+        )
+        st.success(f"Контрольная точка сохранена: {checkpoint.name}")
+
+    checkpoints = action_history.list_checkpoints(exp)
+    if checkpoints:
+        selected = st.selectbox("Сохранённые контрольные точки", checkpoints, format_func=lambda x: x.name)
+        data = action_history.read_checkpoint(selected)
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.write({"created_at": data.get("created_at"), "title": data.get("title"), "note": data.get("note")})
+        with c2:
+            if st.button("Вернуться к этому этапу", use_container_width=True):
+                target = data.get("experiment_dir") or str(exp)
+                st.session_state["demo_experiment_dir"] = target
+                st.success(f"Выбран этап: {target}")
+                st.rerun()
+        with st.expander("Содержимое контрольной точки", expanded=False):
+            st.json(data)
+    else:
+        st.info("Контрольных точек пока нет.")
+
+    events = action_history.read_events(exp)
+    if events:
+        st.markdown("#### События")
+        st.dataframe(pd.DataFrame(events).tail(100), use_container_width=True, hide_index=True)
+    else:
+        st.info("Событий пока нет.")
+
+
+def _render_review(exp: Path, config: Dict[str, Any]) -> None:
+    review_config = dict(config)
+    review_config.setdefault("full_photo_identification", {})["out_dir"] = str(exp)
+    page_identification_review(review_config)
+
+
+def main() -> None:
+    st.set_page_config(page_title="Демо анализа полочных сцен", page_icon="🧰", layout="wide")
+    config = core._read_yaml(core.CONFIG_PATH)
+    exp = _sidebar(config)
+
+    st.title("🧰 Демо анализа полочных сцен")
+    st.caption("Просмотр результатов, ручная проверка идентификации, история действий и экспорт материалов.")
+
+    tabs = st.tabs(["Старт", "Обзор", "Параметры", "Фрагменты", "Идентификация", "Ручная проверка", "История", "До/после", "Выбор SKU", "Экспорт", "FAQ"])
+    with tabs[0]:
+        _render_start(exp)
+    with tabs[1]:
+        core._render_overview(exp)
+    with tabs[2]:
+        core._render_profile(config)
+    with tabs[3]:
+        core._render_crops(exp)
+    with tabs[4]:
+        core._render_identification_table(exp)
+    with tabs[5]:
+        _render_review(exp, config)
+    with tabs[6]:
+        _render_history(exp, config)
+    with tabs[7]:
+        core._render_before_after(exp)
+    with tabs[8]:
+        _render_selected_sku_with_history(exp)
+    with tabs[9]:
+        _render_export_with_history(exp)
+    with tabs[10]:
+        core._render_faq()
+
+
+if __name__ == "__main__":
+    main()
