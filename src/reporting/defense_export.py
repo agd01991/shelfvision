@@ -69,6 +69,8 @@ DEFAULT_FILES = [
     "selected_sku_demo/selected_skus.csv",
     "selected_sku_demo/selected_identification_results.csv",
     "selected_sku_demo/selected_sku_report.md",
+    "defense_export/defense_demo_smoke_report.json",
+    "defense_export/defense_demo_smoke_report.md",
 ]
 
 DEFAULT_DIRS = [
