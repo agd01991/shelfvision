@@ -19,6 +19,7 @@ PROJECT_REQUIRED_FILES = [
     "docs/REPRODUCIBILITY.md",
     "docs/DEMO_SCRIPT_5_MIN.md",
     "data/README.md",
+    "scripts/final_demo_app.py",
     "scripts/control_panel_wsl_app.py",
     "scripts/defense_demo_panel.py",
     "scripts/identification_review_panel.py",
@@ -148,7 +149,7 @@ def write_report(report: SmokeReport, out_dir: Path) -> dict[str, Path]:
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     lines = [
-        "# Smoke-проверка демонстрационного интерфейса защиты",
+        "# Smoke-проверка демонстрационного интерфейса",
         "",
         f"- Статус: **{report.status}**",
         f"- Ошибок: {report.errors_count}",
@@ -173,7 +174,7 @@ def write_report(report: SmokeReport, out_dir: Path) -> dict[str, Path]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Smoke-проверка демонстрационного интерфейса ВКР")
+    parser = argparse.ArgumentParser(description="Smoke-проверка демонстрационного интерфейса")
     parser.add_argument("--experiment-dir", default="", help="Папка итогового эксперимента, если нужно проверить артефакты")
     parser.add_argument("--out-dir", default="", help="Куда сохранить отчет. По умолчанию: experiment/defense_export или results/defense_smoke")
     parser.add_argument("--strict", action="store_true", help="Вернуть код 1 при ошибках")
@@ -193,7 +194,7 @@ def main() -> int:
         out_dir = ROOT / "results" / "defense_smoke"
     outputs = write_report(report, out_dir)
 
-    print(f"Defense demo smoke status: {report.status}")
+    print(f"Demo smoke status: {report.status}")
     print(f"Errors: {report.errors_count}, warnings: {report.warnings_count}")
     for name, path in outputs.items():
         print(f"{name}: {path}")
