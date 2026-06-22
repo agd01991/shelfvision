@@ -1,5 +1,9 @@
-# Итоговый профиль ВКР для демонстрационного интерфейса защиты.
-# Значения соответствуют финальной проверке полного визуального контура.
+# Финальный демонстрационный профиль полного визуального контура.
+# Перед запуском путь images_dir необходимо сверить с фактическим источником данных.
+# После запуска источник подтверждается файлами:
+#   00_manifest/all_images.csv
+#   00_manifest/run_environment.json
+#   00_manifest/split_params.json
 
 full_photo_identification:
   images_dir: "D:/1Diplom/data/raw/d2s_full/images"
@@ -49,9 +53,11 @@ feature_extractor:
   hist_bins: [16, 16, 8]
   orb_features: 256
   orb_vector_size: 64
+  vector_size: 2112
   similarity: cosine
 
 notes:
-  - "matched_rate / assigned_rate не являются top-1 accuracy без эталонной SKU-разметки."
+  - "Источник данных определяется по фактическим manifest и run_environment, а не по имени каталога или README."
+  - "assigned_rate является долей объектов с назначенным кандидатом и не является top-1 accuracy без эталонной SKU-разметки."
   - "Итоговая количественная проверка полного контура выполняется на ветке YOLO."
   - "YOLO-Seg, RT-DETR, Faster R-CNN и WBF предусмотрены архитектурно и требуют отдельного сравнения."
