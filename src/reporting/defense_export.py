@@ -72,6 +72,8 @@ DEFAULT_FILES = [
     "selected_sku_demo/selected_skus.csv",
     "selected_sku_demo/selected_identification_results.csv",
     "selected_sku_demo/selected_sku_report.md",
+    "export/data_source_check.json",
+    "export/data_source_check.md",
     "export/demo_smoke_report.json",
     "export/demo_smoke_report.md",
 ]
@@ -88,6 +90,14 @@ VISUAL_DIRS = [
     "04_identification/visualized",
 ]
 
+MARKDOWN_REPLACEMENTS = [
+    ("# ShelfVision:", "#"),
+    ("ShelfVision", "Программный комплекс анализа полочных сцен"),
+    ("для ВКР", "для описания эксперимента"),
+    ("для защиты", "для демонстрации"),
+    ("для презентации", "для отчёта"),
+]
+
 
 def _iter_dir_files(root: Path, limit: int = 0) -> Iterable[Path]:
     if not root.exists() or not root.is_dir():
@@ -96,6 +106,29 @@ def _iter_dir_files(root: Path, limit: int = 0) -> Iterable[Path]:
     if limit and limit > 0:
         files = files[:limit]
     return files
+
+
+def _sanitize_markdown(text: str) -> str:
+    result = text
+    for old, new in MARKDOWN_REPLACEMENTS:
+        result = result.replace(old, new)
+    return result
+
+
+def _add_file(
+    zf: zipfile.ZipFile,
+    path: Path,
+    arcname: str,
+    sanitize_markdown: bool = False,
+) -> None:
+    if sanitize_markdown and path.suffix.lower() == ".md":
+        try:
+            text = path.read_text(encoding="utf-8")
+            zf.writestr(arcname, _sanitize_markdown(text))
+            return
+        except Exception:
+            pass
+    zf.write(path, arcname=arcname)
 
 
 def build_defense_export_zip(
@@ -126,7 +159,7 @@ def build_defense_export_zip(
             path = PROJECT_ROOT / rel
             if path.exists() and path.is_file():
                 arcname = f"project/{rel}"
-                zf.write(path, arcname=arcname)
+                _add_file(zf, path, arcname, sanitize_markdown=False)
                 added += 1
                 added_rel.add(arcname)
             else:
@@ -136,7 +169,7 @@ def build_defense_export_zip(
             path = exp / rel
             if path.exists() and path.is_file():
                 arcname = f"experiment/{rel}"
-                zf.write(path, arcname=arcname)
+                _add_file(zf, path, arcname, sanitize_markdown=True)
                 added += 1
                 added_rel.add(arcname)
             else:
@@ -147,7 +180,7 @@ def build_defense_export_zip(
                 rel = str(path.relative_to(exp)).replace("\\", "/")
                 arcname = f"experiment/{rel}"
                 if arcname not in added_rel:
-                    zf.write(path, arcname=arcname)
+                    _add_file(zf, path, arcname, sanitize_markdown=True)
                     added += 1
                     added_rel.add(arcname)
 
@@ -160,7 +193,7 @@ def build_defense_export_zip(
                     rel = str(path.relative_to(exp)).replace("\\", "/")
                     arcname = f"experiment/{rel}"
                     if arcname not in added_rel:
-                        zf.write(path, arcname=arcname)
+                        _add_file(zf, path, arcname)
                         added += 1
                         added_rel.add(arcname)
 
