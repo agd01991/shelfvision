@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import cv2
 import numpy as np
 
 
 class VisualFeatureExtractor:
-    """Лёгкий baseline-экстрактор признаков для начальной SKU-идентификации.
+    """Лёгкий воспроизводимый экстрактор признаков для SKU-сопоставления.
 
-    Он не требует torch/faiss и работает на текущих зависимостях проекта:
-    - HSV color histogram описывает цветовую схему упаковки;
-    - ORB Bag-of-Visual-Words-like vector грубо описывает локальные детали.
+    Вектор формируется без отдельного обучения:
+    - HSV-гистограмма 16×16×8 описывает цветовое распределение упаковки;
+    - ORB-дескрипторы локальных точек усредняются и приводятся к длине 64;
+    - обе части объединяются и нормализуются по L2-норме.
 
-    Такой baseline нужен не как промышленное распознавание SKU, а как воспроизводимый
-    первый контур: crop товара -> feature vector -> cosine similarity -> SKU/unknown.
+    При параметрах по умолчанию итоговая размерность равна 2048 + 64 = 2112.
+    Это базовый визуальный дескриптор, а не Bag of Visual Words и не
+    нейросетевой эмбеддер.
     """
 
     def __init__(
@@ -31,6 +32,10 @@ class VisualFeatureExtractor:
         self.orb_vector_size = orb_vector_size
         self._orb = cv2.ORB_create(nfeatures=orb_features)
 
+    @property
+    def vector_size(self) -> int:
+        return int(np.prod(self.hist_bins)) + int(self.orb_vector_size)
+
     def read_image(self, path: str | Path) -> np.ndarray:
         image = cv2.imread(str(path))
         if image is None:
@@ -38,7 +43,11 @@ class VisualFeatureExtractor:
         return image
 
     def _prepare(self, image: np.ndarray) -> np.ndarray:
-        return cv2.resize(image, (self.image_size, self.image_size), interpolation=cv2.INTER_AREA)
+        return cv2.resize(
+            image,
+            (self.image_size, self.image_size),
+            interpolation=cv2.INTER_AREA,
+        )
 
     def _color_hist(self, image: np.ndarray) -> np.ndarray:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -63,13 +72,21 @@ class VisualFeatureExtractor:
         if mean_desc.size >= self.orb_vector_size:
             vector = mean_desc[: self.orb_vector_size]
         else:
-            vector = np.pad(mean_desc, (0, self.orb_vector_size - mean_desc.size))
+            vector = np.pad(
+                mean_desc,
+                (0, self.orb_vector_size - mean_desc.size),
+            )
         norm = np.linalg.norm(vector)
         return vector / norm if norm > 0 else vector.astype(np.float32)
 
     def extract_from_image(self, image: np.ndarray) -> np.ndarray:
         prepared = self._prepare(image)
-        vector = np.concatenate([self._color_hist(prepared), self._orb_descriptor_vector(prepared)]).astype(np.float32)
+        vector = np.concatenate(
+            [
+                self._color_hist(prepared),
+                self._orb_descriptor_vector(prepared),
+            ]
+        ).astype(np.float32)
         norm = np.linalg.norm(vector)
         return vector / norm if norm > 0 else vector
 
