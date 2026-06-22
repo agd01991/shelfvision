@@ -22,9 +22,15 @@ PROJECT_REQUIRED_FILES = [
     "scripts/final_demo_app.py",
     "scripts/final_demo_history_app.py",
     "scripts/action_history.py",
+    "scripts/active_result_source.py",
+    "scripts/demo_sku_correction_panel.py",
+    "scripts/demo_sku_correction_panel_fast.py",
     "scripts/history_review_bridge.py",
     "scripts/identification_review_panel.py",
+    "scripts/main_interface_bridge.py",
+    "scripts/user_photos_panel.py",
     "scripts/verify_experiment_source.py",
+    "scripts/windows/run_defense_demo_wsl_venv.bat",
     "src/identification/manual_identification_editor.py",
     "src/identification/selected_sku_exporter.py",
     "src/reporting/defense_export.py",
@@ -49,6 +55,9 @@ EXPERIMENT_RECOMMENDED_FILES = [
     "05_reports/threshold_analysis.csv",
     "06_manual_identification/manual_identification_edits.csv",
     "06_manual_identification/identification_results_corrected.csv",
+    "06_manual_gallery/manual_cluster_edits.csv",
+    "06_manual_gallery/sku_gallery_manual/gallery.csv",
+    "06_manual_gallery/manual_identification/04_identification/identification_results.csv",
     "history/events.csv",
     "selected_sku_demo/selected_sku_report.md",
     "export/data_source_check.json",
@@ -61,7 +70,13 @@ IMPORT_CHECKS = [
     "yaml",
     "streamlit",
     "action_history",
+    "active_result_source",
+    "demo_sku_correction_panel",
+    "demo_sku_correction_panel_fast",
     "history_review_bridge",
+    "identification_review_panel",
+    "main_interface_bridge",
+    "user_photos_panel",
     "verify_experiment_source",
     "src.identification.manual_identification_editor",
     "src.identification.selected_sku_exporter",
@@ -238,7 +253,7 @@ def write_report(report: SmokeReport, out_dir: Path) -> dict[str, Path]:
     ]
     for check in report.checks:
         icon = "✅" if check.status == "ok" else "⚠️" if check.status == "warning" else "❌"
-        detail = check.detail.replace("|", "\\|") if check.detail else ""
+        detail = check.detail.replace("|", "\|") if check.detail else ""
         lines.append(f"| {icon} {check.status} | {check.name} | {detail} |")
     md_path.write_text("\n".join(lines), encoding="utf-8")
 
