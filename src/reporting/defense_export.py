@@ -27,6 +27,7 @@ PROJECT_FILES = [
     "docs/SIMILAR_PROJECTS.md",
     "docs/REPRODUCIBILITY.md",
     "docs/DEMO_SCRIPT_5_MIN.md",
+    "docs/demo_sku_correction_notes.md",
 ]
 
 DEFAULT_FILES = [
@@ -63,6 +64,22 @@ DEFAULT_FILES = [
     "06_manual_gallery/manual_cluster_edits.csv",
     "06_manual_gallery/manual_gallery_summary.json",
     "06_manual_gallery/manual_gallery_report.md",
+    "06_manual_gallery/manual_gallery_items.csv",
+    "06_manual_gallery/sku_gallery_manual/gallery.csv",
+    "06_manual_gallery/manual_identification/04_identification/crops_manifest.csv",
+    "06_manual_gallery/manual_identification/04_identification/crops_manifest.json",
+    "06_manual_gallery/manual_identification/04_identification/identification_results.csv",
+    "06_manual_gallery/manual_identification/04_identification/identification_report.md",
+    "06_manual_gallery/manual_identification/04_identification/identification_metrics.csv",
+    "06_manual_gallery/manual_identification/04_identification/assignment_uncertainty_report.md",
+    "06_manual_gallery/manual_identification/04_identification/assignment_uncertainty_summary.json",
+    "06_manual_gallery/manual_identification/04_identification/matched_uncertain_candidates.csv",
+    "06_manual_gallery/manual_identification/05_reports/existing_identification_summary.json",
+    "06_manual_gallery/manual_identification/05_reports/existing_identification_summary.md",
+    "06_manual_gallery/manual_identification/05_reports/threshold_analysis.csv",
+    "06_manual_gallery/manual_identification/05_reports/segmentation_identification_report.md",
+    "06_manual_gallery/manual_identification/06_manual_identification/manual_identification_edits.csv",
+    "06_manual_gallery/manual_identification/06_manual_identification/identification_results_corrected.csv",
     "07_sku_audit/sku_similarity_audit_report.md",
     "07_sku_audit/merge_candidates.csv",
     "07_sku_purity_audit/sku_purity_audit_report.md",
@@ -82,12 +99,14 @@ DEFAULT_DIRS = [
     "history/checkpoints",
     "selected_sku_demo",
     "06_manual_identification/proposed_refs",
+    "06_manual_gallery/gallery_check",
 ]
 
 VISUAL_DIRS = [
     "01_gallery_inference/visualized",
     "03_query_inference/visualized",
     "04_identification/visualized",
+    "06_manual_gallery/manual_identification/04_identification/visualized",
 ]
 
 MARKDOWN_REPLACEMENTS = [
@@ -139,9 +158,9 @@ def build_defense_export_zip(
 ) -> Dict[str, Path]:
     """Создать компактный ZIP с основными результатами демонстрационного контура.
 
-    В архив включаются отчеты, таблицы, ручные правки, история, выбранные SKU
-    и ограниченное число визуализаций. Сырые датасеты и веса моделей намеренно
-    не включаются.
+    В архив включаются отчеты, таблицы, ручные правки, история, выбранные SKU,
+    результаты пересчёта с ручной SKU-галереей и ограниченное число визуализаций.
+    Сырые датасеты и веса моделей намеренно не включаются.
     """
 
     exp = Path(experiment_dir)
@@ -204,7 +223,7 @@ def build_defense_export_zip(
             "skipped_missing": skipped,
             "include_visualizations": include_visualizations,
             "visualized_limit_per_dir": visualized_limit_per_dir,
-            "note": "Raw datasets and model weights are intentionally not included.",
+            "note": "Raw datasets and model weights are intentionally not included. Manual gallery identification outputs are included when present.",
         }
         zf.writestr(
             "EXPORT_MANIFEST.json",
@@ -219,7 +238,7 @@ def build_defense_export_zip(
         files_added=added,
         skipped_missing=skipped,
         status=status,
-        note="Raw datasets and model weights are intentionally not included.",
+        note="Raw datasets and model weights are intentionally not included. Manual gallery identification outputs are included when present.",
     )
 
     summary_json = output.parent / "demo_export_summary.json"
@@ -240,7 +259,7 @@ def build_defense_export_zip(
                 f"- Не найдено ожидаемых файлов: {summary.skipped_missing}",
                 f"- Статус: **{summary.status}**",
                 "",
-                "В архив включены основные отчеты, таблицы, ручные правки, история действий, выбранные SKU и ограниченное число визуализаций.",
+                "В архив включены основные отчеты, таблицы, ручные правки, история действий, выбранные SKU, результаты ручной SKU-галереи и ограниченное число визуализаций.",
                 "Сырые датасеты и веса моделей не включены из-за размера и лицензионных ограничений.",
             ]
         ),
