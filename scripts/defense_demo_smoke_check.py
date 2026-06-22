@@ -22,8 +22,6 @@ PROJECT_REQUIRED_FILES = [
     "scripts/final_demo_app.py",
     "scripts/final_demo_history_app.py",
     "scripts/action_history.py",
-    "scripts/control_panel_wsl_app.py",
-    "scripts/defense_demo_panel.py",
     "scripts/identification_review_panel.py",
     "src/identification/manual_identification_editor.py",
     "src/identification/selected_sku_exporter.py",
@@ -38,17 +36,20 @@ EXPERIMENT_RECOMMENDED_FILES = [
     "00_manifest/all_images.csv",
     "00_manifest/gallery_images.csv",
     "00_manifest/query_images.csv",
+    "00_manifest/split_params.json",
+    "00_manifest/run_environment.json",
     "01_gallery_inference/predictions.json",
     "02_demo_gallery/demo_sku_gallery_summary.json",
     "03_query_inference/predictions.json",
     "04_identification/crops_manifest.csv",
     "05_reports/full_experiment_summary.md",
     "05_reports/full_experiment_summary.json",
+    "05_reports/threshold_analysis.csv",
     "06_manual_identification/manual_identification_edits.csv",
     "06_manual_identification/identification_results_corrected.csv",
     "history/events.csv",
     "selected_sku_demo/selected_sku_report.md",
-    "defense_export/vkr_defense_artifacts.zip",
+    "export/demo_artifacts.zip",
 ]
 
 IMPORT_CHECKS = [
@@ -61,9 +62,7 @@ IMPORT_CHECKS = [
     "src.reporting.defense_export",
 ]
 
-OPTIONAL_IMPORT_CHECKS = [
-    "cv2",
-]
+OPTIONAL_IMPORT_CHECKS = ["cv2"]
 
 
 @dataclass
@@ -105,7 +104,11 @@ def _check_import(module_name: str, missing_status: str = "error") -> CheckResul
         importlib.import_module(module_name)
         return CheckResult(name=f"import {module_name}", status="ok")
     except Exception as exc:
-        return CheckResult(name=f"import {module_name}", status=missing_status, detail=str(exc))
+        return CheckResult(
+            name=f"import {module_name}",
+            status=missing_status,
+            detail=str(exc),
+        )
 
 
 def build_report(experiment_dir: Path | None = None) -> SmokeReport:
@@ -128,9 +131,21 @@ def build_report(experiment_dir: Path | None = None) -> SmokeReport:
         else:
             checks.append(CheckResult("experiment directory", "ok", str(exp)))
             for rel in EXPERIMENT_REQUIRED_FILES:
-                checks.append(_check_file(exp / rel, f"experiment required {rel}", missing_status="error"))
+                checks.append(
+                    _check_file(
+                        exp / rel,
+                        f"experiment required {rel}",
+                        missing_status="error",
+                    )
+                )
             for rel in EXPERIMENT_RECOMMENDED_FILES:
-                checks.append(_check_file(exp / rel, f"experiment recommended {rel}", missing_status="warning"))
+                checks.append(
+                    _check_file(
+                        exp / rel,
+                        f"experiment recommended {rel}",
+                        missing_status="warning",
+                    )
+                )
 
     return SmokeReport(
         python=sys.version.replace("\n", " "),
@@ -143,8 +158,8 @@ def build_report(experiment_dir: Path | None = None) -> SmokeReport:
 
 def write_report(report: SmokeReport, out_dir: Path) -> dict[str, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    json_path = out_dir / "defense_demo_smoke_report.json"
-    md_path = out_dir / "defense_demo_smoke_report.md"
+    json_path = out_dir / "demo_smoke_report.json"
+    md_path = out_dir / "demo_smoke_report.md"
 
     payload = asdict(report)
     payload["status"] = report.status
@@ -179,8 +194,16 @@ def write_report(report: SmokeReport, out_dir: Path) -> dict[str, Path]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Smoke-проверка демонстрационного интерфейса")
-    parser.add_argument("--experiment-dir", default="", help="Папка итогового эксперимента, если нужно проверить артефакты")
-    parser.add_argument("--out-dir", default="", help="Куда сохранить отчет. По умолчанию: experiment/defense_export или results/defense_smoke")
+    parser.add_argument(
+        "--experiment-dir",
+        default="",
+        help="Папка эксперимента, если нужно проверить его артефакты",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default="",
+        help="Куда сохранить отчет. По умолчанию: experiment/export или results/demo_smoke",
+    )
     parser.add_argument("--strict", action="store_true", help="Вернуть код 1 при ошибках")
     return parser.parse_args()
 
@@ -193,9 +216,9 @@ def main() -> int:
     if args.out_dir.strip():
         out_dir = Path(args.out_dir)
     elif experiment_dir is not None:
-        out_dir = experiment_dir / "defense_export"
+        out_dir = experiment_dir / "export"
     else:
-        out_dir = ROOT / "results" / "defense_smoke"
+        out_dir = ROOT / "results" / "demo_smoke"
     outputs = write_report(report, out_dir)
 
     print(f"Demo smoke status: {report.status}")
