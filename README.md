@@ -1,53 +1,100 @@
-# Демонстрационный интерфейс программного комплекса анализа полочных сцен
+# Программный комплекс анализа полочных сцен
 
-Ранее в рабочих материалах проекта использовалось техническое название `ShelfVision`. Название не является предметом научной новизны и не используется как заявка на уникальный программный продукт. В рамках ВКР проект рассматривается как программный комплекс для анализа изображений полочных сцен, локализации товарных объектов и экспериментального SKU-сопоставления.
+Программный комплекс предназначен для подготовки данных, локализации товарных объектов на изображениях полок, формирования вырезанных фрагментов, построения демонстрационной SKU-галереи, визуального SKU-сопоставления, ручной проверки результатов и формирования отчётных файлов.
 
-Проект не является форком и не является новой версией сторонних открытых репозиториев с похожим названием. Совпадение названия объясняется общей предметной областью: `shelf`, `vision`, `retail shelf analysis`. Отличие данной реализации заключается в полном контуре обработки: локализация объектов, извлечение товарных фрагментов, автоматическое формирование демонстрационной SKU-галереи, расчет визуальных признаков HSV + ORB, косинусное сопоставление, top-k кандидаты, margin-анализ, статусы `matched` / `matched_uncertain` / `unknown` и формирование отчетных артефактов.
+Ранее в отдельных рабочих материалах использовалось техническое название `ShelfVision`. Оно не является предметом научной новизны и не используется как заявка на уникальный программный продукт.
 
-## Что входит в проект
+## Основные возможности
 
-- подготовка датасета в COCO/YOLO-подобных форматах;
-- конвертация COCO segmentation в YOLO-Seg labels;
-- обучение и сравнение моделей;
-- инференс YOLO, YOLO-Seg, RT-DETR, Faster R-CNN и WBF через единый формат предсказаний;
-- расчет bbox-метрик и визуализация ошибок модели;
-- расчет mask-метрик для YOLO-Seg при наличии масочной разметки;
-- полный контур gallery/query для фото-идентификации;
-- извлечение вырезанных фрагментов товаров;
+- подготовка COCO-, SKU-110K- и D2S-данных;
+- проверка BBox и разбиение на train/val/test;
+- преобразование COCO segmentation в YOLO-Seg;
+- обучение YOLO и YOLO-Seg;
+- инференс YOLO, YOLO-Seg, RT-DETR и Faster R-CNN;
+- отдельное объединение YOLO и RT-DETR через WBF;
+- полный gallery/query-контур фотоидентификации;
+- извлечение фрагментов по BBox или маске;
 - автоматическое формирование демонстрационной SKU-галереи;
-- SKU-сопоставление по HSV + ORB признакам и косинусной мере сходства;
-- аудит похожих SKU и проверка смешанных SKU;
-- ручная корректировка SKU-галереи;
-- ручная проверка конкретных результатов идентификации;
-- отчетные таблицы CSV, JSON, MD и визуализации;
-- Streamlit-интерфейс для демонстрации защиты.
+- визуальное сопоставление по HSV-гистограмме и усреднённому ORB-дескриптору;
+- расчёт top-k кандидатов и margin между двумя лучшими различными SKU;
+- статусы `matched`, `matched_uncertain`, `unknown`;
+- ручная проверка назначений без изменения исходного CSV;
+- отдельная корректировка SKU-галереи через merge/split;
+- история событий и контрольные точки;
+- выбор отдельных SKU для анализа;
+- экспорт CSV, JSON, Markdown, изображений и ZIP-архива.
 
-## Границы экспериментальной проверки
+## Границы текущей реализации
 
-В рамках ВКР итоговая количественная проверка полного визуального контура выполнена на выбранной модельной ветке YOLO. YOLO-Seg, RT-DETR, Faster R-CNN и WBF предусмотрены архитектурно и частично реализованы через единый формат предсказаний, однако их полноценное сравнение требует отдельной серии экспериментов и не заявляется как завершённый результат текущей работы.
+- итоговый полный gallery/query-контур рассчитан на одну выбранную модельную ветку за запуск;
+- финальный профиль использует YOLO;
+- YOLO-Seg, RT-DETR и Faster R-CNN доступны как отдельные ветки инференса, но требуют самостоятельного сравнительного запуска;
+- WBF доступен в отдельном сценарии инференса и не встроен в полный gallery/query-конвейер;
+- автоматически создаваемые `sku_demo_*` являются визуальными группами, а не реальными товарными артикулами;
+- `assigned_rate` показывает долю объектов с назначенным кандидатом и не является top-1 accuracy без эталонной SKU-разметки;
+- контрольная точка истории сохраняет конфигурацию и путь к каталогу результатов, но не выполняет полный файловый rollback;
+- промышленная проверка планограмм и интеграция с товарным справочником в основной сценарий не входят.
 
-`matched_rate` / `assigned_rate` не являются top-1 accuracy реального SKU-распознавания без эталонной SKU-разметки каждого проверяемого объекта. Это доля объектов, которым демонстрационный контур назначил кандидата из автоматически сформированной SKU-галереи.
+## Финальный пользовательский интерфейс
 
-## Итоговый профиль ВКР
+Основная точка входа:
 
-Итоговые параметры для воспроизводимой демонстрации вынесены в файл:
+```bash
+.venv_wsl/bin/python -m streamlit run scripts/final_demo_history_app.py
+```
+
+В WSL/Linux можно использовать запускатель:
+
+```bash
+bash scripts/run_defense_demo_app.sh
+```
+
+В Windows:
+
+```bat
+scripts\windows\run_defense_demo_app.bat
+```
+
+Windows-запускатель сначала пытается использовать `.venv_wsl`, затем локальную `.venv`, затем Python из `PATH`.
+
+Интерфейс содержит вкладки:
+
+```text
+Старт
+Обзор
+Параметры
+Фрагменты
+Идентификация
+Ручная проверка
+История
+До/после
+Выбор SKU
+Экспорт
+FAQ
+```
+
+Интерфейс читает результаты уже выполненного эксперимента. Обучение и полный вычислительный конвейер запускаются отдельными скриптами.
+
+## Итоговый профиль
+
+Параметры демонстрационного запуска находятся в:
 
 ```text
 config/vkr_final.yaml
 ```
 
-Ключевые параметры:
+Ключевые значения:
 
 | Параметр | Значение |
 |---|---:|
-| Модель итогового контура | YOLO |
+| Модель | YOLO |
 | gallery_count | 160 |
 | query_count | 140 |
 | max_sku | 200 |
 | confidence детектора | 0,25 |
 | imgsz | 640 |
 | threshold τ | 0,65 |
-| ambiguity_margin δ | 0,03 |
+| ambiguity margin δ | 0,03 |
 | top-k | 5 |
 | dedup_threshold | 0,82 |
 | max_refs_per_sku | 15 |
@@ -56,92 +103,35 @@ config/vkr_final.yaml
 | padding | 0,05 |
 | seed | 42 |
 
-## Демонстрационный интерфейс для защиты
-
-Главный интерфейс запускается через WSL/локальное окружение:
-
-```bash
-streamlit run scripts/control_panel_wsl_app.py
-```
-
-На Windows можно запустить:
-
-```bat
-scripts\windows\run_defense_demo_app.bat
-```
-
-В WSL/Linux можно запустить:
-
-```bash
-bash scripts/run_defense_demo_app.sh
-```
-
-В интерфейсе добавлен раздел **«Демо защиты»**, который показывает полный сценарий:
-
-1. выбор набора изображений;
-2. разделение на gallery/query;
-3. применение модели локализации;
-4. просмотр BBox/масок и вырезанных фрагментов;
-5. формирование демонстрационной SKU-галереи;
-6. SKU-сопоставление по визуальным признакам;
-7. просмотр top-k кандидатов, similarity и margin;
-8. ручная проверка идентификации;
-9. корректировка SKU-галереи;
-10. сравнение результата до и после ручной проверки;
-11. экспорт отчетных файлов.
-
-Вкладка **«0. Сценарий защиты»** содержит чек-лист готовности и пошаговый сценарий демонстрации на 5 минут.
-
-Интерфейс предназначен для демонстрации исследовательского прототипа и не заявляется как промышленная система контроля планограмм.
-
-## Smoke-проверка перед защитой
-
-Быстрая проверка наличия проектных файлов, импортов и основных артефактов эксперимента выполняется так:
-
-```bash
-.venv_wsl/bin/python scripts/defense_demo_smoke_check.py \
-  --experiment-dir D:/1Diplom/shelfvision_results/full_photo_identification_vkr_final
-```
-
-На Windows можно запустить:
-
-```bat
-scripts\windows\run_defense_smoke_check.bat --experiment-dir D:/1Diplom/shelfvision_results/full_photo_identification_vkr_final
-```
-
-Проверка формирует:
+Путь `images_dir` необходимо сверить с фактическим каталогом данных перед запуском. Источник конкретного эксперимента подтверждается файлами:
 
 ```text
-defense_export/defense_demo_smoke_report.json
-defense_export/defense_demo_smoke_report.md
+00_manifest/all_images.csv
+00_manifest/run_environment.json
+00_manifest/split_params.json
 ```
 
-## Установка зависимостей через WSL
+Проверка согласованности:
 
 ```bash
-python3 -m venv .venv_wsl
-.venv_wsl/bin/python -m pip install --upgrade pip
-.venv_wsl/bin/python -m pip install -r requirements.txt
+.venv_wsl/bin/python scripts/verify_experiment_source.py \
+  --experiment-dir /mnt/d/1Diplom/shelfvision_results/full_photo_identification_vkr_final \
+  --config config/vkr_final.yaml \
+  --strict
 ```
 
-Для точной фиксации локального окружения защиты рекомендуется дополнительно сформировать freeze-файл:
+## Полный gallery/query-конвейер
 
-```bash
-.venv_wsl/bin/python -m pip freeze > requirements-wsl-freeze.txt
-```
-
-## Быстрый запуск полного контура
-
-Пример запуска полного контура с итоговыми параметрами:
+Пример запуска:
 
 ```bash
 .venv_wsl/bin/python run_full_photo_identification_pipeline.py \
   --model yolo \
   --weights models/yolo/best.pt \
-  --images-dir D:/1Diplom/data/raw/d2s_full/images \
-  --out-dir D:/1Diplom/shelfvision_results/full_photo_identification_vkr_final \
-  --gallery-dir D:/1Diplom/sku_gallery_full_vkr_final \
-  --gallery-csv D:/1Diplom/sku_gallery_full_vkr_final/gallery.csv \
+  --images-dir /mnt/d/1Diplom/data/raw/d2s_full/images \
+  --out-dir /mnt/d/1Diplom/shelfvision_results/full_photo_identification_vkr_final \
+  --gallery-dir /mnt/d/1Diplom/sku_gallery_full_vkr_final \
+  --gallery-csv /mnt/d/1Diplom/sku_gallery_full_vkr_final/gallery.csv \
   --gallery-count 160 \
   --query-count 140 \
   --max-sku 200 \
@@ -163,12 +153,16 @@ python3 -m venv .venv_wsl
   --skip-existing
 ```
 
+Замените `--images-dir` фактическим каталогом выбранного набора данных.
+
 ## Основные выходные файлы
 
 ```text
 00_manifest/all_images.csv
 00_manifest/gallery_images.csv
 00_manifest/query_images.csv
+00_manifest/split_params.json
+00_manifest/run_environment.json
 01_gallery_inference/predictions.json
 01_gallery_inference/summary.csv
 02_demo_gallery/demo_sku_gallery_summary.json
@@ -177,21 +171,64 @@ python3 -m venv .venv_wsl
 03_query_inference/summary.csv
 04_identification/crops_manifest.csv
 04_identification/identification_results.csv
-04_identification/identification_report.md
+04_identification/identification_metrics.csv
 05_reports/full_experiment_summary.json
 05_reports/full_experiment_summary.md
 05_reports/threshold_analysis.csv
 06_manual_identification/manual_identification_edits.csv
-06_manual_identification/manual_reference_suggestions.csv
 06_manual_identification/identification_results_corrected.csv
+history/events.csv
 selected_sku_demo/selected_sku_report.md
-defense_export/vkr_defense_artifacts.zip
+export/data_source_check.json
+export/demo_smoke_report.json
+export/demo_artifacts.zip
 ```
 
-## Документы для защиты
+## Smoke-проверка
 
-- `docs/DEFENSE_FAQ.md` — ответы на вопросы комиссии;
-- `docs/SIMILAR_PROJECTS.md` — отличие от открытых проектов с похожим названием;
-- `docs/REPRODUCIBILITY.md` — воспроизводимость итогового запуска;
-- `docs/DEMO_SCRIPT_5_MIN.md` — сценарий демонстрации на защите за 5 минут;
-- `data/README.md` — описание локального размещения данных.
+```bash
+.venv_wsl/bin/python scripts/defense_demo_smoke_check.py \
+  --experiment-dir /mnt/d/1Diplom/shelfvision_results/full_photo_identification_vkr_final \
+  --strict
+```
+
+Отчёты сохраняются в:
+
+```text
+export/demo_smoke_report.json
+export/demo_smoke_report.md
+```
+
+## Тесты
+
+```bash
+.venv_wsl/bin/python -m unittest tests/test_demo_core.py -v
+```
+
+Тесты проверяют:
+
+- назначение статусов;
+- margin между различными SKU;
+- размер визуального вектора;
+- применение последней ручной правки;
+- сохранение событий и контрольных точек;
+- формирование минимального ZIP-архива.
+
+## Фиксация окружения
+
+```bash
+python3 -m venv .venv_wsl
+.venv_wsl/bin/python -m pip install --upgrade pip
+.venv_wsl/bin/python -m pip install -r requirements.txt
+.venv_wsl/bin/python -m pip freeze > requirements-wsl-freeze.txt
+```
+
+## Дополнительная документация
+
+```text
+docs/DEFENSE_FAQ.md
+docs/SIMILAR_PROJECTS.md
+docs/REPRODUCIBILITY.md
+docs/DEMO_SCRIPT_5_MIN.md
+data/README.md
+```
