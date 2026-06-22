@@ -22,7 +22,9 @@ PROJECT_REQUIRED_FILES = [
     "scripts/final_demo_app.py",
     "scripts/final_demo_history_app.py",
     "scripts/action_history.py",
+    "scripts/history_review_bridge.py",
     "scripts/identification_review_panel.py",
+    "scripts/verify_experiment_source.py",
     "src/identification/manual_identification_editor.py",
     "src/identification/selected_sku_exporter.py",
     "src/reporting/defense_export.py",
@@ -49,6 +51,8 @@ EXPERIMENT_RECOMMENDED_FILES = [
     "06_manual_identification/identification_results_corrected.csv",
     "history/events.csv",
     "selected_sku_demo/selected_sku_report.md",
+    "export/data_source_check.json",
+    "export/data_source_check.md",
     "export/demo_artifacts.zip",
 ]
 
@@ -57,6 +61,7 @@ IMPORT_CHECKS = [
     "yaml",
     "streamlit",
     "action_history",
+    "history_review_bridge",
     "src.identification.manual_identification_editor",
     "src.identification.selected_sku_exporter",
     "src.reporting.defense_export",
