@@ -8,6 +8,7 @@ import streamlit as st
 
 import action_history
 import final_demo_app as core
+from history_review_bridge import render_review_with_history
 from identification_review_panel import page_identification_review
 from src.identification.selected_sku_exporter import export_selected_sku_demo
 from src.reporting.defense_export import build_defense_export_zip
@@ -124,7 +125,8 @@ def _render_export_with_history(exp: Path) -> None:
 
 def _render_history(exp: Path, config: Dict[str, Any]) -> None:
     st.subheader("История")
-    st.caption("Здесь можно сохранить контрольную точку, посмотреть события и вернуться к сохранённому этапу.")
+    st.caption("Сохраняйте контрольные точки и просматривайте журнал действий.")
+    st.info("Контрольная точка хранит конфигурацию и путь к каталогу результатов. Она не копирует и не откатывает все файлы автоматически.")
 
     title = st.text_input("Название контрольной точки", value="Проверенный этап")
     note = st.text_area("Комментарий", value="", height=90)
@@ -146,10 +148,10 @@ def _render_history(exp: Path, config: Dict[str, Any]) -> None:
         with c1:
             st.write({"created_at": data.get("created_at"), "title": data.get("title"), "note": data.get("note")})
         with c2:
-            if st.button("Вернуться к этому этапу", use_container_width=True):
+            if st.button("Открыть этот этап", use_container_width=True):
                 target = data.get("experiment_dir") or str(exp)
                 st.session_state["demo_experiment_dir"] = target
-                st.success(f"Выбран этап: {target}")
+                st.success(f"Открыт каталог: {target}")
                 st.rerun()
         with st.expander("Содержимое контрольной точки", expanded=False):
             st.json(data)
@@ -167,7 +169,7 @@ def _render_history(exp: Path, config: Dict[str, Any]) -> None:
 def _render_review(exp: Path, config: Dict[str, Any]) -> None:
     review_config = dict(config)
     review_config.setdefault("full_photo_identification", {})["out_dir"] = str(exp)
-    page_identification_review(review_config)
+    render_review_with_history(exp, review_config, page_identification_review)
 
 
 def main() -> None:
