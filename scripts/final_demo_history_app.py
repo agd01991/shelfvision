@@ -13,6 +13,7 @@ from history_review_bridge import render_review_with_history
 from identification_review_panel import page_identification_review
 from src.identification.selected_sku_exporter import export_selected_sku_demo
 from src.reporting.defense_export import build_defense_export_zip
+from user_photos_panel import page_user_photos
 from verify_experiment_source import (
     build_report as build_source_report,
     write_report as write_source_report,
@@ -120,7 +121,8 @@ def _render_start(exp: Path) -> None:
     st.subheader("Старт")
     st.info(
         "Интерфейс помогает пройти полный контур: обзор результатов, фрагменты, "
-        "идентификация, ручная проверка, коррекция SKU-галереи, сравнение до/после и экспорт."
+        "идентификация, пользовательские фото, ручная проверка, коррекция SKU-галереи, "
+        "сравнение до/после и экспорт."
     )
     paths = core.experiment_paths(exp) if hasattr(core, "experiment_paths") else {}
     if paths:
@@ -145,10 +147,12 @@ def _render_start(exp: Path) -> None:
 2. **Параметры** — проверить профиль и фактический источник данных.
 3. **Фрагменты** — проверить качество вырезанных товаров.
 4. **Идентификация** — отфильтровать статусы и найти спорные случаи.
-5. **Ручная проверка** — подтвердить или изменить назначение SKU.
-6. **История** — сохранить контрольную точку после важных действий.
-7. **До/после** — сравнить исходный и скорректированный результат.
-8. **Экспорт** — собрать ZIP-архив с материалами.
+5. **Свои фото** — запустить детекцию и идентификацию на пользовательской папке без разметки.
+6. **Ручная проверка** — подтвердить или изменить назначение SKU.
+7. **Коррекция SKU** — улучшить автоматически сформированную галерею.
+8. **История** — сохранить контрольную точку после важных действий.
+9. **До/после** — сравнить исходный и скорректированный результат.
+10. **Экспорт** — собрать ZIP-архив с материалами.
 """
     )
 
@@ -356,8 +360,8 @@ def main() -> None:
 
     st.title("🧰 Демо анализа полочных сцен")
     st.caption(
-        "Просмотр результатов, ручная проверка идентификации, история действий "
-        "и экспорт материалов."
+        "Просмотр результатов, запуск на пользовательских фото, ручная проверка, "
+        "коррекция SKU-галереи, история действий и экспорт материалов."
     )
 
     tabs = st.tabs(
@@ -367,6 +371,7 @@ def main() -> None:
             "Параметры",
             "Фрагменты",
             "Идентификация",
+            "Свои фото",
             "Ручная проверка",
             "Коррекция SKU",
             "История",
@@ -387,18 +392,20 @@ def main() -> None:
     with tabs[4]:
         core._render_identification_table(exp)
     with tabs[5]:
-        _render_review(exp, config)
+        page_user_photos(config, exp)
     with tabs[6]:
-        page_demo_sku_correction(config, exp)
+        _render_review(exp, config)
     with tabs[7]:
-        _render_history(exp, config)
+        page_demo_sku_correction(config, exp)
     with tabs[8]:
-        core._render_before_after(exp)
+        _render_history(exp, config)
     with tabs[9]:
-        _render_selected_sku_with_history(exp)
+        core._render_before_after(exp)
     with tabs[10]:
-        _render_export_with_history(exp)
+        _render_selected_sku_with_history(exp)
     with tabs[11]:
+        _render_export_with_history(exp)
+    with tabs[12]:
         core._render_faq()
 
 
