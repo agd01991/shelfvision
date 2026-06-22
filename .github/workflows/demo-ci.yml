@@ -10,6 +10,8 @@ jobs:
   test-demo:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      PYTHONPATH: .
 
     steps:
       - name: Checkout
@@ -37,8 +39,13 @@ jobs:
             scripts/final_demo_app.py \
             scripts/final_demo_history_app.py \
             scripts/action_history.py \
+            scripts/active_result_source.py \
+            scripts/demo_sku_correction_panel.py \
+            scripts/demo_sku_correction_panel_fast.py \
             scripts/history_review_bridge.py \
             scripts/identification_review_panel.py \
+            scripts/main_interface_bridge.py \
+            scripts/user_photos_panel.py \
             scripts/defense_demo_smoke_check.py \
             scripts/verify_experiment_source.py \
             src/identification/feature_extractor.py \
