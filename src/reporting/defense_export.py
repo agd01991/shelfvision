@@ -4,13 +4,13 @@ import json
 import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass
-class DefenseExportSummary:
+class DemoExportSummary:
     experiment_dir: str
     output_zip: str
     files_added: int
@@ -33,6 +33,8 @@ DEFAULT_FILES = [
     "00_manifest/all_images.csv",
     "00_manifest/gallery_images.csv",
     "00_manifest/query_images.csv",
+    "00_manifest/split_params.json",
+    "00_manifest/run_environment.json",
     "01_gallery_inference/predictions.json",
     "01_gallery_inference/summary.csv",
     "02_demo_gallery/demo_sku_gallery_summary.json",
@@ -66,14 +68,16 @@ DEFAULT_FILES = [
     "07_sku_purity_audit/sku_purity_audit_report.md",
     "07_sku_purity_audit/mixed_sku_candidates.csv",
     "07_sku_purity_audit/ref_outlier_candidates.csv",
+    "history/events.csv",
     "selected_sku_demo/selected_skus.csv",
     "selected_sku_demo/selected_identification_results.csv",
     "selected_sku_demo/selected_sku_report.md",
-    "defense_export/defense_demo_smoke_report.json",
-    "defense_export/defense_demo_smoke_report.md",
+    "export/demo_smoke_report.json",
+    "export/demo_smoke_report.md",
 ]
 
 DEFAULT_DIRS = [
+    "history/checkpoints",
     "selected_sku_demo",
     "06_manual_identification/proposed_refs",
 ]
@@ -100,16 +104,16 @@ def build_defense_export_zip(
     include_visualizations: bool = True,
     visualized_limit_per_dir: int = 30,
 ) -> Dict[str, Path]:
-    """Create a compact ZIP archive with key VKR defense artifacts.
+    """Создать компактный ZIP с основными результатами демонстрационного контура.
 
-    The archive intentionally contains reports, CSV/JSON summaries, defense notes
-    and a limited number of visualization images. Large raw datasets and model
-    weights are not included.
+    В архив включаются отчеты, таблицы, ручные правки, история, выбранные SKU
+    и ограниченное число визуализаций. Сырые датасеты и веса моделей намеренно
+    не включаются.
     """
 
     exp = Path(experiment_dir)
     if output_zip is None:
-        output_zip = exp / "defense_export" / "vkr_defense_artifacts.zip"
+        output_zip = exp / "export" / "demo_artifacts.zip"
     output = Path(output_zip)
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -121,18 +125,20 @@ def build_defense_export_zip(
         for rel in PROJECT_FILES:
             path = PROJECT_ROOT / rel
             if path.exists() and path.is_file():
-                zf.write(path, arcname=f"project/{rel}")
+                arcname = f"project/{rel}"
+                zf.write(path, arcname=arcname)
                 added += 1
-                added_rel.add(f"project/{rel}")
+                added_rel.add(arcname)
             else:
                 skipped += 1
 
         for rel in DEFAULT_FILES:
             path = exp / rel
             if path.exists() and path.is_file():
-                zf.write(path, arcname=f"experiment/{rel}")
+                arcname = f"experiment/{rel}"
+                zf.write(path, arcname=arcname)
                 added += 1
-                added_rel.add(f"experiment/{rel}")
+                added_rel.add(arcname)
             else:
                 skipped += 1
 
@@ -147,7 +153,10 @@ def build_defense_export_zip(
 
         if include_visualizations:
             for rel_dir in VISUAL_DIRS:
-                for path in _iter_dir_files(exp / rel_dir, limit=max(0, int(visualized_limit_per_dir))):
+                for path in _iter_dir_files(
+                    exp / rel_dir,
+                    limit=max(0, int(visualized_limit_per_dir)),
+                ):
                     rel = str(path.relative_to(exp)).replace("\\", "/")
                     arcname = f"experiment/{rel}"
                     if arcname not in added_rel:
@@ -164,11 +173,14 @@ def build_defense_export_zip(
             "visualized_limit_per_dir": visualized_limit_per_dir,
             "note": "Raw datasets and model weights are intentionally not included.",
         }
-        zf.writestr("EXPORT_MANIFEST.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        zf.writestr(
+            "EXPORT_MANIFEST.json",
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+        )
         added += 1
 
     status = "ok" if added > 1 else "warning"
-    summary = DefenseExportSummary(
+    summary = DemoExportSummary(
         experiment_dir=str(exp),
         output_zip=str(output),
         files_added=added,
@@ -176,14 +188,18 @@ def build_defense_export_zip(
         status=status,
         note="Raw datasets and model weights are intentionally not included.",
     )
-    summary_json = output.parent / "defense_export_summary.json"
-    summary_json.write_text(json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8")
 
-    report_md = output.parent / "defense_export_report.md"
+    summary_json = output.parent / "demo_export_summary.json"
+    summary_json.write_text(
+        json.dumps(asdict(summary), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    report_md = output.parent / "demo_export_report.md"
     report_md.write_text(
         "\n".join(
             [
-                "# Экспорт материалов для защиты",
+                "# Экспорт материалов",
                 "",
                 f"- Папка эксперимента: `{summary.experiment_dir}`",
                 f"- ZIP-архив: `{summary.output_zip}`",
@@ -191,8 +207,8 @@ def build_defense_export_zip(
                 f"- Не найдено ожидаемых файлов: {summary.skipped_missing}",
                 f"- Статус: **{summary.status}**",
                 "",
-                "В архив включаются проектные документы защиты, итоговый профиль, ключевые отчеты, таблицы, ручные правки и ограниченное число визуализаций.",
-                "Сырые датасеты и веса моделей в архив не включаются из-за размера и лицензионных ограничений.",
+                "В архив включены основные отчеты, таблицы, ручные правки, история действий, выбранные SKU и ограниченное число визуализаций.",
+                "Сырые датасеты и веса моделей не включены из-за размера и лицензионных ограничений.",
             ]
         ),
         encoding="utf-8",
