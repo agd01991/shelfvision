@@ -6,7 +6,7 @@ import re
 import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, Sequence
 
 import pandas as pd
 
@@ -70,7 +70,11 @@ def _iter_gallery_refs(gallery_dir: Path, sku_id: str) -> Iterable[Path]:
     sku_dir = gallery_dir / sku_id
     if not sku_dir.exists() or not sku_dir.is_dir():
         return []
-    return sorted(path for path in sku_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTS)
+    return sorted(
+        path
+        for path in sku_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+    )
 
 
 def export_selected_sku_demo(
@@ -82,7 +86,7 @@ def export_selected_sku_demo(
     max_rows_per_sku: int = 40,
     include_unknown_similar: bool = False,
 ) -> Dict[str, Path]:
-    """Export a compact demo subset for selected SKU identifiers."""
+    """Собрать компактный набор эталонов и результатов по выбранным SKU."""
 
     exp = _current_os_path(experiment_dir)
     selected = [sku.strip() for sku in selected_skus if str(sku).strip()]
@@ -92,13 +96,16 @@ def export_selected_sku_demo(
     out.mkdir(parents=True, exist_ok=True)
 
     if results_csv is None:
-        corrected = exp / "06_manual_identification" / "identification_results_corrected.csv"
+        corrected = (
+            exp
+            / "06_manual_identification"
+            / "identification_results_corrected.csv"
+        )
         raw = exp / "04_identification" / "identification_results.csv"
         results_csv = corrected if corrected.exists() else raw
     results_path = _current_os_path(results_csv)
 
     if gallery_dir is None:
-        # Prefer the final gallery directory saved by full experiment report.
         summary_path = exp / "05_reports" / "full_experiment_summary.json"
         gallery_from_summary = ""
         if summary_path.exists():
@@ -121,10 +128,18 @@ def export_selected_sku_demo(
         mask = results.get("sku_id", pd.Series(dtype=str)).astype(str).isin(selected_set)
         if include_unknown_similar and "top_k" in results.columns:
             for sku in selected:
-                mask = mask | results["top_k"].astype(str).str.contains(sku, case=False, na=False)
+                mask = mask | results["top_k"].astype(str).str.contains(
+                    sku,
+                    case=False,
+                    na=False,
+                )
         selected_results = results[mask].copy()
 
-    if not selected_results.empty and max_rows_per_sku > 0 and "sku_id" in selected_results.columns:
+    if (
+        not selected_results.empty
+        and max_rows_per_sku > 0
+        and "sku_id" in selected_results.columns
+    ):
         selected_results = (
             selected_results.groupby("sku_id", group_keys=False)
             .head(max_rows_per_sku)
@@ -153,7 +168,11 @@ def export_selected_sku_demo(
             sku = _safe_text(row.get("sku_id")) or "unknown"
             object_id = _safe_text(row.get("object_id"))
             crop = _current_os_path(_safe_text(row.get("crop_path")))
-            copied = _copy_file(crop, crops_out / sku, prefix=f"obj_{object_id}_")
+            copied = _copy_file(
+                crop,
+                crops_out / sku,
+                prefix=f"obj_{object_id}_",
+            )
             if copied is not None:
                 crops_copied += 1
 
@@ -168,11 +187,14 @@ def export_selected_sku_demo(
     )
 
     summary_json = out / "selected_sku_summary.json"
-    summary_json.write_text(json.dumps(asdict(summary), ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_json.write_text(
+        json.dumps(asdict(summary), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     report_md = out / "selected_sku_report.md"
-    lines: List[str] = [
-        "# Демонстрационный набор выбранных SKU",
+    lines = [
+        "# Набор выбранных SKU",
         "",
         f"- Папка эксперимента: `{summary.experiment_dir}`",
         f"- Выбранных SKU: {summary.selected_sku_count}",
@@ -189,7 +211,7 @@ def export_selected_sku_demo(
             "",
             "## Назначение",
             "",
-            "Этот набор нужен для защиты: по выбранным SKU можно показать эталоны галереи, проверяемые фрагменты, top-k кандидатов и спорные случаи.",
+            "Набор содержит эталоны галереи и проверяемые фрагменты по выбранным SKU. Его можно использовать для анализа результатов, top-k кандидатов и спорных случаев.",
         ]
     )
     report_md.write_text("\n".join(lines), encoding="utf-8")
