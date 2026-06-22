@@ -1,14 +1,5 @@
 @echo off
 setlocal
-cd /d "%~dp0\..\.."
-
-if exist ".venv_wsl\Scripts\python.exe" (
-  set PYTHON=.venv_wsl\Scripts\python.exe
-) else if exist ".venv\Scripts\python.exe" (
-  set PYTHON=.venv\Scripts\python.exe
-) else (
-  set PYTHON=python
-)
-
-%PYTHON% scripts\defense_demo_smoke_check.py %*
-endlocal
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_demo_smoke.ps1" %*
+set EXIT_CODE=%ERRORLEVEL%
+endlocal & exit /b %EXIT_CODE%
