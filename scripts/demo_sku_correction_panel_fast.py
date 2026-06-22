@@ -31,6 +31,7 @@ def _gallery_marker(gallery_dir: Path) -> int:
     candidates = [
         gallery_dir / "gallery.csv",
         gallery_dir.parent / "demo_sku_gallery_summary.json",
+        gallery_dir.parent / "manual_gallery_summary.json",
         gallery_dir,
     ]
     values: List[int] = []
@@ -49,6 +50,23 @@ def _gallery_stats_fast(gallery_dir: Path) -> tuple[Dict[str, List[Path]], int, 
     return refs_by_sku, len(refs_by_sku), refs_count
 
 
+def _active_display_gallery(base_gallery_dir: Path, manual_gallery_dir: Path, manual_gallery_csv: Path) -> Path:
+    """Gallery used only for visual editing screens.
+
+    If the user has already built `06_manual_gallery/sku_gallery_manual`, the
+    correction screen should show that current manual state, not the original
+    automatically generated gallery. Building still uses the original source in
+    `_render_apply`, so the full edit log remains reproducible from the base
+    experiment.
+    """
+
+    manual_gallery_dir = _p(manual_gallery_dir)
+    manual_gallery_csv = _p(manual_gallery_csv)
+    if manual_gallery_dir.exists() and manual_gallery_csv.exists():
+        return manual_gallery_dir
+    return _p(base_gallery_dir)
+
+
 def page_demo_sku_correction(config: Dict[str, Any], experiment_dir: str | Path) -> None:
     exp = _p(experiment_dir)
     st.subheader("Коррекция SKU-галереи")
@@ -61,26 +79,32 @@ def page_demo_sku_correction(config: Dict[str, Any], experiment_dir: str | Path)
         st.info("Сначала укажите существующую папку результатов в боковой панели.")
         return
 
-    source_gallery_dir = _source_gallery_dir(exp, config)
-    if not source_gallery_dir.exists():
-        st.warning(f"Исходная SKU-галерея не найдена: `{source_gallery_dir}`")
+    base_gallery_dir = _source_gallery_dir(exp, config)
+    if not base_gallery_dir.exists():
+        st.warning(f"Исходная SKU-галерея не найдена: `{base_gallery_dir}`")
         return
 
     _, edits_csv, manual_gallery_dir, manual_gallery_csv, _ = _manual_paths(exp)
-    refs_by_sku, sku_count, refs_count = _gallery_stats_fast(source_gallery_dir)
+    display_gallery_dir = _active_display_gallery(base_gallery_dir, manual_gallery_dir, manual_gallery_csv)
+    refs_by_sku, sku_count, refs_count = _gallery_stats_fast(display_gallery_dir)
     edits = read_manual_edits(edits_csv)
+    is_manual_view = display_gallery_dir == _p(manual_gallery_dir)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("SKU в галерее", sku_count)
     c2.metric("Эталонов", refs_count)
     c3.metric("Ручных операций", len(edits))
-    c4.metric("Ручная галерея", "готова" if manual_gallery_csv.exists() else "нет")
+    c4.metric("Ручная галерея", "активна" if is_manual_view else "нет")
 
     st.info(
         "Используйте этот экран для демонстрации экспертной корректировки: "
         "объедините два SKU, если это один товар, или вынесите ошибочные эталоны в новый SKU."
     )
-    st.caption(f"Исходная галерея: `{source_gallery_dir}`")
+    st.caption(f"Исходная галерея для воспроизводимой сборки: `{base_gallery_dir}`")
+    if is_manual_view:
+        st.success(f"Отображается текущая ручная галерея: `{display_gallery_dir}`")
+    else:
+        st.caption(f"Отображается исходная галерея: `{display_gallery_dir}`")
     st.caption(f"Журнал операций: `{edits_csv}`")
 
     st.session_state.setdefault("demo_focus_candidate_limit", 24)
@@ -102,6 +126,6 @@ def page_demo_sku_correction(config: Dict[str, Any], experiment_dir: str | Path)
     elif section == "Журнал":
         _render_journal(exp, edits_csv)
     elif section == "Применить":
-        _render_apply(exp, config, source_gallery_dir, edits_csv)
+        _render_apply(exp, config, base_gallery_dir, edits_csv)
     else:
         _render_before_after(exp)
