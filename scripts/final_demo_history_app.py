@@ -8,6 +8,7 @@ import streamlit as st
 
 import action_history
 import final_demo_app as core
+from active_result_source import active_experiment_dir, patch_final_demo_app
 from demo_sku_correction_panel import page_demo_sku_correction
 from history_review_bridge import render_review_with_history
 from identification_review_panel import page_identification_review
@@ -129,14 +130,18 @@ def _render_start(exp: Path) -> None:
         cols = st.columns(4)
         checks = [
             ("Файлы", paths.get("manifest")),
-            ("Фрагменты", paths.get("crops")),
-            ("Идентификация", paths.get("results")),
+            ("Фрагменты", paths.get("active_crops") or paths.get("crops")),
+            ("Идентификация", paths.get("active_results") or paths.get("results")),
             ("Правки", paths.get("edits")),
         ]
         for col, (label, path) in zip(cols, checks):
             with col:
                 ok = path is not None and core._p(path).exists()
                 st.metric(label, "готово" if ok else "нет")
+
+    active_results = paths.get("active_results") if paths else None
+    if active_results and "06_manual_gallery" in str(active_results).replace("\\", "/"):
+        st.success(f"Активна идентификация после ручной SKU-галереи: `{active_results}`")
 
     _render_source_check(exp)
 
@@ -164,6 +169,7 @@ def _render_selected_sku_with_history(exp: Path) -> None:
         st.info("Таблица идентификации пока не найдена или не содержит sku_id.")
         return
 
+    st.caption(f"Активная таблица для выбора SKU: `{source}`")
     sku_counts = (
         df[df["sku_id"].astype(str).str.len() > 0]
         .groupby("sku_id")
@@ -230,7 +236,7 @@ def _render_selected_sku_with_history(exp: Path) -> None:
             ", ".join(selected),
             outputs.get("summary_json"),
         )
-        st.success("Набор выбранных SKU собран.")
+        st.success("Набор выбранных SKU собран по активной таблице результатов.")
         for name, path in outputs.items():
             st.write(f"- {name}: `{core._rel(core._p(path))}`")
 
@@ -344,9 +350,12 @@ def _render_history(exp: Path, config: Dict[str, Any]) -> None:
 
 
 def _render_review(exp: Path, config: Dict[str, Any]) -> None:
+    review_exp = active_experiment_dir(exp)
     review_config = dict(config)
-    review_config.setdefault("full_photo_identification", {})["out_dir"] = str(exp)
-    render_review_with_history(exp, review_config, page_identification_review)
+    review_config.setdefault("full_photo_identification", {})["out_dir"] = str(review_exp)
+    if review_exp != core._p(exp):
+        st.success(f"Ручная проверка открыта по результатам ручной SKU-галереи: `{review_exp}`")
+    render_review_with_history(review_exp, review_config, page_identification_review)
 
 
 def main() -> None:
@@ -356,6 +365,7 @@ def main() -> None:
         layout="wide",
     )
     config = core._read_yaml(core.CONFIG_PATH)
+    patch_final_demo_app(core)
     exp = _sidebar(config)
 
     st.title("🧰 Демо анализа полочных сцен")
