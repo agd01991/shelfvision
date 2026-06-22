@@ -62,6 +62,7 @@ IMPORT_CHECKS = [
     "streamlit",
     "action_history",
     "history_review_bridge",
+    "verify_experiment_source",
     "src.identification.manual_identification_editor",
     "src.identification.selected_sku_exporter",
     "src.reporting.defense_export",
@@ -116,11 +117,48 @@ def _check_import(module_name: str, missing_status: str = "error") -> CheckResul
         )
 
 
+def _check_data_source(experiment_dir: Path) -> CheckResult:
+    """Сопоставить config, manifest и run_environment реального запуска."""
+
+    try:
+        from verify_experiment_source import build_report as build_source_report
+
+        source_report = build_source_report(
+            experiment_dir=experiment_dir,
+            config_path=ROOT / "config" / "vkr_final.yaml",
+        )
+    except Exception as exc:
+        return CheckResult(
+            name="data source consistency",
+            status="error",
+            detail=f"Не удалось выполнить проверку: {exc}",
+        )
+
+    status = str(source_report.get("status", "error"))
+    detail = (
+        f"config={source_report.get('config_images_dir', '')}; "
+        f"run={source_report.get('run_images_dir', '')}; "
+        f"manifest_root={source_report.get('manifest_common_root', '')}; "
+        f"images={source_report.get('manifest_images_count', 0)}"
+    )
+    return CheckResult(
+        name="data source consistency",
+        status=status if status in {"ok", "warning", "error"} else "error",
+        detail=detail,
+    )
+
+
 def build_report(experiment_dir: Path | None = None) -> SmokeReport:
     checks: List[CheckResult] = []
 
     for rel in PROJECT_REQUIRED_FILES:
-        checks.append(_check_file(ROOT / rel, f"project file {rel}", missing_status="error"))
+        checks.append(
+            _check_file(
+                ROOT / rel,
+                f"project file {rel}",
+                missing_status="error",
+            )
+        )
 
     for module in IMPORT_CHECKS:
         checks.append(_check_import(module, missing_status="error"))
@@ -132,7 +170,13 @@ def build_report(experiment_dir: Path | None = None) -> SmokeReport:
         exp = Path(experiment_dir)
         exp_text = str(exp)
         if not exp.exists():
-            checks.append(CheckResult("experiment directory", "warning", f"not found: {exp}"))
+            checks.append(
+                CheckResult(
+                    "experiment directory",
+                    "warning",
+                    f"not found: {exp}",
+                )
+            )
         else:
             checks.append(CheckResult("experiment directory", "ok", str(exp)))
             for rel in EXPERIMENT_REQUIRED_FILES:
@@ -151,6 +195,7 @@ def build_report(experiment_dir: Path | None = None) -> SmokeReport:
                         missing_status="warning",
                     )
                 )
+            checks.append(_check_data_source(exp))
 
     return SmokeReport(
         python=sys.version.replace("\n", " "),
@@ -170,7 +215,10 @@ def write_report(report: SmokeReport, out_dir: Path) -> dict[str, Path]:
     payload["status"] = report.status
     payload["errors_count"] = report.errors_count
     payload["warnings_count"] = report.warnings_count
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     lines = [
         "# Smoke-проверка демонстрационного интерфейса",
@@ -198,7 +246,9 @@ def write_report(report: SmokeReport, out_dir: Path) -> dict[str, Path]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Smoke-проверка демонстрационного интерфейса")
+    parser = argparse.ArgumentParser(
+        description="Smoke-проверка демонстрационного интерфейса"
+    )
     parser.add_argument(
         "--experiment-dir",
         default="",
@@ -209,7 +259,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Куда сохранить отчет. По умолчанию: experiment/export или results/demo_smoke",
     )
-    parser.add_argument("--strict", action="store_true", help="Вернуть код 1 при ошибках")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Вернуть код 1 при ошибках",
+    )
     return parser.parse_args()
 
 
