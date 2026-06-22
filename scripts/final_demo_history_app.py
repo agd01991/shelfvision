@@ -9,7 +9,7 @@ import streamlit as st
 import action_history
 import final_demo_app as core
 from active_result_source import active_experiment_dir, patch_final_demo_app
-from demo_sku_correction_panel import page_demo_sku_correction
+from demo_sku_correction_panel_fast import page_demo_sku_correction
 from history_review_bridge import render_review_with_history
 from identification_review_panel import page_identification_review
 from src.identification.selected_sku_exporter import export_selected_sku_demo
@@ -358,6 +358,35 @@ def _render_review(exp: Path, config: Dict[str, Any]) -> None:
     render_review_with_history(review_exp, review_config, page_identification_review)
 
 
+def _render_page(page: str, exp: Path, config: Dict[str, Any]) -> None:
+    if page == "Старт":
+        _render_start(exp)
+    elif page == "Обзор":
+        core._render_overview(exp)
+    elif page == "Параметры":
+        core._render_profile(config)
+    elif page == "Фрагменты":
+        core._render_crops(exp)
+    elif page == "Идентификация":
+        core._render_identification_table(exp)
+    elif page == "Свои фото":
+        page_user_photos(config, active_experiment_dir(exp))
+    elif page == "Ручная проверка":
+        _render_review(exp, config)
+    elif page == "Коррекция SKU":
+        page_demo_sku_correction(config, exp)
+    elif page == "История":
+        _render_history(exp, config)
+    elif page == "До/после":
+        core._render_before_after(exp)
+    elif page == "Выбор SKU":
+        _render_selected_sku_with_history(exp)
+    elif page == "Экспорт":
+        _render_export_with_history(exp)
+    else:
+        core._render_faq()
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Демо анализа полочных сцен",
@@ -374,49 +403,30 @@ def main() -> None:
         "коррекция SKU-галереи, история действий и экспорт материалов."
     )
 
-    tabs = st.tabs(
-        [
-            "Старт",
-            "Обзор",
-            "Параметры",
-            "Фрагменты",
-            "Идентификация",
-            "Свои фото",
-            "Ручная проверка",
-            "Коррекция SKU",
-            "История",
-            "До/после",
-            "Выбор SKU",
-            "Экспорт",
-            "FAQ",
-        ]
+    pages = [
+        "Старт",
+        "Обзор",
+        "Параметры",
+        "Фрагменты",
+        "Идентификация",
+        "Свои фото",
+        "Ручная проверка",
+        "Коррекция SKU",
+        "История",
+        "До/после",
+        "Выбор SKU",
+        "Экспорт",
+        "FAQ",
+    ]
+    page = st.radio(
+        "Раздел демо-интерфейса",
+        pages,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="main_demo_page",
     )
-    with tabs[0]:
-        _render_start(exp)
-    with tabs[1]:
-        core._render_overview(exp)
-    with tabs[2]:
-        core._render_profile(config)
-    with tabs[3]:
-        core._render_crops(exp)
-    with tabs[4]:
-        core._render_identification_table(exp)
-    with tabs[5]:
-        page_user_photos(config, exp)
-    with tabs[6]:
-        _render_review(exp, config)
-    with tabs[7]:
-        page_demo_sku_correction(config, exp)
-    with tabs[8]:
-        _render_history(exp, config)
-    with tabs[9]:
-        core._render_before_after(exp)
-    with tabs[10]:
-        _render_selected_sku_with_history(exp)
-    with tabs[11]:
-        _render_export_with_history(exp)
-    with tabs[12]:
-        core._render_faq()
+    st.divider()
+    _render_page(page, exp, config)
 
 
 if __name__ == "__main__":
