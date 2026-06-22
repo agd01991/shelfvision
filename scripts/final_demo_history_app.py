@@ -12,6 +12,7 @@ from active_result_source import active_experiment_dir, patch_final_demo_app
 from demo_sku_correction_panel_fast import page_demo_sku_correction
 from history_review_bridge import render_review_with_history
 from identification_review_panel import page_identification_review
+from main_interface_bridge import page_main_interface_bridge
 from src.identification.selected_sku_exporter import export_selected_sku_demo
 from src.reporting.defense_export import build_defense_export_zip
 from user_photos_panel import page_user_photos
@@ -123,7 +124,7 @@ def _render_start(exp: Path) -> None:
     st.info(
         "Интерфейс помогает пройти полный контур: обзор результатов, фрагменты, "
         "идентификация, пользовательские фото, ручная проверка, коррекция SKU-галереи, "
-        "сравнение до/после и экспорт."
+        "сравнение до/после, переход в основной интерфейс и экспорт."
     )
     paths = core.experiment_paths(exp) if hasattr(core, "experiment_paths") else {}
     if paths:
@@ -155,9 +156,10 @@ def _render_start(exp: Path) -> None:
 5. **Свои фото** — запустить детекцию и идентификацию на пользовательской папке без разметки.
 6. **Ручная проверка** — подтвердить или изменить назначение SKU.
 7. **Коррекция SKU** — улучшить автоматически сформированную галерею.
-8. **История** — сохранить контрольную точку после важных действий.
-9. **До/после** — сравнить исходный и скорректированный результат.
-10. **Экспорт** — собрать ZIP-архив с материалами.
+8. **Основной интерфейс** — перейти к настройке и воспроизведению всех экспериментов.
+9. **История** — сохранить контрольную точку после важных действий.
+10. **До/после** — сравнить исходный и скорректированный результат.
+11. **Экспорт** — собрать ZIP-архив с материалами.
 """
     )
 
@@ -375,6 +377,8 @@ def _render_page(page: str, exp: Path, config: Dict[str, Any]) -> None:
         _render_review(exp, config)
     elif page == "Коррекция SKU":
         page_demo_sku_correction(config, exp)
+    elif page == "Основной интерфейс":
+        page_main_interface_bridge(config, exp)
     elif page == "История":
         _render_history(exp, config)
     elif page == "До/после":
@@ -400,7 +404,7 @@ def main() -> None:
     st.title("🧰 Демо анализа полочных сцен")
     st.caption(
         "Просмотр результатов, запуск на пользовательских фото, ручная проверка, "
-        "коррекция SKU-галереи, история действий и экспорт материалов."
+        "коррекция SKU-галереи, переход в основной интерфейс, история действий и экспорт материалов."
     )
 
     pages = [
@@ -412,6 +416,7 @@ def main() -> None:
         "Свои фото",
         "Ручная проверка",
         "Коррекция SKU",
+        "Основной интерфейс",
         "История",
         "До/после",
         "Выбор SKU",
