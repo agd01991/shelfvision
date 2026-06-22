@@ -1,0 +1,60 @@
+name: Demo interface checks
+
+on:
+  pull_request:
+    branches: [demo]
+  push:
+    branches: [demo-defense-interface-phase1, demo]
+
+jobs:
+  test-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install minimal dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            numpy \
+            pandas \
+            opencv-python-headless \
+            PyYAML \
+            streamlit
+
+      - name: Compile changed modules
+        run: |
+          python -m py_compile \
+            scripts/final_demo_app.py \
+            scripts/final_demo_history_app.py \
+            scripts/action_history.py \
+            scripts/active_result_source.py \
+            scripts/demo_sku_correction_panel.py \
+            scripts/demo_sku_correction_panel_fast.py \
+            scripts/history_review_bridge.py \
+            scripts/identification_review_panel.py \
+            scripts/main_interface_bridge.py \
+            scripts/user_photos_panel.py \
+            scripts/defense_demo_smoke_check.py \
+            scripts/verify_experiment_source.py \
+            src/identification/feature_extractor.py \
+            src/identification/manual_identification_editor.py \
+            src/identification/selected_sku_exporter.py \
+            src/reporting/defense_export.py
+
+      - name: Run unit tests
+        run: python -m unittest tests/test_demo_core.py -v
+
+      - name: Run project smoke check
+        run: python scripts/defense_demo_smoke_check.py --strict
