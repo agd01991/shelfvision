@@ -8,6 +8,7 @@ import streamlit as st
 
 import action_history
 import final_demo_app as core
+from demo_sku_correction_panel import page_demo_sku_correction
 from history_review_bridge import render_review_with_history
 from identification_review_panel import page_identification_review
 from src.identification.selected_sku_exporter import export_selected_sku_demo
@@ -119,7 +120,7 @@ def _render_start(exp: Path) -> None:
     st.subheader("Старт")
     st.info(
         "Интерфейс помогает пройти полный контур: обзор результатов, фрагменты, "
-        "идентификация, ручная проверка, сравнение до/после и экспорт."
+        "идентификация, ручная проверка, коррекция SKU-галереи, сравнение до/после и экспорт."
     )
     paths = core.experiment_paths(exp) if hasattr(core, "experiment_paths") else {}
     if paths:
@@ -367,6 +368,7 @@ def main() -> None:
             "Фрагменты",
             "Идентификация",
             "Ручная проверка",
+            "Коррекция SKU",
             "История",
             "До/после",
             "Выбор SKU",
@@ -387,14 +389,16 @@ def main() -> None:
     with tabs[5]:
         _render_review(exp, config)
     with tabs[6]:
-        _render_history(exp, config)
+        page_demo_sku_correction(config, exp)
     with tabs[7]:
-        core._render_before_after(exp)
+        _render_history(exp, config)
     with tabs[8]:
-        _render_selected_sku_with_history(exp)
+        core._render_before_after(exp)
     with tabs[9]:
-        _render_export_with_history(exp)
+        _render_selected_sku_with_history(exp)
     with tabs[10]:
+        _render_export_with_history(exp)
+    with tabs[11]:
         core._render_faq()
 
 
