@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -23,6 +25,8 @@ from src.identification.manual_gallery_editor import (
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+THUMB_WIDTH = 150
+TARGET_THUMB_WIDTH = 140
 
 
 def _p(value: str | Path | None) -> Path:
@@ -79,6 +83,34 @@ def _source_gallery_dir(experiment_dir: Path, config: Dict[str, Any]) -> Path:
     return candidates[-1]
 
 
+
+
+def _archive_existing_dir(path: Path) -> Path | None:
+    """Move an existing output directory aside before rebuilding it.
+
+    This avoids `Directory not empty` on /mnt/d when Windows indexing or
+    Streamlit image preview still keeps files inside the manual gallery.
+    """
+
+    path = _p(path)
+    if not path.exists():
+        return None
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = path.with_name(f"{path.name}_backup_{timestamp}")
+    index = 1
+    while backup.exists():
+        backup = path.with_name(f"{path.name}_backup_{timestamp}_{index}")
+        index += 1
+    try:
+        path.rename(backup)
+        return backup
+    except OSError:
+        shutil.rmtree(path, ignore_errors=True)
+        if path.exists():
+            path.rename(backup)
+            return backup
+    return None
+
 def _gallery_stats(gallery_dir: Path) -> tuple[Dict[str, List[Path]], int, int]:
     refs_by_sku = list_sku_refs(_p(gallery_dir))
     refs_count = sum(len(refs) for refs in refs_by_sku.values())
@@ -120,7 +152,7 @@ def _show_report(path: Path, title: str) -> None:
         st.markdown(text)
 
 
-def _display_refs(refs: Iterable[Path], columns: int = 4, limit: int = 12) -> None:
+def _display_refs(refs: Iterable[Path], columns: int = 6, limit: int = 8) -> None:
     refs = [ref for ref in list(refs)[:limit] if _p(ref).suffix.lower() in IMAGE_EXTS]
     if not refs:
         st.info("Эталонные изображения не найдены.")
@@ -131,12 +163,12 @@ def _display_refs(refs: Iterable[Path], columns: int = 4, limit: int = 12) -> No
         ref = _p(ref)
         with cols[index % len(cols)]:
             if ref.exists():
-                st.image(str(ref), caption=ref.name, use_container_width=True)
+                st.image(str(ref), caption=ref.name, width=THUMB_WIDTH)
             else:
                 st.caption(f"Файл не найден: {ref.name}")
 
 
-def _select_refs_grid(refs: List[Path], key_prefix: str, columns: int = 5) -> List[str]:
+def _select_refs_grid(refs: List[Path], key_prefix: str, columns: int = 6) -> List[str]:
     if not refs:
         st.info("В выбранном SKU нет эталонных изображений.")
         return []
@@ -147,7 +179,7 @@ def _select_refs_grid(refs: List[Path], key_prefix: str, columns: int = 5) -> Li
         ref = _p(ref)
         with cols[index % len(cols)]:
             if ref.exists():
-                st.image(str(ref), caption=ref.name, use_container_width=True)
+                st.image(str(ref), caption=ref.name, width=THUMB_WIDTH)
             else:
                 st.caption(ref.name)
             checked = st.checkbox(
@@ -227,10 +259,10 @@ def _render_pair_comparison(
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown(f"##### SKU A: `{sku_a}`")
-        _display_refs(refs_by_sku.get(sku_a, []), columns=3, limit=9)
+        _display_refs(refs_by_sku.get(sku_a, []), columns=5, limit=10)
     with col_b:
         st.markdown(f"##### SKU B: `{sku_b}`")
-        _display_refs(refs_by_sku.get(sku_b, []), columns=3, limit=9)
+        _display_refs(refs_by_sku.get(sku_b, []), columns=5, limit=10)
 
     comment = st.text_input(
         "Комментарий к объединению",
@@ -421,6 +453,151 @@ def _run_manual_identification(
     )
 
 
+def _backup_existing_manual_gallery(output_gallery_dir: Path) -> Path | None:
+    # На /mnt/d обычное удаление большой папки иногда падает с ошибкой
+    # Directory not empty. Переименование быстрее и безопаснее: исходная папка
+    # сохраняется как backup, а новая сборка создаёт чистую папку с прежним именем.
+    output_gallery_dir = _p(output_gallery_dir)
+    if not output_gallery_dir.exists():
+        return None
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base = output_gallery_dir.with_name(f"{output_gallery_dir.name}_backup_{stamp}")
+    backup = base
+    index = 1
+    while backup.exists():
+        backup = base.with_name(f"{base.name}_{index}")
+        index += 1
+
+    output_gallery_dir.rename(backup)
+    return backup
+
+
+def _iter_focus_candidates(
+    refs_by_sku: Dict[str, List[Path]],
+    target_sku: str,
+    source_filter: str,
+    limit: int,
+) -> List[tuple[str, Path]]:
+    rows: List[tuple[str, Path]] = []
+    source_filter = source_filter.strip().lower()
+    for source_sku, refs in sorted(refs_by_sku.items()):
+        if source_sku == target_sku:
+            continue
+        if source_filter and source_filter not in source_sku.lower():
+            continue
+        for ref in refs:
+            rows.append((source_sku, _p(ref)))
+            if len(rows) >= limit:
+                return rows
+    return rows
+
+
+def _render_focus_sku(
+    exp: Path,
+    edits_csv: Path,
+    refs_by_sku: Dict[str, List[Path]],
+) -> None:
+    st.markdown("#### Улучшить идентификацию конкретного SKU")
+    st.caption(
+        "Режим нужен, когда известен целевой SKU и нужно быстро собрать к нему "
+        "правильные эталоны из других автоматически созданных SKU."
+    )
+
+    sku_ids = sorted(refs_by_sku.keys())
+    if not sku_ids:
+        st.info("SKU-галерея пуста.")
+        return
+
+    c1, c2, c3 = st.columns([1.3, 1, 1])
+    with c1:
+        target_sku = st.selectbox(
+            "Целевой SKU",
+            sku_ids,
+            format_func=lambda sku: f"{sku} ({len(refs_by_sku.get(sku, []))} эталонов)",
+            key="demo_focus_target_sku",
+        )
+    with c2:
+        source_filter = st.text_input(
+            "Фильтр по SKU-источнику",
+            value="",
+            placeholder="например: 041",
+            key="demo_focus_source_filter",
+        )
+    with c3:
+        limit = st.number_input(
+            "Сколько кандидатов показать",
+            min_value=12,
+            max_value=240,
+            value=48,
+            step=12,
+            key="demo_focus_candidate_limit",
+        )
+
+    st.markdown(f"##### Текущие эталоны целевого SKU `{target_sku}`")
+    _display_refs(refs_by_sku.get(target_sku, []), columns=8, limit=16)
+
+    candidates = _iter_focus_candidates(
+        refs_by_sku,
+        target_sku=target_sku,
+        source_filter=source_filter,
+        limit=int(limit),
+    )
+    if not candidates:
+        st.info("Кандидаты из других SKU не найдены. Ослабьте фильтр.")
+        return
+
+    st.markdown("##### Отметьте фрагменты, которые должны относиться к целевому SKU")
+    selected: Dict[str, List[str]] = {}
+    cols = st.columns(8)
+    for index, (source_sku, ref) in enumerate(candidates):
+        with cols[index % len(cols)]:
+            if ref.exists() and ref.suffix.lower() in IMAGE_EXTS:
+                st.image(str(ref), caption=f"{source_sku}\n{ref.name}", use_container_width=True)
+            else:
+                st.caption(f"{source_sku} / {ref.name}")
+            checked = st.checkbox(
+                "к целевому",
+                key=f"demo_focus_pick_{source_sku}_{index}_{ref.name}",
+            )
+            if checked:
+                selected.setdefault(source_sku, []).append(ref.name)
+
+    comment = st.text_input(
+        "Комментарий",
+        value=f"перенос эталонов в целевой SKU {target_sku}",
+        key="demo_focus_comment",
+    )
+
+    selected_count = sum(len(items) for items in selected.values())
+    if st.button(
+        f"Перенести выбранные эталоны в `{target_sku}`",
+        type="primary",
+        use_container_width=True,
+        disabled=selected_count == 0,
+    ):
+        for source_sku, ref_names in selected.items():
+            append_manual_edit(
+                edits_csv,
+                ManualGalleryEdit(
+                    operation="split",
+                    source_sku_id=source_sku,
+                    new_sku_id=target_sku,
+                    ref_files=";".join(ref_names),
+                    comment=comment,
+                ),
+            )
+        _append_event(
+            exp,
+            "manual_gallery_focus_sku",
+            "Добавлен перенос эталонов в целевой SKU",
+            f"target={target_sku}; refs={selected_count}",
+            edits_csv,
+        )
+        st.success(f"Добавлено операций: {len(selected)}; перенесено эталонов: {selected_count}")
+        st.rerun()
+
+
 def _render_apply(exp: Path, config: Dict[str, Any], source_gallery_dir: Path, edits_csv: Path) -> None:
     manual_root, _, manual_gallery_dir, manual_gallery_csv, manual_identification_dir = _manual_paths(exp)
     st.markdown("#### Применить коррекцию")
@@ -432,6 +609,7 @@ def _render_apply(exp: Path, config: Dict[str, Any], source_gallery_dir: Path, e
     with c1:
         if st.button("1. Собрать ручную SKU-галерею", type="primary", use_container_width=True):
             try:
+                backup_dir = _backup_existing_manual_gallery(manual_gallery_dir)
                 outputs = build_manual_gallery_from_edits(
                     source_gallery_dir=source_gallery_dir,
                     output_gallery_dir=manual_gallery_dir,
@@ -439,6 +617,8 @@ def _render_apply(exp: Path, config: Dict[str, Any], source_gallery_dir: Path, e
                     out_dir=manual_root,
                     output_gallery_csv=manual_gallery_csv,
                 )
+                if backup_dir is not None:
+                    st.caption(f"Предыдущая ручная галерея сохранена: `{backup_dir}`")
                 _append_event(exp, "manual_gallery_build", "Собрана ручная SKU-галерея", str(manual_gallery_csv), outputs.get("summary_json"))
                 st.success("Ручная SKU-галерея собрана.")
                 for name, path in outputs.items():
@@ -603,14 +783,16 @@ def page_demo_sku_correction(config: Dict[str, Any], experiment_dir: str | Path)
     st.caption(f"Исходная галерея: `{source_gallery_dir}`")
     st.caption(f"Журнал операций: `{edits_csv}`")
 
-    tabs = st.tabs(["Похожие SKU", "Разделить SKU", "Журнал", "Применить", "До/после"])
+    tabs = st.tabs(["Улучшить SKU", "Похожие SKU", "Разделить SKU", "Журнал", "Применить", "До/после"])
     with tabs[0]:
-        _render_pair_comparison(exp, source_gallery_dir, edits_csv, refs_by_sku)
+        _render_focus_sku(exp, edits_csv, refs_by_sku)
     with tabs[1]:
-        _render_split(exp, edits_csv, refs_by_sku)
+        _render_pair_comparison(exp, source_gallery_dir, edits_csv, refs_by_sku)
     with tabs[2]:
-        _render_journal(exp, edits_csv)
+        _render_split(exp, edits_csv, refs_by_sku)
     with tabs[3]:
-        _render_apply(exp, config, source_gallery_dir, edits_csv)
+        _render_journal(exp, edits_csv)
     with tabs[4]:
+        _render_apply(exp, config, source_gallery_dir, edits_csv)
+    with tabs[5]:
         _render_before_after(exp)
